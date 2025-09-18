@@ -1,0 +1,11 @@
+/* Order matters: functions -> variables -> your variables -> bootstrap -> structure */
+@import "bootstrap/scss/functions";
+@import "bootstrap/scss/variables";
+
+@import "config/variables";      /* our tokens (colors, fonts) */
+
+/* Bootstrap build */
+@import "bootstrap/scss/bootstrap";
+
+/* Template-like layout bits */
+@import "structure/layout";
