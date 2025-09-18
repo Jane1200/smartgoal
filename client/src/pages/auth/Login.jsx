@@ -15,27 +15,14 @@ export default function Login() {
     defaultValues: { email: "", password: "" },
   });
 
-  // Helper: check verification using Firebase auth state
+  // Helper: temporarily skip email verification checks
   const checkAndRedirectAfterLogin = async (loginResult) => {
     try {
-      // For Firebase users (Google sign-in), check email verification
-      if (auth?.currentUser) {
-        await auth.currentUser.reload();
-        if (!auth.currentUser.emailVerified) {
-          toast.info("Please verify your email before continuing.");
-          navigate("/verify-email", { replace: true });
-          return;
-        }
-        navigate("/dashboard-redirect", { replace: true });
-        return;
-      }
-
-      // For backend users, skip verification check since we auto-verify after password reset
-      // Just redirect to dashboard
+      // Always redirect to dashboard regardless of verification status
       navigate("/dashboard-redirect", { replace: true });
     } catch (err) {
       console.error("post-login verification check error", err);
-      toast.error("Login succeeded but verification check failed. Try refreshing.");
+      // Keep UX simple during bypass window
       navigate("/dashboard-redirect", { replace: true });
     }
   };

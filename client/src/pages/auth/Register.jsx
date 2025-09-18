@@ -123,14 +123,7 @@ export default function Register() {
       // Successful registration
       toast.success("Account created successfully");
 
-      // If backend reports user is not verified, send them to VerifyEmail page
-      const isVerified = res.user?.isVerified ?? true; // default to true if server doesn't provide
-      if (isVerified === false) {
-        navigate("/verify-email", { replace: true });
-        return;
-      }
-
-      // Otherwise, redirect to role-based dashboard
+      // Temporarily bypass email verification and go straight to dashboard
       navigate("/dashboard-redirect", { replace: true });
     } catch (error) {
       console.error("Registration error:", error);

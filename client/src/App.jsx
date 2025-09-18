@@ -56,14 +56,7 @@ export default function App() {
 
   useEffect(() => {
     // Paths we consider "public"
-    const PUBLIC_PATHS = new Set([
-      "/",
-      "/about",
-      "/login",
-      "/register",
-      "/reset",
-      "/verify-email",
-    ]);
+    const PUBLIC_PATHS = new Set(["/", "/about", "/login", "/register", "/reset"]);
 
     // If the app already has a backend-authenticated user (JWT),
     // skip Firebase verification gating entirely.
@@ -85,15 +78,8 @@ export default function App() {
             return;
           }
 
-          // If user signed in but not verified, block access to non-public pages
-          if (!user.emailVerified && !PUBLIC_PATHS.has(currentPath)) {
-            navigate("/verify-email", { replace: true });
-          }
-
-          // If verified and stuck on verify-email, send them to role redirect
-          if (user.emailVerified && currentPath === "/verify-email") {
-            navigate("/dashboard-redirect", { replace: true });
-          }
+          // Temporarily do not gate by email verification
+          // Always allow navigation for signed-in users
         }
       } catch (e) {
         console.error("Auth state handler error", e);
@@ -112,7 +98,7 @@ export default function App() {
         <Route element={<PublicLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<About />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
+          {/* Temporarily hide verify email route */}
         </Route>
 
         {/* Auth Pages */}

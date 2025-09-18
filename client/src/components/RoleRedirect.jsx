@@ -19,23 +19,10 @@ export default function RoleRedirect() {
       }
 
       try {
-        // If there's a firebase client user, prefer checking its emailVerified flag
-        if (auth?.currentUser) {
-          // reload to ensure we have the latest emailVerified value
-          await auth.currentUser.reload();
-          if (!auth.currentUser.emailVerified) {
-            if (!mounted) return;
-            navigate("/verify-email", { replace: true });
-            return;
-          }
-        }
+        // Temporarily bypass email verification checks
 
         // Fallback: if your server provides an isVerified flag on the profile, respect it
-        const isVerifiedFromProfile = user?.profile?.isVerified;
-        if (isVerifiedFromProfile === false) {
-          navigate("/verify-email", { replace: true });
-          return;
-        }
+        // Ignore server isVerified flag for now
 
         // Role-based redirect
         const role = user?.profile?.role;
