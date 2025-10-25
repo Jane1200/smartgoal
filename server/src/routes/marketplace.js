@@ -2,9 +2,13 @@ import { Router } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import Marketplace from "../models/Marketplace.js";
 import User from "../models/User.js";
+import MarketplaceIncome from "../models/MarketplaceIncome.js";
+import Order from "../models/Order.js";
+import MarketplaceFeedback from "../models/MarketplaceFeedback.js";
 
 const router = Router();
 
@@ -81,23 +85,24 @@ router.post('/upload-images', requireAuth, upload.array('images', 10), (req, res
   }
 });
 
-// Get featured marketplace items
+// Get featured marketplace items (public but filters out user's own items if authenticated)
 router.get('/featured', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 8;
     
-    // Get featured items from database
-    const featuredItems = await Marketplace.getFeaturedItems(limit);
-    
-    // If no featured items, get recent active items
-    if (featuredItems.length === 0) {
-      const recentItems = await Marketplace.find({ status: 'active' })
-        .populate('userId', 'name email')
-        .sort({ createdAt: -1 })
-        .limit(limit);
-      
-      return res.json(recentItems);
+    // Build query to exclude current user's listings if authenticated
+    const query = { status: 'active' };
+    if (req.user?.id) {
+      // Convert JWT string ID to MongoDB ObjectId for query comparison
+      const currentUserId = new mongoose.Types.ObjectId(req.user.id);
+      query.userId = { $ne: currentUserId };
     }
+    
+    // Get featured items from database
+    const featuredItems = await Marketplace.find(query)
+      .populate('userId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(limit);
     
     res.json(featuredItems);
   } catch (error) {
@@ -109,7 +114,8 @@ router.get('/featured', async (req, res) => {
 // Get user's listings
 router.get('/my-listings', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Convert JWT string ID to MongoDB ObjectId
+    const userId = new mongoose.Types.ObjectId(req.user.id);
     
     // Get user's listings from database
     const listings = await Marketplace.getUserListings(userId);
@@ -124,7 +130,8 @@ router.get('/my-listings', requireAuth, async (req, res) => {
 // Create new listing
 router.post('/list-item', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Convert JWT string ID to MongoDB ObjectId
+    const userId = new mongoose.Types.ObjectId(req.user.id);
     const { title, description, price, category, condition, images } = req.body;
 
     // Validate required fields
@@ -134,35 +141,114 @@ router.post('/list-item', requireAuth, async (req, res) => {
       });
     }
 
+    // Validate images array format
+    if (!Array.isArray(images)) {
+      return res.status(400).json({ 
+        message: 'Images must be an array' 
+      });
+    }
+
+    // Validate price is a number
+    const numPrice = parseFloat(price);
+    if (isNaN(numPrice) || numPrice <= 0) {
+      return res.status(400).json({ 
+        message: 'Price must be a valid positive number' 
+      });
+    }
+
     // Create new marketplace listing
     const newListing = new Marketplace({
       userId,
-      title,
-      description: description || '',
-      price: parseFloat(price),
+      title: title.trim(),
+      description: (description || '').trim(),
+      price: numPrice,
       category: category || 'other',
       condition: condition || 'good',
       status: 'active',
-      images: images.map(url => ({
-        url,
-        filename: url.split('/').pop(), // Extract filename from URL
-        uploadedAt: new Date()
-      }))
+      images: images.map(url => {
+        const filename = typeof url === 'string' ? url.split('/').pop() : 'image';
+        return {
+          url,
+          filename,
+          uploadedAt: new Date()
+        };
+      })
     });
 
     // Save to database
-    await newListing.save();
+    const savedListing = await newListing.save();
 
     // Populate user data for response
-    await newListing.populate('userId', 'name email');
+    await savedListing.populate('userId', 'name email');
 
     res.json({
       message: 'Item listed successfully',
-      listing: newListing
+      listing: savedListing
     });
   } catch (error) {
-    console.error('List item error:', error);
-    res.status(500).json({ message: 'Failed to list item' });
+    console.error('List item error:', error.message);
+    console.error('Stack trace:', error.stack);
+    console.error('Full error:', error);
+    res.status(500).json({ 
+      message: 'Failed to list item',
+      error: error.message 
+    });
+  }
+});
+
+// Update listing (allows editing title, description, and category only)
+router.put('/listings/:id', requireAuth, async (req, res) => {
+  try {
+    const listingId = req.params.id;
+    const userId = new mongoose.Types.ObjectId(req.user.id);
+    const { title, description, category } = req.body;
+
+    // Find the listing and verify ownership
+    const listing = await Marketplace.findOne({ _id: listingId, userId });
+    
+    if (!listing) {
+      return res.status(404).json({ message: 'Listing not found or you do not have permission to edit it' });
+    }
+
+    // Build update object with only allowed fields
+    const updateData = {};
+    
+    if (title !== undefined) {
+      if (!title || title.trim().length === 0) {
+        return res.status(400).json({ message: 'Title cannot be empty' });
+      }
+      updateData.title = title.trim();
+    }
+
+    if (description !== undefined) {
+      if (description && description.trim().length < 10) {
+        return res.status(400).json({ message: 'Description must be at least 10 characters' });
+      }
+      updateData.description = (description || '').trim();
+    }
+
+    if (category !== undefined) {
+      const validCategories = ['electronics', 'fashion', 'sports', 'books', 'other'];
+      if (category && !validCategories.includes(category)) {
+        return res.status(400).json({ message: 'Invalid category' });
+      }
+      updateData.category = category || 'other';
+    }
+
+    // Update the listing
+    const updatedListing = await Marketplace.findByIdAndUpdate(
+      listingId,
+      { $set: updateData },
+      { new: true, runValidators: false }
+    ).populate('userId', 'name email');
+
+    res.json({
+      message: 'Listing updated successfully',
+      listing: updatedListing
+    });
+  } catch (error) {
+    console.error('Update listing error:', error);
+    res.status(500).json({ message: 'Failed to update listing' });
   }
 });
 
@@ -170,7 +256,8 @@ router.post('/list-item', requireAuth, async (req, res) => {
 router.delete('/listings/:id', requireAuth, async (req, res) => {
   try {
     const listingId = req.params.id;
-    const userId = req.user.id;
+    // Convert JWT string ID to MongoDB ObjectId
+    const userId = new mongoose.Types.ObjectId(req.user.id);
 
     // Find the listing and verify ownership
     const listing = await Marketplace.findOne({ _id: listingId, userId });
@@ -189,9 +276,18 @@ router.delete('/listings/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Browse marketplace items (for buyers)
-router.get("/browse", async (req, res) => {
+// Browse marketplace items (for buyers only)
+router.get("/browse", requireAuth, async (req, res) => {
   try {
+    // Check if user is a buyer
+    if (!req.user.isBuyer) {
+      return res.status(403).json({ 
+        message: "Only buyers can browse marketplace items. Please switch to buyer role to browse items." 
+      });
+    }
+
+    // Convert JWT string ID to MongoDB ObjectId
+    const userId = new mongoose.Types.ObjectId(req.user.id);
     const {
       search,
       category,
@@ -202,8 +298,11 @@ router.get("/browse", async (req, res) => {
       limit = 12
     } = req.query;
 
-    // Build query
-    const query = { status: "active" };
+    // Build query - exclude current user's listings
+    const query = { 
+      status: "active",
+      userId: { $ne: userId }  // Exclude items listed by current user
+    };
 
     if (search) {
       query.$or = [
@@ -246,15 +345,27 @@ router.get("/browse", async (req, res) => {
 
     const items = await Marketplace.find(query)
       .sort(sortOption)
-      .populate("userId", "name")
-      .select("title description price category condition status images views likes createdAt")
+      .populate("userId", "name email avatar marketplaceStats trustBadge")
+      .select("title description price category condition status images views likes createdAt userId")
       .limit(parseInt(limit) * 1)
       .skip((parseInt(page) - 1) * parseInt(limit));
 
-    // Add seller name to each item
-    const itemsWithSeller = items.map(item => ({
-      ...item.toObject(),
-      sellerName: item.userId?.name || "Unknown Seller"
+    // Map items with seller info and ratings
+    const itemsWithSeller = await Promise.all(items.map(async (item) => {
+      const itemObj = item.toObject();
+      
+      // Get seller rating
+      const sellerRating = await MarketplaceFeedback.getSellerRating(item.userId._id);
+      
+      return {
+        ...itemObj,
+        sellerName: item.userId?.name || "Unknown Seller",
+        sellerAvatar: item.userId?.avatar,
+        sellerRating: sellerRating.averageRating,
+        sellerTrustBadge: item.userId?.trustBadge?.level || "new",
+        totalReviews: sellerRating.totalReviews,
+        marketplaceStats: item.userId?.marketplaceStats
+      };
     }));
 
     res.json(itemsWithSeller);
@@ -264,10 +375,18 @@ router.get("/browse", async (req, res) => {
   }
 });
 
-// Get marketplace items from nearby goal setters (for buyers)
+// Get marketplace items from nearby goal setters (for buyers only)
 router.get("/nearby-items", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Check if user is a buyer
+    if (!req.user.isBuyer) {
+      return res.status(403).json({ 
+        message: "Only buyers can browse nearby marketplace items. Please switch to buyer role." 
+      });
+    }
+
+    // Convert JWT string ID to MongoDB ObjectId
+    const userId = new mongoose.Types.ObjectId(req.user.id);
     const { maxDistance = 50, category, limit = 20, page = 1 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
@@ -294,7 +413,7 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
     // Find goal setters with location data
     // First try to find goal setters with exact coordinates
     let allGoalSetters = await User.find({
-      role: 'goal_setter',
+      roles: 'goal_setter',
       _id: { $ne: userId },
       'location.latitude': { $exists: true },
       'location.longitude': { $exists: true }
@@ -308,7 +427,7 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
     if (goalSetters.length === 0) {
       console.log('No goal setters with exact coordinates found for marketplace, searching for fallback options...');
       const fallbackGoalSetters = await User.find({
-        role: 'goal_setter',
+        roles: 'goal_setter',
         _id: { $ne: userId }
       }).select('_id name email avatar location geoPreferences');
       
@@ -418,43 +537,45 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
     const total = await Marketplace.countDocuments(query);
     
     // Format items with seller distance information
-    const formattedItems = items.map(item => {
-      const seller = nearbyGoalSetters.find(gs => gs.id.toString() === item.userId._id.toString());
-      const daysAgo = Math.ceil((new Date() - new Date(item.createdAt)) / (1000 * 60 * 60 * 24));
-      const isRecent = daysAgo <= 7;
-      
-      return {
-        id: item._id,
-        title: item.title,
-        description: item.description,
-        price: item.price,
-        category: item.category,
-        condition: item.condition,
-        status: item.status,
-        images: item.images,
-        views: item.views,
-        likes: item.likes,
-        featured: item.featured,
-        location: item.location,
-        contactInfo: item.contactInfo,
-        tags: item.tags,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-        daysAgo: daysAgo,
-        isRecent: isRecent,
-        seller: {
-          id: item.userId._id,
-          name: item.userId.name,
-          email: item.userId.email,
-          avatar: item.userId.avatar,
-          distance: seller?.distance || 0,
-          location: seller?.location || {
-            city: item.userId.location?.city || '',
-            state: item.userId.location?.state || ''
+    const formattedItems = items
+      .filter(item => item.userId?._id?.toString() !== userId)
+      .map(item => {
+        const seller = nearbyGoalSetters.find(gs => gs.id.toString() === item.userId._id.toString());
+        const daysAgo = Math.ceil((new Date() - new Date(item.createdAt)) / (1000 * 60 * 60 * 24));
+        const isRecent = daysAgo <= 7;
+        
+        return {
+          id: item._id,
+          title: item.title,
+          description: item.description,
+          price: item.price,
+          category: item.category,
+          condition: item.condition,
+          status: item.status,
+          images: item.images,
+          views: item.views,
+          likes: item.likes,
+          featured: item.featured,
+          location: item.location,
+          contactInfo: item.contactInfo,
+          tags: item.tags,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          daysAgo: daysAgo,
+          isRecent: isRecent,
+          seller: {
+            id: item.userId._id,
+            name: item.userId.name,
+            email: item.userId.email,
+            avatar: item.userId.avatar,
+            distance: seller?.distance || 0,
+            location: seller?.location || {
+              city: item.userId.location?.city || '',
+              state: item.userId.location?.state || ''
+            }
           }
-        }
-      };
-    });
+        };
+      });
     
     // Count goal setters with and without exact location
     const withExactLocation = nearbyGoalSetters.filter(gs => gs.hasExactLocation).length;
@@ -488,6 +609,183 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Get nearby marketplace items error:", error);
     res.status(500).json({ message: "Failed to fetch nearby marketplace items" });
+  }
+});
+
+// Get seller stats for goal setter dashboard
+router.get("/stats/seller", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get active marketplace listings
+    const activeListings = await Marketplace.countDocuments({ 
+      userId, 
+      status: 'active' 
+    });
+
+    // Get sold listings
+    const soldListings = await Marketplace.countDocuments({ 
+      userId, 
+      status: 'sold' 
+    });
+
+    // Get total earnings from sold items
+    const earnings = await MarketplaceIncome.aggregate([
+      { $match: { sellerId: new mongoose.Types.ObjectId(userId), status: 'confirmed' } },
+      { $group: { _id: null, totalEarnings: { $sum: '$amount' } } }
+    ]);
+
+    const totalEarnings = earnings.length > 0 ? earnings[0].totalEarnings : 0;
+
+    // Get pending marketplace items
+    const pendingListings = await Marketplace.countDocuments({ 
+      userId, 
+      status: 'pending' 
+    });
+
+    res.json({
+      activeListings,
+      soldListings,
+      totalEarnings,
+      pendingListings
+    });
+  } catch (error) {
+    console.error("Get seller stats error:", error);
+    res.status(500).json({ message: "Failed to fetch seller stats" });
+  }
+});
+
+// ==================== FEEDBACK & RATING ENDPOINTS ====================
+
+// Submit feedback/rating for a purchased item
+router.post('/feedback/:itemId', requireAuth, async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const buyerId = new mongoose.Types.ObjectId(req.user.id);
+    const { rating, categoryRatings, isGenuine, comment, orderId } = req.body;
+
+    // Validate rating
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+    }
+
+    // Validate comment length
+    if (comment && (comment.length < 5 || comment.length > 500)) {
+      return res.status(400).json({ message: 'Comment must be between 5 and 500 characters' });
+    }
+
+    // Get the item details
+    const item = await Marketplace.findById(itemId).populate('userId', 'name');
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+
+    const sellerId = item.userId._id;
+
+    // Check if buyer already left feedback for this item
+    const existingFeedback = await MarketplaceFeedback.findOne({
+      itemId: new mongoose.Types.ObjectId(itemId),
+      buyerId
+    });
+
+    if (existingFeedback) {
+      return res.status(400).json({ message: 'You have already left feedback for this item' });
+    }
+
+    // Verify buyer purchased this item (check order)
+    if (orderId) {
+      const order = await Order.findById(orderId);
+      if (!order || order.buyerId.toString() !== buyerId.toString()) {
+        return res.status(403).json({ message: 'Invalid purchase verification' });
+      }
+    }
+
+    // Create feedback record
+    const feedback = new MarketplaceFeedback({
+      itemId: new mongoose.Types.ObjectId(itemId),
+      orderId: orderId ? new mongoose.Types.ObjectId(orderId) : null,
+      buyerId,
+      sellerId,
+      rating,
+      categoryRatings: categoryRatings || {},
+      isGenuine: isGenuine !== false,
+      comment: comment?.trim() || '',
+      buyerName: req.user.name,
+      itemTitle: item.title,
+      // Auto-verify 5-star genuine reviews
+      verified: rating === 5 && isGenuine
+    });
+
+    await feedback.save();
+
+    // Update seller stats
+    const sellerRating = await MarketplaceFeedback.getSellerRating(sellerId);
+    await User.findByIdAndUpdate(sellerId, {
+      'marketplaceStats.averageRating': sellerRating.averageRating,
+      'marketplaceStats.totalReviews': sellerRating.totalReviews,
+      'marketplaceStats.genuinePercentage': sellerRating.genuinePercentage,
+      'trustBadge.level': sellerRating.trustLevel,
+      'trustBadge.lastUpdated': new Date()
+    });
+
+    res.json({
+      message: 'Feedback submitted successfully',
+      feedback: feedback,
+      sellerRating
+    });
+  } catch (error) {
+    console.error('Feedback submission error:', error);
+    res.status(500).json({ message: 'Failed to submit feedback' });
+  }
+});
+
+// Get seller reviews
+router.get('/reviews/seller/:sellerId', async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+    const { page = 1, limit = 5 } = req.query;
+
+    const result = await MarketplaceFeedback.getSellerReviews(
+      sellerId,
+      parseInt(page),
+      parseInt(limit)
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('Get seller reviews error:', error);
+    res.status(500).json({ message: 'Failed to fetch reviews' });
+  }
+});
+
+// Get seller profile with rating and stats
+router.get('/seller-profile/:sellerId', async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+
+    // Get seller user info
+    const seller = await User.findById(sellerId).select(
+      'name avatar email marketplaceStats trustBadge location'
+    );
+
+    if (!seller) {
+      return res.status(404).json({ message: 'Seller not found' });
+    }
+
+    // Get seller rating
+    const rating = await MarketplaceFeedback.getSellerRating(sellerId);
+
+    // Get recent reviews
+    const reviews = await MarketplaceFeedback.getSellerReviews(sellerId, 1, 5);
+
+    res.json({
+      seller: seller.toObject(),
+      rating,
+      recentReviews: reviews.reviews
+    });
+  } catch (error) {
+    console.error('Get seller profile error:', error);
+    res.status(500).json({ message: 'Failed to fetch seller profile' });
   }
 });
 

@@ -1,10 +1,13 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth.js";
-import User from "../models/User.js";
+import { body, validationResult } from "express-validator";
+import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { requireAuth } from "../middleware/auth.js";
+import User from "../models/User.js";
+import { buildAuthPayload, buildUserResponse, ensureUserRoleArray } from "../utils/roles.js";
 
 const router = Router();
 
@@ -62,11 +65,11 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-// Update user profile (name only - email cannot be changed)
+// Update user profile (name, phone, address - email cannot be changed)
 router.put("/", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name } = req.body;
+    const { name, phone, address } = req.body;
     
     // Validate required fields
     if (!name) {
@@ -75,13 +78,25 @@ router.put("/", requireAuth, async (req, res) => {
       });
     }
     
-    // Update user profile (only name, email cannot be changed)
+    // Build update object
+    const updateData = {
+      name: name.trim(),
+      updatedAt: new Date()
+    };
+    
+    // Add optional fields if provided
+    if (phone !== undefined) {
+      updateData.phone = phone ? phone.trim() : null;
+    }
+    
+    if (address !== undefined) {
+      updateData.address = address ? address.trim() : null;
+    }
+    
+    // Update user profile (name, phone, address; email cannot be changed)
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { 
-        name: name.trim(),
-        updatedAt: new Date()
-      },
+      updateData,
       { new: true, select: '-passwordHash -firebaseUid' }
     );
     
@@ -333,6 +348,67 @@ router.get("/stats", requireAuth, async (req, res) => {
   }
 });
 
+// Switch role (goal_setter <-> buyer). Admin cannot be switched here.
+router.put(
+  "/role",
+  requireAuth,
+  [body("role").isIn(["goal_setter", "buyer"])],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+
+    try {
+      const userId = req.user.id;
+      const { role } = req.body;
+
+      const user = await User.findById(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      if (user.role === "admin") return res.status(403).json({ message: "Admin role cannot be switched" });
+
+      await ensureUserRoleArray(user);
+
+      let rolesUpdated = false;
+      if (!Array.isArray(user.roles)) {
+        user.roles = [];
+        rolesUpdated = true;
+      }
+
+      if (!user.roles.includes(role)) {
+        user.roles.push(role);
+        rolesUpdated = true;
+      }
+
+      const roleChanged = user.role !== role;
+      if (roleChanged) {
+        user.role = role;
+        rolesUpdated = true;
+      }
+
+      if (rolesUpdated) {
+        await user.save();
+      }
+
+      const message = roleChanged ? "Role updated" : "Role unchanged";
+
+      const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+      const authPayload = buildAuthPayload(user);
+      const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
+      const responseUser = buildUserResponse(user);
+
+      return res.json({
+        message,
+        token,
+        user: responseUser,
+      });
+    } catch (e) {
+      console.error("Switch role error", e);
+      return res.status(500).json({ message: "Failed to switch role" });
+    }
+  }
+);
+
 export default router;
 
 // Helper function to calculate distance between two coordinates (Haversine formula)
@@ -470,7 +546,7 @@ router.get("/nearby-buyers", requireAuth, async (req, res) => {
     
     // Find buyers with location data
     const allBuyers = await User.find({
-      role: 'buyer',
+      roles: 'buyer',
       _id: { $ne: userId },
       'location.latitude': { $exists: true },
       'location.longitude': { $exists: true }
@@ -559,7 +635,7 @@ router.get("/nearby-goal-setters", requireAuth, async (req, res) => {
     // Find goal setters with location data
     // First try to find goal setters with exact coordinates
     let goalSetters = await User.find({
-      role: 'goal_setter',
+      roles: 'goal_setter',
       _id: { $ne: userId },
       'location.latitude': { $exists: true },
       'location.longitude': { $exists: true }
@@ -573,7 +649,7 @@ router.get("/nearby-goal-setters", requireAuth, async (req, res) => {
     if (goalSetters.length === 0) {
       console.log('No goal setters with exact coordinates found, searching for fallback options...');
       const allGoalSetters = await User.find({
-        role: 'goal_setter',
+        roles: 'goal_setter',
         _id: { $ne: userId }
       }).select('name email avatar location geoPreferences createdAt');
       

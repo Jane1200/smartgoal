@@ -37,7 +37,9 @@ export default function Finances() {
   const [viewMode, setViewMode] = useState('all-time'); // 'current-month' or 'all-time'
   const [formErrors, setFormErrors] = useState({});
   const [expenseAlerts, setExpenseAlerts] = useState([]);
-  const [showExpenseTips, setShowExpenseTips] = useState(false);
+
+  // Real-time automation states
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Form states
   const [showIncomeForm, setShowIncomeForm] = useState(false);
@@ -58,6 +60,20 @@ export default function Finances() {
   useEffect(() => {
     fetchFinanceData();
   }, [viewMode]);
+
+  // Real-time auto-refresh with polling
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing finance data...');
+      fetchFinanceData();
+    }, 30000); // Refresh every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, viewMode]);
+
+
 
   // Automatically recalculate totals when entries change
   useEffect(() => {
@@ -146,7 +162,6 @@ export default function Finances() {
       
       // Use server summary if available, otherwise use calculated totals
       if (summaryResponse.status === 'fulfilled') {
-        console.log('Finance summary response:', summaryResponse.value.data);
         const serverData = summaryResponse.value.data;
         setFinanceData({
           ...serverData,
@@ -179,6 +194,42 @@ export default function Finances() {
     return Math.max(0, income - expense);
   };
 
+  // Get category type for 50/30/20 rule
+  const getCategoryType = (category) => {
+    const needs = ['housing', 'food', 'transport', 'healthcare'];
+    const wants = ['entertainment', 'shopping', 'travel'];
+    const savings = ['education'];
+    
+    if (needs.includes(category)) return { type: 'Needs', emoji: '🏠', badge: 'primary' };
+    if (wants.includes(category)) return { type: 'Wants', emoji: '🎭', badge: 'warning' };
+    if (savings.includes(category)) return { type: 'Savings', emoji: '📚', badge: 'success' };
+    return { type: 'Other', emoji: '📌', badge: 'secondary' };
+  };
+
+  // Categorize expenses into Needs, Wants, and Savings (50/30/20 rule)
+  const categorizeExpensesByType = (expenseEntries) => {
+    const needs = ['housing', 'food', 'transport', 'healthcare']; // Essential expenses
+    const wants = ['entertainment', 'shopping', 'travel']; // Non-essential expenses
+    const savings = ['education']; // Investment in future
+    
+    const needsExpenses = expenseEntries.filter(entry => needs.includes(entry.category));
+    const wantsExpenses = expenseEntries.filter(entry => wants.includes(entry.category));
+    const savingsExpenses = expenseEntries.filter(entry => savings.includes(entry.category));
+    const otherExpenses = expenseEntries.filter(entry => entry.category === 'other');
+    
+    const needsTotal = needsExpenses.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    const wantsTotal = wantsExpenses.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    const savingsTotal = savingsExpenses.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    const otherTotal = otherExpenses.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    
+    return {
+      needs: { total: needsTotal, entries: needsExpenses },
+      wants: { total: wantsTotal, entries: wantsExpenses },
+      savings: { total: savingsTotal, entries: savingsExpenses },
+      other: { total: otherTotal, entries: otherExpenses }
+    };
+  };
+
   // Analyze expenses and generate alerts/suggestions
   const analyzeExpenses = (incomeEntries, expenseEntries) => {
     const alerts = [];
@@ -207,13 +258,98 @@ export default function Finances() {
       })
       .reduce((sum, entry) => sum + (entry.amount || 0), 0);
 
+    // Get current month expenses for 50/30/20 analysis
+    const currentMonthExpenses = expenseEntries.filter(entry => {
+      const entryDate = new Date(entry.date);
+      return entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
+    });
+
+    // Categorize expenses by type (Needs/Wants/Savings)
+    const categorized = categorizeExpensesByType(currentMonthExpenses);
+    
+    // Calculate 50/30/20 percentages
+    if (monthlyIncome > 0) {
+      const needsPercentage = (categorized.needs.total / monthlyIncome) * 100;
+      const wantsPercentage = (categorized.wants.total / monthlyIncome) * 100;
+      const actualSavings = monthlyIncome - monthlyExpenses;
+      const savingsPercentage = (actualSavings / monthlyIncome) * 100;
+      
+      // Alert if needs exceed 50%
+      if (needsPercentage > 50) {
+        alerts.push({
+          type: 'warning',
+          title: '50/30/20 Rule: Needs Alert',
+          message: `Your essential expenses (${needsPercentage.toFixed(1)}%) exceed the recommended 50% of income. Consider ways to reduce housing, food, or transport costs.`,
+          icon: '🏠'
+        });
+      }
+      
+      // Alert if wants exceed 30%
+      if (wantsPercentage > 30) {
+        const excessWants = categorized.wants.total - (monthlyIncome * 0.30);
+        alerts.push({
+          type: 'warning',
+          title: '50/30/20 Rule: Wants Alert',
+          message: `Your discretionary spending (${wantsPercentage.toFixed(1)}%) exceeds the recommended 30%. You could save ₹${excessWants.toLocaleString()} by reducing entertainment, shopping, or travel expenses.`,
+          icon: '🎭'
+        });
+        
+        // Provide specific suggestions for reducing wants
+        if (categorized.wants.entries.length > 0) {
+          const categoryTotals = {};
+          categorized.wants.entries.forEach(entry => {
+            categoryTotals[entry.category] = (categoryTotals[entry.category] || 0) + (entry.amount || 0);
+          });
+          
+          const topWantCategory = Object.entries(categoryTotals).sort(([,a], [,b]) => b - a)[0];
+          if (topWantCategory) {
+            suggestions.push({
+              type: 'info',
+              title: 'Reduce Non-Essential Spending',
+              message: `Your highest discretionary expense is ${topWantCategory[0]} (₹${topWantCategory[1].toLocaleString()}). Consider cutting back here to increase savings.`,
+              icon: '✂️'
+            });
+          }
+        }
+      }
+      
+      // Alert if savings below 20%
+      if (savingsPercentage < 20) {
+        const targetSavings = monthlyIncome * 0.20;
+        const savingsGap = targetSavings - actualSavings;
+        alerts.push({
+          type: 'danger',
+          title: '50/30/20 Rule: Savings Alert',
+          message: `Your savings rate (${savingsPercentage.toFixed(1)}%) is below the recommended 20%. You need to save ₹${savingsGap.toLocaleString()} more to reach your target.`,
+          icon: '💰'
+        });
+        
+        // Suggest specific areas to cut
+        if (categorized.wants.total > 0) {
+          suggestions.push({
+            type: 'tip',
+            title: 'Increase Savings Goal',
+            message: `You're spending ₹${categorized.wants.total.toLocaleString()} on wants. Reducing this by ${Math.min(100, (savingsGap / categorized.wants.total * 100)).toFixed(0)}% would help you reach the 20% savings target.`,
+            icon: '🎯'
+          });
+        }
+      } else {
+        suggestions.push({
+          type: 'success',
+          title: 'Great Savings Rate!',
+          message: `You're saving ${savingsPercentage.toFixed(1)}% of your income, which meets or exceeds the 20% target. Keep up the good work!`,
+          icon: '🌟'
+        });
+      }
+    }
+
     // Check for expense alerts
     if (monthlyExpenses > monthlyIncome && monthlyIncome > 0) {
       const overspend = monthlyExpenses - monthlyIncome;
       alerts.push({
         type: 'danger',
         title: 'Monthly Overspending Alert!',
-        message: `You're spending ₹${overspend.toLocaleString()} more than you earn this month.`,
+        message: `You're spending ₹${overspend.toLocaleString()} more than you earn this month. Review your expenses immediately.`,
         icon: '⚠️'
       });
     }
@@ -286,15 +422,6 @@ export default function Finances() {
     }
 
     // Generate general tips
-    if (monthlyExpenses > monthlyIncome * 0.8) {
-      suggestions.push({
-        type: 'tip',
-        title: 'Budgeting Tip',
-        message: 'Try the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings.',
-        icon: '💡'
-      });
-    }
-
     if (monthlyIncome > 0 && (monthlyExpenses / monthlyIncome) > 0.9) {
       suggestions.push({
         type: 'tip',
@@ -483,38 +610,75 @@ export default function Finances() {
   }
 
   return (
-    <div className="container-xxl py-4">
-      <div className="row">
-        <div className="col-12">
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <div>
-              <h1 className="h3 mb-1">My Finances</h1>
-              <p className="text-muted mb-0">Track your income, expenses, and savings</p>
-            </div>
-            <div className="btn-group" role="group">
+    <>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .finance-card-animate {
+          transition: all 0.3s ease-in-out;
+        }
+        .finance-card-animate:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+      `}</style>
+      <div className="container-xxl py-4">
+        <div className="row">
+          <div className="col-12">
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <h1 className="h3 mb-1">My Finances</h1>
+                <p className="text-muted mb-0">Track your income, expenses, and savings</p>
+              </div>
+              <div className="d-flex gap-2 align-items-center">
+                {/* Auto-refresh toggle */}
               <button
                 type="button"
-                className={`btn ${viewMode === 'all-time' ? 'btn-primary' : 'btn-outline-primary'}`}
-                onClick={() => setViewMode('all-time')}
+                className={`btn btn-sm ${autoRefresh ? 'btn-success' : 'btn-outline-secondary'}`}
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                title={autoRefresh ? 'Disable auto-refresh' : 'Enable auto-refresh'}
               >
-                {viewMode === 'all-time' && <span className="me-1">✓</span>}
-                All Time
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  {autoRefresh ? (
+                    <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+                  ) : (
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                  )}
+                </svg>
               </button>
-              <button
-                type="button"
-                className={`btn ${viewMode === 'current-month' ? 'btn-primary' : 'btn-outline-primary'}`}
-                onClick={() => setViewMode('current-month')}
-              >
-                {viewMode === 'current-month' && <span className="me-1">✓</span>}
-                Current Month
-              </button>
+
+              {/* View mode toggle */}
+              <div className="btn-group" role="group">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${viewMode === 'all-time' ? 'btn-primary' : 'btn-outline-primary'}`}
+                  onClick={() => setViewMode('all-time')}
+                >
+                  {viewMode === 'all-time' && <span className="me-1">✓</span>}
+                  All Time
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${viewMode === 'current-month' ? 'btn-primary' : 'btn-outline-primary'}`}
+                  onClick={() => setViewMode('current-month')}
+                >
+                  {viewMode === 'current-month' && <span className="me-1">✓</span>}
+                  Current Month
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Financial Overview */}
-          <div className="row g-4 mb-4">
-            <div className="col-md-4">
-              <div className="card text-center">
+          <div className="row g-4 mb-4" style={{ display: 'flex', flexWrap: 'nowrap' }}>
+            <div style={{ flex: '0 0 20%' }}>
+              <div className="card text-center finance-card-animate">
                 <div className="card-body">
                   <div className="text-success mb-2">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -524,20 +688,27 @@ export default function Finances() {
                       <circle cx="12" cy="12" r="2"/>
                     </svg>
                   </div>
-                  <h4 className="text-success">₹{financeData.monthlyIncome?.toLocaleString() || '0'}</h4>
+                  <h4 className="text-success">
+                    ₹{(viewMode === 'all-time' ? financeData.totalIncome : financeData.monthlyIncome)?.toLocaleString() || '0'}
+                  </h4>
                   <p className="text-muted mb-0">
-                    {viewMode === 'all-time' ? 'Total Income' : 'Current Month Income'}
+                    {viewMode === 'all-time' ? 'Total Income (All Time)' : 'Current Month Income'}
                     {viewMode === 'current-month' && (
                       <small className="text-info d-block mt-1">
                         📅 {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </small>
+                    )}
+                    {viewMode === 'all-time' && (
+                      <small className="text-success d-block mt-1">
+                        💰 From {incomeEntries.length} income entries
                       </small>
                     )}
                   </p>
                 </div>
               </div>
             </div>
-            <div className="col-md-4">
-              <div className="card text-center">
+            <div style={{ flex: '0 0 20%' }}>
+              <div className="card text-center finance-card-animate">
                 <div className="card-body">
                   <div className="text-danger mb-2">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -547,20 +718,27 @@ export default function Finances() {
                       <circle cx="12" cy="12" r="2"/>
                     </svg>
                   </div>
-                  <h4 className="text-danger">₹{financeData.monthlyExpense?.toLocaleString() || '0'}</h4>
+                  <h4 className="text-danger">
+                    ₹{(viewMode === 'all-time' ? financeData.totalExpenses : financeData.monthlyExpense)?.toLocaleString() || '0'}
+                  </h4>
                   <p className="text-muted mb-0">
-                    {viewMode === 'all-time' ? 'Total Expenses' : 'Current Month Expenses'}
+                    {viewMode === 'all-time' ? 'Total Expenses (All Time)' : 'Current Month Expenses'}
                     {viewMode === 'current-month' && (
                       <small className="text-info d-block mt-1">
                         📅 {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </small>
+                    )}
+                    {viewMode === 'all-time' && (
+                      <small className="text-danger d-block mt-1">
+                        💸 From {expenseEntries.length} expense entries
                       </small>
                     )}
                   </p>
                 </div>
               </div>
             </div>
-            <div className="col-md-4">
-              <div className="card text-center">
+            <div style={{ flex: '0 0 20%' }}>
+              <div className="card text-center finance-card-animate">
                 <div className="card-body">
                   <div className="text-primary mb-2">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -570,149 +748,286 @@ export default function Finances() {
                       <line x1="3" y1="10" x2="21" y2="10"/>
                     </svg>
                   </div>
-                  <h4 className="text-primary">₹{financeData.monthlySavings?.toLocaleString() || '0'}</h4>
+                  <h4 className="text-primary">
+                    ₹{(viewMode === 'all-time' ? financeData.totalSavings : financeData.monthlySavings)?.toLocaleString() || '0'}
+                  </h4>
                   <p className="text-muted mb-0">
-                    {viewMode === 'all-time' ? 'Current Month Savings' : 'Monthly Savings'}
+                    {viewMode === 'all-time' ? 'Total Savings (All Time)' : 'Current Month Savings'}
                     {viewMode === 'current-month' && (
                       <small className="text-info d-block mt-1">
                         📅 {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </small>
+                    )}
+                    {viewMode === 'all-time' && (
+                      <small className="text-primary d-block mt-1">
+                        💎 Income - Expenses
                       </small>
                     )}
                   </p>
                 </div>
               </div>
             </div>
-            <div className="col-md-4">
-              <div className="card text-center">
+            <div style={{ flex: '0 0 20%' }}>
+              <div className="card text-center finance-card-animate">
                 <div className="card-body">
                   <div className="text-info mb-2">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 6v6l4 2"/>
                     </svg>
                   </div>
-                  <h4 className="text-info">₹{financeData.totalSavings?.toLocaleString() || '0'}</h4>
-                  <p className="text-muted mb-0">Total Savings</p>
+                  <h4 className="text-info">
+                    ₹{financeData.monthlySavings?.toLocaleString() || '0'}
+                  </h4>
+                  <p className="text-muted mb-0">Current Month Savings</p>
                   <small className="text-info d-block mt-1">
-                    📊 Calculated from {incomeEntries.length + expenseEntries.length} entries
+                    📅 {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                   </small>
                 </div>
               </div>
             </div>
-            <div className="col-md-4">
-              <div className="card text-center">
+            <div style={{ flex: '0 0 20%' }}>
+              <div className="card text-center finance-card-animate">
                 <div className="card-body">
                   <div className="text-warning mb-2">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                     </svg>
                   </div>
-                  <h4 className="text-warning">{financeData.totalSavingsRate?.toFixed(1) || '0.0'}%</h4>
-                  <p className="text-muted mb-0">Savings Rate</p>
+                  <h4 className="text-warning">
+                    {(viewMode === 'all-time' ? financeData.totalSavingsRate : financeData.monthlySavingsRate)?.toFixed(1) || '0.0'}%
+                  </h4>
+                  <p className="text-muted mb-0">
+                    {viewMode === 'all-time' ? 'Overall Savings Rate' : 'Monthly Savings Rate'}
+                  </p>
                   <div className="mt-2">
                     <div className="progress" style={{ height: '6px' }}>
                       <div 
                         className={`progress-bar ${
-                          (financeData.totalSavingsRate || 0) >= 20 ? 'bg-success' :
-                          (financeData.totalSavingsRate || 0) >= 10 ? 'bg-warning' : 'bg-danger'
+                          ((viewMode === 'all-time' ? financeData.totalSavingsRate : financeData.monthlySavingsRate) || 0) >= 20 ? 'bg-success' :
+                          ((viewMode === 'all-time' ? financeData.totalSavingsRate : financeData.monthlySavingsRate) || 0) >= 10 ? 'bg-warning' : 'bg-danger'
                         }`}
-                        style={{ width: `${Math.min(100, financeData.totalSavingsRate || 0)}%` }}
+                        style={{ width: `${Math.min(100, (viewMode === 'all-time' ? financeData.totalSavingsRate : financeData.monthlySavingsRate) || 0)}%` }}
                       ></div>
                     </div>
                   </div>
                   <small className="text-muted d-block mt-1">
-                    {financeData.totalSavingsRate >= 20 ? 'Excellent!' :
-                     financeData.totalSavingsRate >= 10 ? 'Good' :
-                     financeData.totalSavingsRate >= 5 ? 'Fair' : 'Needs improvement'}
+                    {((viewMode === 'all-time' ? financeData.totalSavingsRate : financeData.monthlySavingsRate) || 0) >= 20 ? 'Excellent!' :
+                     ((viewMode === 'all-time' ? financeData.totalSavingsRate : financeData.monthlySavingsRate) || 0) >= 10 ? 'Good' :
+                     ((viewMode === 'all-time' ? financeData.totalSavingsRate : financeData.monthlySavingsRate) || 0) >= 5 ? 'Fair' : 'Needs improvement'}
                   </small>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Expense Alerts and Tips */}
-          {expenseAlerts.length > 0 && (
+          {/* 50/30/20 Budget Breakdown */}
+          {financeData.monthlyIncome > 0 && (
             <div className="row g-4 mb-4">
               <div className="col-12">
                 <div className="card">
-                  <div className="card-header d-flex justify-content-between align-items-center">
+                  <div className="card-header">
                     <div className="d-flex align-items-center gap-2">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 12l2 2 4-4"/>
                         <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
                       </svg>
-                      <h5 className="mb-0">Expense Insights & Tips</h5>
+                      <h5 className="mb-0">50/30/20 Budget Rule Analysis</h5>
                     </div>
-                    <div className="d-flex gap-2">
-                      <button 
-                        className="btn btn-outline-primary btn-sm"
-                        onClick={() => setShowExpenseTips(!showExpenseTips)}
-                      >
-                        {showExpenseTips ? 'Hide Tips' : 'Show Tips'}
-                      </button>
-                      <button 
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={() => setExpenseAlerts([])}
-                      >
-                        Dismiss All
-                      </button>
-                    </div>
+                    <small className="text-muted">Recommended: 50% Needs, 30% Wants, 20% Savings</small>
                   </div>
-                  {showExpenseTips && (
-                    <div className="card-body">
-                      <div className="row g-3">
-                        {expenseAlerts.map((alert, index) => (
-                          <div key={index} className="col-md-6">
-                            <div className={`alert alert-${alert.type === 'tip' ? 'info' : alert.type} d-flex align-items-start`}>
-                              <div className="me-3 fs-4">{alert.icon}</div>
-                              <div className="flex-grow-1">
-                                <h6 className="alert-heading mb-1">{alert.title}</h6>
-                                <p className="mb-0 small">{alert.message}</p>
-                              </div>
-                              <button 
-                                type="button" 
-                                className="btn-close btn-close-sm"
-                                onClick={() => setExpenseAlerts(prev => prev.filter((_, i) => i !== index))}
-                              ></button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="card-body">
+                    {(() => {
+                      const currentDate = new Date();
+                      const currentMonth = currentDate.getMonth();
+                      const currentYear = currentDate.getFullYear();
                       
-                      {/* Additional Tips Section */}
-                      <div className="mt-4">
-                        <h6 className="text-muted mb-3">💡 General Financial Tips</h6>
-                        <div className="row g-3">
-                          <div className="col-md-4">
-                            <div className="card border-info">
-                              <div className="card-body text-center">
-                                <div className="text-info mb-2">📊</div>
-                                <h6 className="card-title">Track Daily</h6>
-                                <p className="small text-muted mb-0">Record expenses daily to maintain accurate financial records.</p>
+                      const currentMonthExpenses = expenseEntries.filter(entry => {
+                        const entryDate = new Date(entry.date);
+                        return entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
+                      });
+                      
+                      const categorized = categorizeExpensesByType(currentMonthExpenses);
+                      const monthlyIncome = financeData.monthlyIncome || 0;
+                      const monthlyExpense = financeData.monthlyExpense || 0;
+                      const actualSavings = monthlyIncome - monthlyExpense;
+                      
+                      const needsPercentage = monthlyIncome > 0 ? (categorized.needs.total / monthlyIncome) * 100 : 0;
+                      const wantsPercentage = monthlyIncome > 0 ? (categorized.wants.total / monthlyIncome) * 100 : 0;
+                      const savingsPercentage = monthlyIncome > 0 ? (actualSavings / monthlyIncome) * 100 : 0;
+                      
+                      const targetNeeds = monthlyIncome * 0.50;
+                      const targetWants = monthlyIncome * 0.30;
+                      const targetSavings = monthlyIncome * 0.20;
+                      
+                      return (
+                        <>
+                          <div className="row g-4 mb-4">
+                            {/* Needs */}
+                            <div className="col-md-4">
+                              <div className="card border-primary">
+                                <div className="card-body">
+                                  <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 className="mb-0">🏠 Needs (Essential)</h6>
+                                    <span className={`badge ${needsPercentage <= 50 ? 'bg-success' : 'bg-warning'}`}>
+                                      {needsPercentage.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <div className="mb-2">
+                                    <div className="d-flex justify-content-between small text-muted mb-1">
+                                      <span>Current: ₹{categorized.needs.total.toLocaleString()}</span>
+                                      <span>Target: ₹{targetNeeds.toLocaleString()}</span>
+                                    </div>
+                                    <div className="progress" style={{ height: '8px' }}>
+                                      <div 
+                                        className={`progress-bar ${needsPercentage <= 50 ? 'bg-success' : 'bg-warning'}`}
+                                        style={{ width: `${Math.min(100, (categorized.needs.total / targetNeeds) * 100)}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                  <small className="text-muted">
+                                    Housing, Food, Transport, Healthcare
+                                  </small>
+                                  {needsPercentage > 50 && (
+                                    <div className="alert alert-warning mt-2 mb-0 py-1 px-2 small">
+                                      ⚠️ Exceeds 50% target
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Wants */}
+                            <div className="col-md-4">
+                              <div className="card border-info">
+                                <div className="card-body">
+                                  <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 className="mb-0">🎭 Wants (Discretionary)</h6>
+                                    <span className={`badge ${wantsPercentage <= 30 ? 'bg-success' : 'bg-warning'}`}>
+                                      {wantsPercentage.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <div className="mb-2">
+                                    <div className="d-flex justify-content-between small text-muted mb-1">
+                                      <span>Current: ₹{categorized.wants.total.toLocaleString()}</span>
+                                      <span>Target: ₹{targetWants.toLocaleString()}</span>
+                                    </div>
+                                    <div className="progress" style={{ height: '8px' }}>
+                                      <div 
+                                        className={`progress-bar ${wantsPercentage <= 30 ? 'bg-success' : 'bg-warning'}`}
+                                        style={{ width: `${Math.min(100, (categorized.wants.total / targetWants) * 100)}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                  <small className="text-muted">
+                                    Entertainment, Shopping, Travel
+                                  </small>
+                                  {wantsPercentage > 30 && (
+                                    <div className="alert alert-warning mt-2 mb-0 py-1 px-2 small">
+                                      ⚠️ Exceeds 30% target - Consider reducing
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Savings */}
+                            <div className="col-md-4">
+                              <div className="card border-success">
+                                <div className="card-body">
+                                  <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 className="mb-0">💰 Savings & Goals</h6>
+                                    <span className={`badge ${savingsPercentage >= 20 ? 'bg-success' : 'bg-danger'}`}>
+                                      {savingsPercentage.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <div className="mb-2">
+                                    <div className="d-flex justify-content-between small text-muted mb-1">
+                                      <span>Current: ₹{actualSavings.toLocaleString()}</span>
+                                      <span>Target: ₹{targetSavings.toLocaleString()}</span>
+                                    </div>
+                                    <div className="progress" style={{ height: '8px' }}>
+                                      <div 
+                                        className={`progress-bar ${savingsPercentage >= 20 ? 'bg-success' : 'bg-danger'}`}
+                                        style={{ width: `${Math.min(100, (actualSavings / targetSavings) * 100)}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                  <small className="text-muted">
+                                    Emergency Fund, Goals, Investments
+                                  </small>
+                                  {savingsPercentage < 20 && (
+                                    <div className="alert alert-danger mt-2 mb-0 py-1 px-2 small">
+                                      ⚠️ Below 20% target - Increase savings
+                                    </div>
+                                  )}
+                                  {savingsPercentage >= 20 && (
+                                    <div className="alert alert-success mt-2 mb-0 py-1 px-2 small">
+                                      ✅ Great job! Meeting savings goal
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
-                          <div className="col-md-4">
-                            <div className="card border-success">
-                              <div className="card-body text-center">
-                                <div className="text-success mb-2">🎯</div>
-                                <h6 className="card-title">Set Limits</h6>
-                                <p className="small text-muted mb-0">Set monthly spending limits for each category to control expenses.</p>
+                          
+                          {/* Budget Summary */}
+                          <div className="alert alert-info mb-0">
+                            <div className="d-flex align-items-start gap-2">
+                              <div className="fs-4">💡</div>
+                              <div className="flex-grow-1">
+                                <h6 className="alert-heading mb-2">SmartGoal Budget Planner Insights</h6>
+                                <p className="mb-2 small">
+                                  Based on your monthly income of <strong>₹{monthlyIncome.toLocaleString()}</strong>, 
+                                  here's how your spending compares to the 50/30/20 rule:
+                                </p>
+                                <ul className="mb-0 small">
+                                  {needsPercentage > 50 && (
+                                    <li>Your essential expenses are <strong>{(needsPercentage - 50).toFixed(1)}%</strong> above the recommended level. Look for ways to reduce housing, food, or transport costs.</li>
+                                  )}
+                                  {wantsPercentage > 30 && (
+                                    <li>You're spending <strong>₹{(categorized.wants.total - targetWants).toLocaleString()}</strong> more on discretionary items than recommended. Cutting back on entertainment, shopping, or travel could boost your savings.</li>
+                                  )}
+                                  {savingsPercentage < 20 && (
+                                    <li>To reach the 20% savings target, you need to save an additional <strong>₹{(targetSavings - actualSavings).toLocaleString()}</strong> per month. This will help you achieve your financial goals faster!</li>
+                                  )}
+                                  {needsPercentage <= 50 && wantsPercentage <= 30 && savingsPercentage >= 20 && (
+                                    <li>Excellent! You're following the 50/30/20 rule perfectly. Keep up the great financial discipline!</li>
+                                  )}
+                                </ul>
                               </div>
                             </div>
                           </div>
-                          <div className="col-md-4">
-                            <div className="card border-warning">
-                              <div className="card-body text-center">
-                                <div className="text-warning mb-2">⏰</div>
-                                <h6 className="card-title">Review Weekly</h6>
-                                <p className="small text-muted mb-0">Review your spending patterns weekly to make adjustments.</p>
-                              </div>
-                            </div>
-                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Expense Alerts */}
+          {expenseAlerts.length > 0 && (
+            <div className="row g-4 mb-4">
+              <div className="col-12">
+                <div className="row g-3">
+                  {expenseAlerts.map((alert, index) => (
+                    <div key={index} className="col-md-6">
+                      <div className={`alert alert-${alert.type === 'tip' ? 'info' : alert.type} d-flex align-items-start mb-0`}>
+                        <div className="me-3 fs-5">{alert.icon}</div>
+                        <div className="flex-grow-1">
+                          <h6 className="alert-heading mb-1">{alert.title}</h6>
+                          <p className="mb-0 small">{alert.message}</p>
                         </div>
+                        <button 
+                          type="button" 
+                          className="btn-close btn-close-sm"
+                          onClick={() => setExpenseAlerts(prev => prev.filter((_, i) => i !== index))}
+                        ></button>
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
             </div>
@@ -810,18 +1125,26 @@ export default function Finances() {
                             <th>Sl.no</th>
                             <th>Date</th>
                             <th>Category</th>
+                            <th>Type</th>
                             <th>Description</th>
                             <th>Amount</th>
                             <th>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {expenseEntries.map((entry, index) => (
+                          {expenseEntries.map((entry, index) => {
+                            const categoryType = getCategoryType(entry.category);
+                            return (
                             <tr key={entry._id}>
                               <td>{index + 1}</td>
                               <td>{new Date(entry.date).toLocaleDateString()}</td>
-                              <td>{entry.category}</td>
-                              <td>{entry.description || '-'}</td>
+                              <td><small className="text-capitalize">{entry.category.replace('_', ' ')}</small></td>
+                              <td>
+                                <span className={`badge bg-${categoryType.badge}`}>
+                                  {categoryType.emoji} {categoryType.type}
+                                </span>
+                              </td>
+                              <td><small>{entry.description || '-'}</small></td>
                               <td className="text-danger fw-bold">₹{entry.amount?.toLocaleString()}</td>
                               <td>
                                 <button 
@@ -832,7 +1155,8 @@ export default function Finances() {
                                 </button>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -919,9 +1243,15 @@ export default function Finances() {
                             className="form-control"
                             value={incomeForm.date}
                             onChange={(e) => setIncomeForm(prev => ({ ...prev, date: e.target.value }))}
-                            min={new Date().toISOString().split('T')[0]}
+                            min={(() => {
+                              const date = new Date();
+                              date.setDate(1);
+                              return date.toISOString().split('T')[0];
+                            })()}
+                            max={new Date().toISOString().split('T')[0]}
                             required
                           />
+                          <small className="text-muted d-block mt-1">📅 Current month only (1st to today)</small>
                         </div>
                         <div className="col-12">
                           <label htmlFor="incomeDescription" className="form-label">Description</label>
@@ -1023,16 +1353,25 @@ export default function Finances() {
                             required
                           >
                             <option value="">Select Category</option>
-                            <option value="food">Food & Dining</option>
-                            <option value="transport">Transportation</option>
-                            <option value="housing">Housing & Utilities</option>
-                            <option value="healthcare">Healthcare</option>
-                            <option value="entertainment">Entertainment</option>
-                            <option value="shopping">Shopping</option>
-                            <option value="education">Education</option>
-                            <option value="travel">Travel</option>
-                            <option value="other">Other</option>
+                            <optgroup label="🏠 Needs (Essential - 50%)">
+                              <option value="housing">Housing & Utilities</option>
+                              <option value="food">Food & Dining</option>
+                              <option value="transport">Transportation</option>
+                              <option value="healthcare">Healthcare</option>
+                            </optgroup>
+                            <optgroup label="🎭 Wants (Discretionary - 30%)">
+                              <option value="entertainment">Entertainment</option>
+                              <option value="shopping">Shopping</option>
+                              <option value="travel">Travel</option>
+                            </optgroup>
+                            <optgroup label="📚 Savings & Investment (20%)">
+                              <option value="education">Education</option>
+                            </optgroup>
+                            <optgroup label="Other">
+                              <option value="other">Other</option>
+                            </optgroup>
                           </select>
+                          <small className="text-muted">Choose the category that best fits your expense</small>
                         </div>
                         <div className="col-md-6">
                           <label htmlFor="expenseDate" className="form-label">Date</label>
@@ -1042,9 +1381,15 @@ export default function Finances() {
                             className="form-control"
                             value={expenseForm.date}
                             onChange={(e) => setExpenseForm(prev => ({ ...prev, date: e.target.value }))}
-                            min={new Date().toISOString().split('T')[0]}
+                            min={(() => {
+                              const date = new Date();
+                              date.setDate(1);
+                              return date.toISOString().split('T')[0];
+                            })()}
+                            max={new Date().toISOString().split('T')[0]}
                             required
                           />
+                          <small className="text-muted d-block mt-1">📅 Current month only (1st to today)</small>
                         </div>
                         <div className="col-12">
                           <label htmlFor="expenseDescription" className="form-label">Description</label>
@@ -1090,5 +1435,6 @@ export default function Finances() {
         </div>
       </div>
     </div>
+    </>
   );
 }

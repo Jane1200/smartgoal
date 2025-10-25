@@ -1,4 +1,6 @@
 // client/src/utils/validations.js
+import { validateMeaningfulTextSync } from './meaningfulTextValidator.js';
+
 export const validationRules = {
   // Goal validations
   goal: {
@@ -7,10 +9,12 @@ export const validationRules = {
       minLength: 3,
       maxLength: 100,
       pattern: /^[a-zA-Z0-9\s\-_.,!?()]+$/,
+      meaningful: true,
       message: "Goal title must be 3-100 characters and contain only letters, numbers, spaces, and basic punctuation"
     },
     description: {
       maxLength: 500,
+      meaningful: true,
       message: "Description cannot exceed 500 characters"
     },
     targetAmount: {
@@ -90,13 +94,15 @@ export const validationRules = {
       minLength: 3,
       maxLength: 100,
       pattern: /^[a-zA-Z0-9\s\-_.,!?()]+$/,
+      meaningful: true,
       message: "Item title must be 3-100 characters and contain only letters, numbers, spaces, and basic punctuation"
     },
     description: {
       required: true,
       minLength: 10,
       maxLength: 1000,
-      message: "Description must be 10-1000 characters"
+      meaningful: true,
+      message: "Description must be 10-1000 characters with meaningful words"
     },
     price: {
       required: true,
@@ -105,14 +111,30 @@ export const validationRules = {
       type: "number",
       message: "Price must be between ₹100 and ₹1,00,00,000"
     },
+    originalPrice: {
+      min: 100,
+      max: 100000,
+      type: "number",
+      message: "Original price must be between ₹100 and ₹1,00,000"
+    },
+    purchaseDate: {
+      type: "date",
+      minDate: (() => {
+        const date = new Date();
+        date.setFullYear(date.getFullYear() - 10);
+        return date.toISOString().split('T')[0];
+      })(),
+      maxDate: new Date().toISOString().split('T')[0],
+      message: "Purchase date must be within the last 10 years"
+    },
     condition: {
       required: true,
-      enum: ["excellent", "good", "fair", "poor"],
+      enum: ["new", "like-new", "good", "fair", "poor"],
       message: "Please select a valid condition"
     },
     category: {
       required: true,
-      enum: ["electronics", "sports", "books", "other"],
+      enum: ["electronics", "sports", "books", "fashion", "other"],
       message: "Please select a valid category"
     },
   },
@@ -124,12 +146,13 @@ export const validationRules = {
       minLength: 2,
       maxLength: 100,
       pattern: /^[a-zA-Z0-9\s\-_.,!?()]+$/,
+      meaningful: true,
       message: "Item name must be 2-100 characters and contain only letters, numbers, spaces, and basic punctuation"
     },
     url: {
-      // Allow only Amazon, Flipkart, Myntra, Nykaa (and Nykaa Fashion) product URLs
-      pattern: /^https?:\/\/([a-z0-9-]+\.)*(amazon\.(in|com)|flipkart\.com|myntra\.com|nykaa\.com|nykaafashion\.com)\/.+/i,
-      message: "Only Amazon, Flipkart, Myntra, or Nykaa URLs are allowed"
+      // Allow only Amazon, Flipkart, Myntra, Nykaa (and Nykaa Fashion), and Ajio product URLs
+      pattern: /^https?:\/\/([a-z0-9-]+\.)*(amazon\.(in|com)|flipkart\.com|myntra\.com|nykaa\.com|nykaafashion\.com|ajio\.com)\/.+/i,
+      message: "Only Amazon, Flipkart, Myntra, Nykaa, or Ajio URLs are allowed"
     },
     estimatedPrice: {
       min: 0.01,
@@ -234,6 +257,14 @@ export const validateField = (value, rules) => {
     errors.push(rules.message || 'Invalid format');
   }
 
+  // Meaningful text validation (for text fields)
+  if (rules.meaningful && typeof value === 'string' && value.trim().length > 0) {
+    const meaningfulError = validateMeaningfulTextSync('text_field', value);
+    if (meaningfulError) {
+      errors.push(meaningfulError);
+    }
+  }
+
   // Enum validation
   if (rules.enum && !rules.enum.includes(value)) {
     errors.push(rules.message || `Must be one of: ${rules.enum.join(', ')}`);
@@ -257,6 +288,15 @@ export const validateField = (value, rules) => {
   }
 
   return errors;
+};
+
+/**
+ * Live validation for real-time feedback as user types
+ * Returns first error or null if valid
+ */
+export const validateFieldLive = (value, rules, fieldName) => {
+  const errors = validateField(value, rules);
+  return errors.length > 0 ? errors[0] : null;
 };
 
 export const validateForm = (formData, validationSchema) => {
@@ -324,3 +364,21 @@ export const validateFileUpload = (file, options = {}) => {
 
   return errors;
 };
+
+/**
+ * Export meaningful text validator for use in components
+ * Usage in real-time validation:
+ * 
+ * import { validateMeaningfulTextSync } from '@/utils/meaningfulTextValidator';
+ * 
+ * const handleChange = (value) => {
+ *   const error = validateMeaningfulTextSync('description', value);
+ *   setError(error);
+ * };
+ */
+export { 
+  validateMeaningfulTextSync, 
+  validateMeaningfulContent,
+  detectSpamPatterns,
+  validateMeaningfulWords 
+} from './meaningfulTextValidator.js';

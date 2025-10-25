@@ -23,35 +23,6 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
-      const ADMIN_EMAIL = "smartgoaladmin12@gmail.com";
-      const ADMIN_PASSWORD = "Admin@SmartGoal";
-
-      // Admin hardcoded
-      if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-        try {
-          const { data } = await api.post("/auth/login", { email, password, role: "admin" });
-          const newUser = { token: data.token, profile: data.user };
-          setUser(newUser);
-          toast.success("Signed in as Admin");
-          return { ok: true, user: data.user };
-        } catch (apiError) {
-          console.warn("Admin API login failed, fallback:", apiError.message);
-          const adminUser = {
-            token: "hardcoded-admin-token",
-            profile: {
-              id: "admin-hardcoded",
-              name: "Administrator",
-              email: ADMIN_EMAIL,
-              role: "admin",
-              isVerified: true,
-            },
-          };
-          setUser(adminUser);
-          toast.success("Signed in as Admin (Fallback)");
-          return { ok: true, user: adminUser.profile };
-        }
-      }
-
       // Normal user login
       console.log("Attempting login with:", { email, passwordLength: password?.length });
       const { data } = await api.post("/auth/login", { email, password });
@@ -98,10 +69,35 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const updateUser = (profilePatch) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, profile: { ...prev.profile, ...profilePatch } };
+      return next;
+    });
+  };
+
+  const switchRole = async (role) => {
+    try {
+      const { data } = await api.put("/profile/role", { role });
+      setUser((prev) => {
+        const token = data?.token || prev?.token || null; // Preserve existing token if API didn't return one
+        return { token, profile: data.user };
+      });
+      const verb = data?.message === "Role unchanged" ? "Staying as" : "Switched to";
+      toast.success(`${verb} ${data.user.role.replace('_', ' ')}`);
+      return { ok: true, user: data.user };
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || "Failed to switch role";
+      toast.error(msg);
+      return { ok: false, error: msg };
+    }
+  };
+
   const logout = () => setUser(null);
 
   return (
-    <AuthCtx.Provider value={{ user, login, register, loginWithGoogle, logout }}>
+    <AuthCtx.Provider value={{ user, login, register, loginWithGoogle, logout, updateUser, switchRole }}>
       {children}
     </AuthCtx.Provider>
   );

@@ -1,23 +1,14 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext.jsx";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import api, { getFileUrl } from "@/utils/api.js";
 import { toast } from "react-toastify";
 import { validateForm, validationRules, validateFileUpload } from "@/utils/validations.js";
 
 export default function Profile() {
+  const navigate = useNavigate();
   const authContext = useAuth();
   const user = authContext?.user;
-
-  // Redirect if not authenticated
-  if (!user?.token) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // Redirect if not a goal setter
-  if (user?.profile?.role !== "goal_setter") {
-    return <Navigate to="/dashboard-redirect" replace />;
-  }
 
   const { updateUser } = authContext;
   const [loading, setLoading] = useState(true);
@@ -40,7 +31,9 @@ export default function Profile() {
   
   const [editForm, setEditForm] = useState({
     name: "",
-    email: ""
+    email: "",
+    phone: "",
+    address: ""
   });
   
   const [passwordForm, setPasswordForm] = useState({
@@ -66,7 +59,9 @@ export default function Profile() {
       setProfileData(response.data);
       setEditForm({
         name: response.data.name,
-        email: response.data.email
+        email: response.data.email,
+        phone: response.data.phone || "",
+        address: response.data.address || ""
       });
     } catch (error) {
       console.error("Failed to fetch profile:", error);
@@ -95,7 +90,9 @@ export default function Profile() {
     try {
       setSaving(true);
       const response = await api.put("/profile", {
-        name: editForm.name.trim()
+        name: editForm.name.trim(),
+        phone: editForm.phone ? editForm.phone.trim() : "",
+        address: editForm.address ? editForm.address.trim() : ""
       });
 
       toast.success("Profile updated successfully!");
@@ -361,7 +358,7 @@ export default function Profile() {
                   <h5 className="mb-0">Profile Information</h5>
                 </div>
                 <div className="card-body">
-                  <div className="row g-3">
+                      <div className="row g-3">
                     <div className="col-md-6">
                       <label className="form-label text-muted">Full Name</label>
                       <div className="h5 mb-0">{profileData.name}</div>
@@ -371,12 +368,45 @@ export default function Profile() {
                       <div className="h6 mb-0">{profileData.email}</div>
                     </div>
                     <div className="col-md-6">
-                      <label className="form-label text-muted">Account Role</label>
+                      <label className="form-label text-muted">Phone Number</label>
+                      <div className="h6 mb-0">{profileData.phone || 'Not provided'}</div>
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label text-muted">Address</label>
+                      <div className="h6 mb-0">{profileData.address || 'Not provided'}</div>
+                    </div>
+                    <div className="col-md-6 d-flex align-items-center gap-3">
                       <div>
-                        <span className={`badge ${getRoleBadgeColor(profileData.role)} fs-6`}>
-                          {getRoleDisplayName(profileData.role)}
-                        </span>
+                        <label className="form-label text-muted">Account Role</label>
+                        <div>
+                          <span className={`badge ${getRoleBadgeColor(profileData.role)} fs-6`}>
+                            {getRoleDisplayName(profileData.role)}
+                          </span>
+                        </div>
                       </div>
+                      {profileData.role !== 'admin' && (
+                        <div>
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary btn-sm"
+                            onClick={async () => {
+                              const target = profileData.role === 'goal_setter' ? 'buyer' : 'goal_setter';
+                              try {
+                                const res = await authContext.switchRole(target);
+                                if (res?.ok) {
+                                  // Refresh profile panel with new role
+                                  setProfileData((prev) => ({ ...prev, role: res.user.role }));
+                                  // Redirect based on new role
+                                  if (res.user.role === 'buyer') navigate('/buyer-dashboard');
+                                  else if (res.user.role === 'goal_setter') navigate('/dashboard');
+                                }
+                              } catch {}
+                            }}
+                          >
+                            Switch to {profileData.role === 'goal_setter' ? 'Buyer' : 'Goal Setter'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="col-md-6">
                       <label className="form-label text-muted">Account Status</label>
@@ -544,6 +574,28 @@ export default function Profile() {
                             </svg>
                             Email address cannot be changed for security reasons
                           </div>
+                        </div>
+                        <div className="col-12">
+                          <label htmlFor="editPhone" className="form-label">Phone Number</label>
+                          <input
+                            type="tel"
+                            id="editPhone"
+                            className="form-control"
+                            value={editForm.phone}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                            placeholder="Enter your phone number"
+                          />
+                        </div>
+                        <div className="col-12">
+                          <label htmlFor="editAddress" className="form-label">Address</label>
+                          <textarea
+                            id="editAddress"
+                            className="form-control"
+                            value={editForm.address}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, address: e.target.value }))}
+                            placeholder="Enter your address"
+                            rows="3"
+                          ></textarea>
                         </div>
                       </div>
                     </div>

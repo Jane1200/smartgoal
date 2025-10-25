@@ -3,6 +3,14 @@ import api from "@/utils/api.js";
 import { toast } from "react-toastify";
 import { validateForm, validationRules, formatCurrency, calculateProgress } from "@/utils/validations.js";
 import { FormError } from "@/components/FormError.jsx";
+import { 
+  GOAL_CATEGORIES, 
+  calculateAutoPriority, 
+  sortGoalsByPriority,
+  shouldWarnAboutPriority,
+  getCategoryInfo,
+  getPriorityInfo
+} from "@/utils/goalPriority.js";
 
 const emptyForm = {
   title: "",
@@ -10,6 +18,8 @@ const emptyForm = {
   targetAmount: "",
   dueDate: "",
   status: "planned",
+  category: "other",
+  priority: 3,
 };
 
 export default function GoalsManager({ 
@@ -67,6 +77,8 @@ export default function GoalsManager({
       targetAmount: goal.targetAmount ?? "",
       dueDate: goal.dueDate ? goal.dueDate.substring(0, 10) : "",
       status: goal.status || "planned",
+      category: goal.category || "other",
+      priority: goal.priority || 3,
     });
   }
 
@@ -87,6 +99,17 @@ export default function GoalsManager({
       return;
     }
 
+    // Check if user should be warned about low-priority goals
+    const warningCheck = shouldWarnAboutPriority(goals, { ...form, _id: editingId });
+    if (warningCheck.shouldWarn) {
+      const proceed = window.confirm(
+        `⚠️ Priority Alert!\n\n${warningCheck.message}\n\nWe recommend focusing on critical goals first to build a strong financial foundation.\n\nDo you still want to proceed with this goal?`
+      );
+      if (!proceed) {
+        return;
+      }
+    }
+
     setFormErrors({});
     setSaving(true);
     
@@ -98,6 +121,8 @@ export default function GoalsManager({
         currentAmount: calculateCurrentAmount(), // Use calculated amount
         dueDate: form.dueDate || undefined,
         status: form.status,
+        category: form.category || "other",
+        priority: form.priority || calculateAutoPriority(form.category),
       };
 
       if (!payload.title) {
@@ -197,6 +222,29 @@ export default function GoalsManager({
                   disabled={!isGoalCreationEnabled() && !isEdit}
                 />
                 <FormError error={formErrors.description} />
+              </div>
+              
+              <div>
+                <label className="form-label fw-semibold small">Goal Category *</label>
+                <select
+                  className="form-select"
+                  value={form.category}
+                  onChange={(e) => {
+                    const newCategory = e.target.value;
+                    const autoPriority = calculateAutoPriority(newCategory);
+                    setForm({ ...form, category: newCategory, priority: autoPriority });
+                  }}
+                  disabled={!isGoalCreationEnabled() && !isEdit}
+                >
+                  {Object.entries(GOAL_CATEGORIES).map(([key, cat]) => (
+                    <option key={key} value={key}>
+                      {cat.icon} {cat.label} - {cat.description}
+                    </option>
+                  ))}
+                </select>
+                <small className="text-muted">
+                  Priority is automatically set based on category. Critical goals should be completed first.
+                </small>
               </div>
               
               <div className="row g-2">
@@ -318,12 +366,19 @@ export default function GoalsManager({
               </div>
             ) : (
               <div className="list-group list-group-flush">
-                {goals.map((g) => (
+                {sortGoalsByPriority(goals).map((g) => {
+                  const categoryInfo = getCategoryInfo(g.category || 'other');
+                  const priorityInfo = getPriorityInfo(g.priority || 3);
+                  return (
                   <div key={g._id} className="list-group-item border-0 border-bottom">
                     <div className="d-flex justify-content-between align-items-start">
                       <div className="flex-grow-1">
                         <div className="d-flex align-items-center gap-2 mb-2">
+                          <span style={{ fontSize: '1.2rem' }}>{categoryInfo.icon}</span>
                           <h6 className="mb-0 fw-semibold">{g.title}</h6>
+                          <span className={`badge bg-${priorityInfo.color}`} title={`Priority: ${priorityInfo.label}`}>
+                            {priorityInfo.badge} {priorityInfo.label}
+                          </span>
                           <span className={`badge ${getStatusBadgeClass(g.status)}`}>
                             {g.status.replace('_', ' ')}
                           </span>
@@ -401,7 +456,8 @@ export default function GoalsManager({
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

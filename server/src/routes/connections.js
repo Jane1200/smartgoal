@@ -1,4 +1,5 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import Connection from "../models/Connection.js";
 import User from "../models/User.js";
@@ -30,14 +31,61 @@ router.post("/send-request", requireAuth, async (req, res) => {
     }
 
     // Determine buyer and goal setter based on roles
+    // Support both legacy single role and new multi-role system
+    // Use consistent role checking across all users
+    const senderIsBuyer = req.user.isBuyer || sender.hasRole?.('buyer') || sender.role === 'buyer' || (sender.roles && sender.roles.includes('buyer'));
+    const senderIsGoalSetter = req.user.isGoalSetter || sender.hasRole?.('goal_setter') || sender.role === 'goal_setter' || (sender.roles && sender.roles.includes('goal_setter'));
+    
+    const targetIsBuyer = targetUser.hasRole?.('buyer') || targetUser.role === 'buyer' || (targetUser.roles && targetUser.roles.includes('buyer'));
+    const targetIsGoalSetter = targetUser.hasRole?.('goal_setter') || targetUser.role === 'goal_setter' || (targetUser.roles && targetUser.roles.includes('goal_setter'));
+    
+    console.log("Role check for connection:", {
+      senderId,
+      targetUserId,
+      senderIsBuyer,
+      senderIsGoalSetter,
+      targetIsBuyer,
+      targetIsGoalSetter
+    });
+    
     let buyerId, goalSetterId;
-    if (sender.role === 'buyer' && targetUser.role === 'goal_setter') {
+    // Prioritize exact role match: if sender is buyer and target is goal_setter
+    if (senderIsBuyer && targetIsGoalSetter && !senderIsGoalSetter) {
       buyerId = senderId;
       goalSetterId = targetUserId;
-    } else if (sender.role === 'goal_setter' && targetUser.role === 'buyer') {
+    } 
+    // Or if sender is goal_setter and target is buyer
+    else if (senderIsGoalSetter && targetIsBuyer && !senderIsBuyer) {
       buyerId = targetUserId;
       goalSetterId = senderId;
-    } else {
+    }
+    // Handle edge case: users with both roles - buyer initiates connection to goal_setter
+    else if (senderIsBuyer && targetIsGoalSetter) {
+      buyerId = senderId;
+      goalSetterId = targetUserId;
+    }
+    // Handle edge case: users with both roles - goal_setter initiates connection to buyer
+    else if (senderIsGoalSetter && targetIsBuyer) {
+      buyerId = targetUserId;
+      goalSetterId = senderId;
+    }
+    else {
+      console.error("Connection role validation failed:", {
+        sender: {
+          id: senderId,
+          isBuyer: senderIsBuyer,
+          isGoalSetter: senderIsGoalSetter,
+          role: sender.role,
+          roles: sender.roles
+        },
+        target: {
+          id: targetUserId,
+          isBuyer: targetIsBuyer,
+          isGoalSetter: targetIsGoalSetter,
+          role: targetUser.role,
+          roles: targetUser.roles
+        }
+      });
       return res.status(400).json({ 
         message: "Connection requests are only allowed between buyers and goal setters" 
       });
@@ -145,14 +193,19 @@ router.get("/requests", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Convert userId to ObjectId for database queries
+    let userObjectId = mongoose.Types.ObjectId.isValid(userId) 
+      ? new mongoose.Types.ObjectId(userId) 
+      : userId;
+
     let query = {};
     
-    if (user.role === 'goal_setter') {
+    if (user.hasRole('goal_setter')) {
       // Goal setter receives requests
-      query.goalSetterId = userId;
-    } else if (user.role === 'buyer') {
+      query.goalSetterId = userObjectId;
+    } else if (user.hasRole('buyer')) {
       // Buyer sees their sent requests
-      query.buyerId = userId;
+      query.buyerId = userObjectId;
     } else {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -289,18 +342,25 @@ router.get("/accepted-buyers", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    console.log("AcceptedBuyers request - User:", userId);
+    console.log("User roles:", user.roles);
+
     // Only goal setters can view accepted buyers
-    if (user.role !== 'goal_setter') {
+    if (!user.hasRole('goal_setter')) {
+      console.log("User is not a goal_setter, returning 403");
       return res.status(403).json({ message: "Access denied. Only goal setters can view accepted buyers." });
     }
 
     // Get all accepted connections for this goal setter
+    console.log("Querying accepted connections for goal setter:", userId);
     const acceptedConnections = await Connection.find({
       goalSetterId: userId,
       status: 'accepted'
     })
       .populate('buyerId', 'name email avatar bio location interests')
       .sort({ respondedAt: -1 });
+
+    console.log("Found accepted connections count:", acceptedConnections.length);
 
     // Format the buyers data
     const buyers = acceptedConnections.map(conn => ({
@@ -340,11 +400,16 @@ router.get("/analytics", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Convert userId to ObjectId for aggregation pipeline
+    let userObjectId = mongoose.Types.ObjectId.isValid(userId) 
+      ? new mongoose.Types.ObjectId(userId) 
+      : userId;
+
     let query = {};
-    if (user.role === 'goal_setter') {
-      query.goalSetterId = userId;
-    } else if (user.role === 'buyer') {
-      query.buyerId = userId;
+    if (user.hasRole('goal_setter')) {
+      query.goalSetterId = userObjectId;
+    } else if (user.hasRole('buyer')) {
+      query.buyerId = userObjectId;
     } else {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -495,15 +560,29 @@ router.get("/stats", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    console.log("Stats request - User:", userId);
+    console.log("User roles:", user.roles);
+    console.log("User hasRole('goal_setter'):", user.hasRole('goal_setter'));
+    console.log("User hasRole('buyer'):", user.hasRole('buyer'));
+
+    // Convert userId to ObjectId for aggregation pipeline
+    let userObjectId = mongoose.Types.ObjectId.isValid(userId) 
+      ? new mongoose.Types.ObjectId(userId) 
+      : userId;
+
     let query = {};
-    if (user.role === 'goal_setter') {
-      query.goalSetterId = userId;
-    } else if (user.role === 'buyer') {
-      query.buyerId = userId;
+    if (user.hasRole('goal_setter')) {
+      query.goalSetterId = userObjectId;
+      console.log("Query for goal_setter:", query);
+    } else if (user.hasRole('buyer')) {
+      query.buyerId = userObjectId;
+      console.log("Query for buyer:", query);
     } else {
+      console.log("User has no valid role, returning 403");
       return res.status(403).json({ message: "Access denied" });
     }
 
+    console.log("Executing aggregation with query:", query);
     const stats = await Connection.aggregate([
       { $match: query },
       { $group: {
@@ -511,6 +590,8 @@ router.get("/stats", requireAuth, async (req, res) => {
         count: { $sum: 1 }
       }}
     ]);
+
+    console.log("Aggregation results:", stats);
 
     const formattedStats = {
       pending: 0,
@@ -525,6 +606,7 @@ router.get("/stats", requireAuth, async (req, res) => {
       formattedStats.total += stat.count;
     });
 
+    console.log("Formatted stats:", formattedStats);
     res.json({ stats: formattedStats });
   } catch (error) {
     console.error("Get connection stats error:", error);

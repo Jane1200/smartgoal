@@ -284,27 +284,6 @@ export default function BuyerGeoMatching() {
         </div>
       </div>
 
-      {/* Debug Information */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="card mb-4">
-          <div className="card-header">
-            <h6 className="card-title mb-0">Debug Information</h6>
-          </div>
-          <div className="card-body">
-            <div className="row g-2">
-              <div className="col-md-6">
-                <strong>User Location:</strong>
-                <pre className="small">{JSON.stringify(userLocation, null, 2)}</pre>
-              </div>
-              <div className="col-md-6">
-                <strong>Geo Preferences:</strong>
-                <pre className="small">{JSON.stringify(geoPreferences, null, 2)}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Location Status */}
       <div className="row g-3 mb-4">
         <div className="col-md-6">

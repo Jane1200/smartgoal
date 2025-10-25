@@ -272,4 +272,56 @@ router.get("/breakdown", requireAuth, async (req, res) => {
   }
 });
 
+// Get wants income (for goal allocation)
+// This calculates the wants spending based on the 50/30/20 rule
+router.get("/wants-income", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { month, year } = req.query;
+
+    const filters = {};
+    if (month && year) {
+      filters.month = parseInt(month);
+      filters.year = parseInt(year);
+    }
+
+    // Get all expenses for the period
+    const expenses = await Finance.find({ 
+      userId, 
+      type: 'expense' 
+    });
+
+    // Categorize expenses by type (Needs/Wants/Savings)
+    const needs = ['housing', 'food', 'transport', 'healthcare'];
+    const wants = ['entertainment', 'shopping', 'travel'];
+
+    // Filter current period expenses
+    let periodExpenses = expenses;
+    if (month && year) {
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+      periodExpenses = expenses.filter(e => e.date >= startDate && e.date <= endDate);
+    }
+
+    // Calculate wants expenses
+    const wantsExpenses = periodExpenses.filter(e => wants.includes(e.category));
+    const totalWants = wantsExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    // Get total income for reference
+    const incomeData = await Finance.getUserFinanceSummary(userId, filters);
+    const totalIncome = incomeData.find(i => i._id === 'income')?.total || 0;
+
+    res.json({
+      wantsExpenses,
+      totalWantsAmount: totalWants,
+      wantsPercentage: totalIncome > 0 ? (totalWants / totalIncome) * 100 : 0,
+      totalIncome,
+      message: `Found ₹${totalWants.toLocaleString()} in wants expenses. This amount can be allocated to goals.`
+    });
+  } catch (error) {
+    console.error("Get wants income error:", error);
+    res.status(500).json({ message: "Failed to get wants income" });
+  }
+});
+
 export default router;

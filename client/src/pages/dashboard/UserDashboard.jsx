@@ -9,16 +9,6 @@ export default function UserDashboard() {
   const user = auth?.user;
   const logout = auth?.logout;
 
-  // Redirect if not authenticated
-  if (!user?.token) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // Redirect if not a goal setter
-  if (user?.profile?.role !== "goal_setter") {
-    return <Navigate to="/dashboard-redirect" replace />;
-  }
-
   const [goals, setGoals] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [marketplaceListings, setMarketplaceListings] = useState([]);
@@ -27,19 +17,41 @@ export default function UserDashboard() {
     monthlyExpense: 0,
     monthlySavings: 0
   });
+  const [sellerStats, setSellerStats] = useState({
+    activeListings: 0,
+    soldListings: 0,
+    totalEarnings: 0,
+    pendingListings: 0
+  });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
 
   useEffect(() => {
-    fetchUserData();
+    fetchUserData(false);
+    
+    // Refresh data every 30 seconds for real-time updates
+    const interval = setInterval(() => {
+      fetchUserData(false);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  const fetchUserData = async () => {
+  const fetchUserData = async (isManualRefresh = false) => {
     try {
-      const [goalsResponse, wishlistResponse, financeResponse, marketplaceResponse] = await Promise.allSettled([
+      if (isManualRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      const [goalsResponse, wishlistResponse, financeResponse, marketplaceResponse, sellerStatsResponse] = await Promise.allSettled([
         api.get("/goals"),
         api.get("/wishlist"),
         api.get("/finance/summary"),
-        api.get("/marketplace/my-listings")
+        api.get("/marketplace/my-listings"),
+        api.get("/marketplace/stats/seller")
       ]);
 
       if (goalsResponse.status === 'fulfilled') {
@@ -57,10 +69,25 @@ export default function UserDashboard() {
       if (marketplaceResponse.status === 'fulfilled') {
         setMarketplaceListings(marketplaceResponse.value.data);
       }
+
+      if (sellerStatsResponse.status === 'fulfilled') {
+        setSellerStats(sellerStatsResponse.value.data || {
+          activeListings: 0,
+          soldListings: 0,
+          totalEarnings: 0,
+          pendingListings: 0
+        });
+      }
+
+      setLastUpdated(new Date());
     } catch (error) {
       console.error("Failed to fetch user data:", error);
     } finally {
-      setLoading(false);
+      if (isManualRefresh) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -106,18 +133,35 @@ export default function UserDashboard() {
     <div className="container py-5 dashboard-page user-dashboard">
       <div className="dashboard-hero">
         <div className="welcome-content">
-          <h1 className="title d-flex align-items-center gap-2">
-            Welcome{user?.profile?.name ? `, ${user.profile.name}` : ", hey"}
-            <div className="welcome-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                <line x1="9" y1="9" x2="9.01" y2="9"/>
-                <line x1="15" y1="9" x2="15.01" y2="9"/>
-              </svg>
+          <div className="d-flex justify-content-between align-items-start">
+            <div>
+              <h1 className="title d-flex align-items-center gap-2">
+                Welcome{user?.profile?.name ? `, ${user.profile.name}` : ", hey"}
+                <div className="welcome-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                    <line x1="9" y1="9" x2="9.01" y2="9"/>
+                    <line x1="15" y1="9" x2="15.01" y2="9"/>
+                  </svg>
+                </div>
+              </h1>
+              <div className="subtitle">
+                Your goals, finances, and marketplace at a glance • Last updated: {lastUpdated.toLocaleTimeString()}
+              </div>
             </div>
-          </h1>
-          <div className="subtitle">Your goals, finances, and marketplace at a glance</div>
+            <button 
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => fetchUserData(true)}
+              title="Refresh dashboard data"
+              disabled={refreshing}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{display: 'inline-block', marginRight: '6px', animation: refreshing ? 'spin 1s linear infinite' : 'none'}}>
+                <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -170,16 +214,19 @@ export default function UserDashboard() {
         <div className="col-12 col-lg-6">
           <div className="card shadow-sm">
             <div className="card-body">
-              <div className="d-flex align-items-center gap-2 mb-3">
-                <div className="card-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="2" y="6" width="20" height="12" rx="2"/>
-                    <path d="M6 10h12"/>
-                    <path d="M6 14h12"/>
-                    <circle cx="12" cy="12" r="2"/>
-                  </svg>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="6" width="20" height="12" rx="2"/>
+                      <path d="M6 10h12"/>
+                      <path d="M6 14h12"/>
+                      <circle cx="12" cy="12" r="2"/>
+                    </svg>
+                  </div>
+                  <h5 className="card-title mb-0">Income & Expense</h5>
                 </div>
-                <h5 className="card-title mb-0">Income & Expense</h5>
+                
               </div>
               <div className="row g-3">
                 <div className="col">
@@ -330,6 +377,43 @@ export default function UserDashboard() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Seller Performance Stats */}
+      <div className="row g-4 mb-4">
+        <div className="col-12">
+          <div className="card shadow-sm">
+            <div className="card-body">
+              <div className="d-flex align-items-center gap-2 mb-4">
+                <div className="card-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v20M2 12h20"/>
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  </svg>
+                </div>
+                <h5 className="card-title mb-0">Selling Performance</h5>
+              </div>
+              <div className="row g-3 text-center">
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Active Listings</div>
+                  <div className="h4 mb-0 text-success">{sellerStats.activeListings}</div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Sold Items</div>
+                  <div className="h4 mb-0 text-primary">{sellerStats.soldListings}</div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Total Earnings</div>
+                  <div className="h4 mb-0 text-info">₹{(sellerStats.totalEarnings || 0).toLocaleString()}</div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Pending</div>
+                  <div className="h4 mb-0 text-warning">{sellerStats.pendingListings}</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

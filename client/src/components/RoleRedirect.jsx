@@ -1,16 +1,14 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { auth } from "@/lib/firebase"; // make sure auth is exported from this file
+// import { auth as firebaseAuth } from "@/lib/firebase"; // Not needed here; remove to avoid name conflicts
 
 export default function RoleRedirect() {
-  const auth = useAuth();
-  const user = auth?.user;
+  const authCtx = useAuth();
+  const user = authCtx?.user;
   const navigate = useNavigate();
 
   useEffect(() => {
-    let mounted = true;
-
     async function decide() {
       // Not signed in according to context — send to login
       if (!user) {
@@ -19,11 +17,6 @@ export default function RoleRedirect() {
       }
 
       try {
-        // Temporarily bypass email verification checks
-
-        // Fallback: if your server provides an isVerified flag on the profile, respect it
-        // Ignore server isVerified flag for now
-
         // Role-based redirect
         const role = user?.profile?.role;
         if (role === "admin") {
@@ -41,10 +34,6 @@ export default function RoleRedirect() {
     }
 
     decide();
-
-    return () => {
-      mounted = false;
-    };
   }, [user, navigate]);
 
   return (

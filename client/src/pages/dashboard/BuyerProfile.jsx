@@ -1,8 +1,14 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "@/context/AuthContext.jsx";
+import { useNavigate } from "react-router-dom";
 import api from "@/utils/api.js";
 import { toast } from "react-toastify";
 
 export default function BuyerProfile() {
+  const navigate = useNavigate();
+  const authContext = useAuth();
+  // Access is enforced by route guards; avoid in-component redirects to keep hook order stable.
+
   const [profileData, setProfileData] = useState(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -145,6 +151,19 @@ export default function BuyerProfile() {
                   <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                 </svg>
                 Change Password
+              </button>
+              <button
+                className="btn btn-outline-primary"
+                onClick={async () => {
+                  try {
+                    const res = await authContext.switchRole('goal_setter');
+                    if (res?.ok) {
+                      navigate('/dashboard');
+                    }
+                  } catch {}
+                }}
+              >
+                Switch to Goal Setter
               </button>
             </div>
           </div>

@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import api, { getFileUrl } from "@/utils/api.js";
 import { toast } from "react-toastify";
 import { useAuth } from "@/context/AuthContext.jsx";
+import TrustBadge from "@/components/TrustBadge.jsx";
+import SellerInfoCard from "@/components/SellerInfoCard.jsx";
 
 export default function BuyerMarketplace() {
   const { user } = useAuth();
@@ -10,6 +12,7 @@ export default function BuyerMarketplace() {
   const [nearbyGoalSetters, setNearbyGoalSetters] = useState([]);
   const [searchCriteria, setSearchCriteria] = useState(null);
   const [locationStats, setLocationStats] = useState(null);
+  const [selectedSellerId, setSelectedSellerId] = useState(null);
   const [filters, setFilters] = useState({
     category: 'all',
     maxDistance: 50,
@@ -22,6 +25,7 @@ export default function BuyerMarketplace() {
     limit: 20
   });
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [addingToCart, setAddingToCart] = useState({});
 
   useEffect(() => {
     fetchNearbyItems();
@@ -132,6 +136,19 @@ export default function BuyerMarketplace() {
       'other': '📦'
     };
     return categoryIcons[category] || '📦';
+  };
+
+  const handleAddToCart = async (itemId) => {
+    setAddingToCart(prev => ({ ...prev, [itemId]: true }));
+    try {
+      await api.post('/cart/add', { marketplaceItemId: itemId, quantity: 1 });
+      toast.success('Item added to cart!');
+    } catch (error) {
+      console.error('Add to cart error:', error);
+      toast.error(error.response?.data?.message || 'Failed to add item to cart');
+    } finally {
+      setAddingToCart(prev => ({ ...prev, [itemId]: false }));
+    }
   };
 
   if (loading) {
@@ -339,7 +356,7 @@ export default function BuyerMarketplace() {
                             {item.seller.distance} km away
                           </span>
                         </div>
-                        <div className="d-flex align-items-center">
+                        <div className="d-flex align-items-center mb-2">
                           {item.seller.avatar ? (
                             <img 
                               src={getFileUrl(item.seller.avatar)} 
@@ -359,23 +376,62 @@ export default function BuyerMarketplace() {
                             {item.seller.name} • {item.seller.location.city}
                           </small>
                         </div>
+                        
+                        {/* Seller Rating & Trust Badge */}
+                        {item.trustBadge && (
+                          <div className="d-flex align-items-center gap-2">
+                            <TrustBadge 
+                              level={item.trustBadge.level} 
+                              compact={true}
+                            />
+                            <small className="text-muted">
+                              {item.averageRating ? (
+                                <>
+                                  ⭐ {item.averageRating.toFixed(1)} ({item.totalReviews} review{item.totalReviews !== 1 ? 's' : ''})
+                                </>
+                              ) : (
+                                <>No reviews yet</>
+                              )}
+                            </small>
+                          </div>
+                        )}
                       </div>
                       
                       <div className="mt-auto">
-                        <div className="d-flex gap-2">
-                          <button className="btn btn-primary flex-grow-1">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
-                              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                            </svg>
-                            Contact Seller
+                        <div className="d-flex gap-2 mb-2">
+                          <button 
+                            className="btn btn-success flex-grow-1"
+                            onClick={() => handleAddToCart(item.id)}
+                            disabled={addingToCart[item.id]}
+                          >
+                            {addingToCart[item.id] ? (
+                              <>
+                                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                Adding...
+                              </>
+                            ) : (
+                              <>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                                  <circle cx="9" cy="21" r="1"/>
+                                  <circle cx="20" cy="21" r="1"/>
+                                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                                </svg>
+                                Add to Cart
+                              </>
+                            )}
                           </button>
-                          <button className="btn btn-outline-secondary">
+                          <button 
+                            className="btn btn-outline-secondary"
+                            onClick={() => setSelectedSellerId(item.seller.id)}
+                            title="View seller profile"
+                          >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z"/>
+                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                              <circle cx="12" cy="7" r="4"/>
                             </svg>
                           </button>
                         </div>
-                        <small className="text-muted d-block mt-2">
+                        <small className="text-muted d-block">
                           Listed {item.daysAgo} days ago
                         </small>
                       </div>
@@ -423,6 +479,27 @@ export default function BuyerMarketplace() {
               </li>
             </ul>
           </nav>
+        </div>
+      )}
+
+      {/* Seller Info Modal */}
+      {selectedSellerId && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Seller Profile</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setSelectedSellerId(null)}
+                />
+              </div>
+              <div className="modal-body">
+                <SellerInfoCard sellerId={selectedSellerId} />
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

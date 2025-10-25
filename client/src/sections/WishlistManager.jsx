@@ -24,6 +24,7 @@ export default function WishlistManager() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [formErrors, setFormErrors] = useState({});
+  const [creatingGoalId, setCreatingGoalId] = useState(null);
 
   const isEdit = useMemo(() => Boolean(editingId), [editingId]);
 
@@ -105,7 +106,18 @@ export default function WishlistManager() {
       } else {
         const { data } = await api.post("/wishlist", payload);
         setWishlist((prev) => [data, ...prev]);
-        toast.success("Wishlist item added successfully");
+
+        try {
+          await createGoalFromWishlist({
+            title: data.title,
+            description: data.description,
+            price: data.price
+          });
+          toast.success("Wishlist item added and goal created successfully");
+        } catch (goalError) {
+          console.error("Failed to create goal from wishlist:", goalError);
+          toast.warning("Wishlist item saved, but creating goal failed");
+        }
       }
       startCreate();
     } catch (error) {
@@ -142,6 +154,30 @@ export default function WishlistManager() {
     }
   }
 
+  async function createGoalFromWishlist(item) {
+    const payload = {
+      title: item.title,
+      description: item.description,
+      targetAmount: item.price ?? 0,
+      currentAmount: 0,
+    };
+
+    return api.post("/goals", payload);
+  }
+
+  async function handleCreateGoalClick(item) {
+    setCreatingGoalId(item._id);
+    try {
+      await createGoalFromWishlist(item);
+      toast.success("Goal created from wishlist item!");
+    } catch (error) {
+      console.error("Failed to create goal from wishlist:", error);
+      toast.error(error.response?.data?.message || "Failed to create goal");
+    } finally {
+      setCreatingGoalId(null);
+    }
+  }
+
   // Get priority badge color
   function getPriorityBadgeClass(priority) {
     switch (priority) {
@@ -161,20 +197,158 @@ export default function WishlistManager() {
   }
 
   return (
-    <div className="row g-4">
-      <div className="col-12 col-lg-5">
-        <div className="card shadow-sm">
-          <div className="card-body">
-            <div className="d-flex align-items-center gap-2 mb-3">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-primary">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14,2 14,8 20,8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/>
-                <line x1="16" y1="17" x2="8" y2="17"/>
-                <polyline points="10,9 9,9 8,9"/>
-              </svg>
-              <h5 className="card-title mb-0">{isEdit ? "Edit Wishlist Item" : "Add Product from URL"}</h5>
-            </div>
+    <>
+      <style>{`
+        .wishlist-manager-card {
+          border: none;
+          border-radius: 12px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+          transition: all 0.3s ease;
+        }
+
+        .wishlist-manager-card:hover {
+          box-shadow: 0 8px 24px rgba(22, 29, 163, 0.12);
+        }
+
+        .wishlist-card-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin-bottom: 1.5rem;
+          padding-bottom: 1rem;
+          border-bottom: 2px solid rgba(22, 29, 163, 0.1);
+        }
+
+        .wishlist-card-header svg {
+          color: #161da3;
+          flex-shrink: 0;
+        }
+
+        .wishlist-card-title {
+          font-size: 1.125rem;
+          font-weight: 700;
+          color: #1e293b;
+          margin: 0;
+        }
+
+        .wishlist-btn-primary {
+          background: linear-gradient(135deg, #161da3 0%, #4f46e5 100%);
+          border: none;
+          color: white;
+          font-weight: 600;
+          transition: all 0.3s ease;
+        }
+
+        .wishlist-btn-primary:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 15px rgba(22, 29, 163, 0.3);
+        }
+
+        .wishlist-btn-outline {
+          color: #161da3;
+          border-color: #161da3;
+          font-weight: 500;
+          transition: all 0.3s ease;
+        }
+
+        .wishlist-btn-outline:hover:not(:disabled) {
+          background: #161da3;
+          color: white;
+          transform: translateY(-1px);
+        }
+
+        .wishlist-empty-state {
+          text-align: center;
+          padding: 2.5rem 1rem;
+        }
+
+        .wishlist-empty-icon {
+          font-size: 3rem;
+          margin-bottom: 1rem;
+          opacity: 0.3;
+          color: #161da3;
+        }
+
+        .wishlist-empty-title {
+          font-size: 1.125rem;
+          font-weight: 600;
+          color: #1e293b;
+          margin-bottom: 0.5rem;
+        }
+
+        .wishlist-empty-text {
+          color: #64748b;
+          font-size: 0.9rem;
+        }
+
+        .wishlist-item {
+          padding: 1.25rem 0;
+          border-bottom: 1px solid rgba(22, 29, 163, 0.08);
+          transition: all 0.3s ease;
+        }
+
+        .wishlist-item:hover {
+          background: rgba(22, 29, 163, 0.02);
+          padding: 1.25rem;
+          margin: 0 -1.25rem;
+          padding-left: 1.25rem;
+        }
+
+        .wishlist-item:last-child {
+          border-bottom: none;
+        }
+
+        .wishlist-item-title {
+          font-weight: 700;
+          color: #1e293b;
+          margin-bottom: 0.5rem;
+        }
+
+        .wishlist-item-price {
+          color: #161da3;
+          font-weight: 700;
+          font-size: 1.1rem;
+        }
+
+        .wishlist-priority-high {
+          background: rgba(220, 38, 38, 0.1);
+          color: #991b1b;
+          border: none;
+        }
+
+        .wishlist-priority-medium {
+          background: rgba(245, 158, 11, 0.1);
+          color: #92400e;
+          border: none;
+        }
+
+        .wishlist-priority-low {
+          background: rgba(34, 197, 94, 0.1);
+          color: #166534;
+          border: none;
+        }
+
+        .wishlist-btn-group button {
+          padding: 0.4rem 0.6rem;
+          font-size: 0.85rem;
+          border-radius: 6px;
+        }
+      `}</style>
+
+      <div className="row g-4">
+        <div className="col-12 col-lg-5">
+          <div className="card wishlist-manager-card">
+            <div className="card-body">
+              <div className="wishlist-card-header">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14,2 14,8 20,8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                  <polyline points="10,9 9,9 8,9"/>
+                </svg>
+                <h5 className="wishlist-card-title">{isEdit ? "Edit Wishlist Item" : "Add Product from URL"}</h5>
+              </div>
 
             {!isEdit && (
               <div className="mb-4">
@@ -289,7 +463,7 @@ export default function WishlistManager() {
               </div>
               
               <div className="d-flex gap-2 pt-2">
-                <button className="btn btn-primary flex-grow-1" disabled={saving} type="submit">
+                <button className="btn wishlist-btn-primary flex-grow-1" disabled={saving} type="submit">
                   {saving ? (
                     <>
                       <span className="spinner-border spinner-border-sm me-2" role="status"></span>
@@ -306,7 +480,7 @@ export default function WishlistManager() {
                 </button>
                 {isEdit && (
                   <button
-                    className="btn btn-outline-secondary"
+                    className="btn wishlist-btn-outline"
                     type="button"
                     onClick={() => {
                       setEditingId(null);
@@ -324,36 +498,35 @@ export default function WishlistManager() {
       </div>
 
       <div className="col-12 col-lg-7">
-        <div className="card shadow-sm">
+        <div className="card wishlist-manager-card">
           <div className="card-body">
-            <div className="d-flex justify-content-between align-items-center mb-3">
-              <h5 className="card-title mb-0">My Wishlist</h5>
-              <button className="btn btn-sm btn-outline-primary" onClick={loadWishlist} disabled={loading}>
+            <div className="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom" style={{ borderColor: 'rgba(22, 29, 163, 0.1)' }}>
+              <h5 className="card-title mb-0" style={{ color: '#1e293b', fontWeight: 700 }}>My Wishlist</h5>
+              <button className="btn btn-sm wishlist-btn-outline" onClick={loadWishlist} disabled={loading}>
                 {loading ? "Refreshing..." : "Refresh"}
               </button>
             </div>
 
             {loading ? (
               <div className="text-center py-4">
-                <div className="spinner-border" role="status">
+                <div className="spinner-border" role="status" style={{ color: '#161da3' }}>
                   <span className="visually-hidden">Loading...</span>
                 </div>
               </div>
             ) : wishlist.length === 0 ? (
-              <div className="text-center py-5">
-                <div className="text-muted mb-3">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" className="text-muted">
+              <div className="wishlist-empty-state">
+                <div className="wishlist-empty-icon">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z"/>
                   </svg>
                 </div>
-                <h6 className="text-muted">No items in wishlist</h6>
-                <p className="text-muted small">Add your first item to get started!</p>
+                <h6 className="wishlist-empty-title">No items in wishlist</h6>
+                <p className="wishlist-empty-text">Add your first item to get started!</p>
               </div>
             ) : (
-              <div className="list-group list-group-flush">
+              <div>
                 {wishlist.map((item) => (
-                  <div key={item._id} className="list-group-item border-0 border-bottom">
-                    <div className="d-flex gap-3">
+                  <div key={item._id} className="wishlist-item d-flex gap-3">
                       {/* Image */}
                       {item.imageUrl && (
                         <div className="flex-shrink-0">
@@ -361,7 +534,7 @@ export default function WishlistManager() {
                             src={item.imageUrl} 
                             alt={item.title}
                             className="rounded"
-                            style={{ width: "60px", height: "60px", objectFit: "cover" }}
+                            style={{ width: "60px", height: "60px", objectFit: "cover", border: '2px solid rgba(22, 29, 163, 0.1)' }}
                             onError={(e) => {
                               e.target.style.display = 'none';
                             }}
@@ -371,8 +544,12 @@ export default function WishlistManager() {
                       
                       <div className="flex-grow-1">
                         <div className="d-flex align-items-center gap-2 mb-2">
-                          <h6 className="mb-0 fw-semibold">{item.title}</h6>
-                          <span className={`badge ${getPriorityBadgeClass(item.priority)}`}>
+                          <h6 className="wishlist-item-title mb-0">{item.title}</h6>
+                          <span className={`badge ${
+                            item.priority === 'high' ? 'wishlist-priority-high' :
+                            item.priority === 'medium' ? 'wishlist-priority-medium' :
+                            'wishlist-priority-low'
+                          }`}>
                             {item.priority}
                           </span>
                         </div>
@@ -382,11 +559,11 @@ export default function WishlistManager() {
                         )}
 
                         {item.category && (
-                          <span className="badge bg-light text-dark me-2">{item.category}</span>
+                          <span className="badge" style={{ backgroundColor: 'rgba(22, 29, 163, 0.1)', color: '#161da3', marginRight: '0.5rem' }}>{item.category}</span>
                         )}
 
                         {item.price && (
-                          <span className="fw-semibold text-primary">
+                          <span className="wishlist-item-price">
                             {getCurrencySymbol(item.currency)}{item.price}
                           </span>
                         )}
@@ -398,6 +575,7 @@ export default function WishlistManager() {
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="text-decoration-none me-3"
+                              style={{ color: '#161da3', fontWeight: 500 }}
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
                                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -423,9 +601,9 @@ export default function WishlistManager() {
                         )}
                       </div>
                       
-                      <div className="d-flex flex-column gap-1">
+                      <div className="wishlist-btn-group d-flex flex-column gap-1">
                         <button 
-                          className="btn btn-sm btn-outline-primary" 
+                          className="btn btn-sm wishlist-btn-outline" 
                           onClick={() => startEdit(item)}
                           title="Edit item"
                         >
@@ -434,19 +612,12 @@ export default function WishlistManager() {
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                           </svg>
                         </button>
+  
                         <button 
-                          className="btn btn-sm btn-outline-success" 
-                          onClick={() => markAsPurchased(item._id)}
-                          title="Mark as purchased"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="20,6 9,17 4,12"/>
-                          </svg>
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-outline-danger" 
+                          className="btn btn-sm" 
                           onClick={() => deleteItem(item._id)}
                           title="Delete item"
+                          style={{ color: '#dc2626', borderColor: '#dc2626' }}
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <polyline points="3,6 5,6 21,6"/>
@@ -457,7 +628,6 @@ export default function WishlistManager() {
                         </button>
                       </div>
                     </div>
-                  </div>
                 ))}
               </div>
             )}
@@ -465,6 +635,7 @@ export default function WishlistManager() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

@@ -26,6 +26,9 @@ import SystemAnalytics from "@/pages/admin/SystemAnalytics.jsx";
 import GeoMatching from "@/sections/GeoMatching.jsx";
 import BuyerGeoMatching from "@/sections/BuyerGeoMatching.jsx";
 import BuyerMarketplace from "@/pages/dashboard/BuyerMarketplace.jsx";
+import Cart from "@/pages/dashboard/Cart.jsx";
+import Checkout from "@/pages/dashboard/Checkout.jsx";
+import Orders from "@/pages/dashboard/Orders.jsx";
 import ConnectionRequests from "@/sections/ConnectionRequests.jsx";
 import GoalsPage from "@/pages/dashboard/Goals.jsx";
 import WishlistPage from "@/pages/dashboard/Wishlist.jsx";
@@ -161,18 +164,20 @@ export default function App() {
           <Route path="/buyer-profile" element={<BuyerProfile />} />
           <Route path="/find-goal-setters" element={<BuyerGeoMatching />} />
           <Route path="/buyer-marketplace" element={<BuyerMarketplace />} />
+          <Route path="/cart" element={<Cart />} />
+          <Route path="/checkout" element={<Checkout />} />
+          <Route path="/orders" element={<Orders />} />
         </Route>
 
         {/* Role-based redirect */}
         <Route
+          path="/dashboard-redirect"
           element={
             <RequireAuth>
               <RoleRedirect />
             </RequireAuth>
           }
-        >
-          <Route path="/dashboard-redirect" element={<div />} />
-        </Route>
+        />
 
         {/* Catch-all redirect */}
         <Route path="*" element={<Navigate to="/" replace />} />

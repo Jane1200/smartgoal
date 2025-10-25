@@ -2,10 +2,11 @@ import { Router } from "express";
 import { body, validationResult } from "express-validator";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import User from "../models/User.js";
 import admin from "../firebaseAdmin.js";
 import { isEmailConfigured, isUsingTestTransporter, getTransporter, sendMail } from "../utils/mailer.js";
-import crypto from "crypto";
+import { buildAuthPayload, buildUserResponse, ensureUserRoleArray } from "../utils/roles.js";
 
 const router = Router();
 
@@ -56,12 +57,17 @@ router.post(
       email,
       passwordHash,
       role: role || "goal_setter",
+      roles: role ? [role] : undefined,
       provider: "local",
       isVerified: false,
     });
 
-    // create app JWT for session (optional — you may choose to not auto-login until verified)
-    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+    await ensureUserRoleArray(user);
+
+    const authPayload = buildAuthPayload(user);
+    const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
+
+    const responseUser = buildUserResponse(user);
 
     // send verification email (attempt; falls back to Ethereal in dev)
     try {
@@ -85,7 +91,7 @@ router.post(
 
     return res.json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, isVerified: user.isVerified },
+      user: responseUser,
     });
   }
 );
@@ -121,14 +127,23 @@ router.post(
     // Firebase users (Google sign-in) handle verification on the client side
 
     // Validate role match only if a role was explicitly provided by client
-    if (role && user.role !== role) {
-      return res.status(403).json({
-        message: `Invalid role. This account is registered as ${user.role}, but you selected ${role}`,
-      });
+    if (role) {
+      const userRoles = user.roles || [user.role];
+      if (!userRoles.includes(role)) {
+        const primaryRole = user.role || userRoles[0];
+        return res.status(403).json({
+          message: `Invalid role. This account does not have the ${role} role. Available roles: ${userRoles.join(', ')}`,
+        });
+      }
     }
 
-    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role, isVerified: user.isVerified } });
+    await ensureUserRoleArray(user);
+
+    const authPayload = buildAuthPayload(user);
+    const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
+    const responseUser = buildUserResponse(user);
+
+    res.json({ token, user: responseUser });
   }
 );
 
@@ -228,7 +243,7 @@ router.post(
     const { name, email, password, adminKey } = req.body;
 
     // Check if admin already exists
-    const existingAdmin = await User.findOne({ role: "admin" });
+    const existingAdmin = await User.findOne({ roles: "admin" });
     if (existingAdmin) {
       return res.status(400).json({ message: "Admin user already exists. Only one admin is allowed." });
     }
@@ -246,15 +261,21 @@ router.post(
       email,
       passwordHash,
       role: "admin",
+      roles: ["admin"],
       provider: "local",
       isVerified: true,
     });
 
-    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+    await ensureUserRoleArray(user);
+
+    const authPayload = buildAuthPayload(user);
+    const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
+    const responseUser = buildUserResponse(user);
+
     return res.json({
       message: "Admin user created successfully",
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, isVerified: user.isVerified },
+      user: responseUser,
     });
   }
 );
@@ -282,6 +303,7 @@ router.post("/google", async (req, res) => {
         email,
         passwordHash: null,
         role: "goal_setter",
+        roles: ["goal_setter"],
         isVerified: !!email_verified,
         provider: "google",
         firebaseUid: uid,
@@ -301,10 +323,14 @@ router.post("/google", async (req, res) => {
       if (changed) await user.save();
     }
 
-    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+    await ensureUserRoleArray(user);
+
+    const authPayload = buildAuthPayload(user);
+    const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
+    const responseUser = buildUserResponse(user);
     return res.json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, isVerified: user.isVerified },
+      user: responseUser,
     });
   } catch (e) {
     console.error("/auth/google error", e);

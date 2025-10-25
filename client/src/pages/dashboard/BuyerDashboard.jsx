@@ -1,61 +1,84 @@
 import { useState, useEffect } from "react";
-import api from "@/utils/api.js";
+import { useAuth } from "@/context/AuthContext.jsx";
+import { Navigate, useNavigate } from "react-router-dom";
+import api, { getFileUrl } from "@/utils/api.js";
 import { toast } from "react-toastify";
 
 export default function BuyerDashboard() {
+  const navigate = useNavigate();
+  const authContext = useAuth();
+  const user = authContext?.user;
+
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [marketplaceItems, setMarketplaceItems] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [priceRange, setPriceRange] = useState({ min: "", max: "" });
-  const [sortBy, setSortBy] = useState("newest");
-
-  const categories = [
-    { value: "", label: "All Categories" },
-    { value: "electronics", label: "Electronics" },
-    { value: "fashion", label: "Fashion" },
-    { value: "sports", label: "Sports & Fitness" },
-    { value: "books", label: "Books" },
-    { value: "other", label: "Other" }
-  ];
-
-  const sortOptions = [
-    { value: "newest", label: "Newest First" },
-    { value: "oldest", label: "Oldest First" },
-    { value: "price_low", label: "Price: Low to High" },
-    { value: "price_high", label: "Price: High to Low" },
-    { value: "popular", label: "Most Popular" }
-  ];
+  const [orders, setOrders] = useState([]);
+  const [stats, setStats] = useState({
+    totalOrders: 0,
+    totalSpent: 0,
+    savedItems: 0,
+    activeWatches: 0
+  });
 
   useEffect(() => {
-    fetchMarketplaceItems();
-  }, [searchTerm, selectedCategory, priceRange, sortBy]);
+    fetchBuyerData(false);
+    
+    // Refresh data every 30 seconds for real-time updates
+    const interval = setInterval(() => {
+      fetchBuyerData(false);
+    }, 30000);
 
-  const fetchMarketplaceItems = async () => {
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchBuyerData = async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       
-      const params = new URLSearchParams();
-      if (searchTerm) params.append("search", searchTerm);
-      if (selectedCategory) params.append("category", selectedCategory);
-      if (priceRange.min) params.append("minPrice", priceRange.min);
-      if (priceRange.max) params.append("maxPrice", priceRange.max);
-      params.append("sort", sortBy);
+      const [ordersRes, itemsRes, statsRes] = await Promise.allSettled([
+        api.get("/orders"),
+        api.get("/marketplace/browse?limit=6"),
+        api.get("/orders/stats")
+      ]);
 
-      const response = await api.get(`/marketplace/browse?${params.toString()}`);
-      setMarketplaceItems(response.data || []);
+      if (ordersRes.status === 'fulfilled') {
+        setOrders(ordersRes.value.data || []);
+      }
+
+      if (itemsRes.status === 'fulfilled') {
+        setMarketplaceItems(itemsRes.value.data || []);
+      }
+
+      if (statsRes.status === 'fulfilled') {
+        setStats(statsRes.value.data || {
+          totalOrders: 0,
+          totalSpent: 0,
+          savedItems: 0,
+          activeWatches: 0
+        });
+      }
     } catch (error) {
-      console.error("Failed to fetch marketplace items:", error);
-      toast.error("Failed to load marketplace items");
+      console.error("Failed to fetch buyer data:", error);
     } finally {
-      setLoading(false);
+      if (isManualRefresh) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
   const handleContactSeller = (item) => {
-    // For now, show contact info in an alert
-    // In a real app, this would open a chat or contact modal
-    alert(`Contact seller for "${item.title}"\n\nSeller: ${item.sellerName}\nPrice: ₹${item.price.toLocaleString()}\n\nThis feature will be implemented soon!`);
+    // Open contact/chat modal
+    toast.info(`Contact seller for "${item.title}"`);
+  };
+
+  const handleAddToCart = (item) => {
+    toast.success(`${item.title} added to cart!`);
   };
 
   const formatDate = (dateString) => {
@@ -88,223 +111,267 @@ export default function BuyerDashboard() {
     }
   };
 
+  const getOrderStatusColor = (status) => {
+    switch (status) {
+      case 'delivered': return 'bg-success';
+      case 'pending': return 'bg-warning';
+      case 'cancelled': return 'bg-danger';
+      case 'processing': return 'bg-info';
+      default: return 'bg-secondary';
+    }
+  };
+
   if (loading) {
     return (
-      <div className="container-xxl py-4">
+      <div className="container py-5">
         <div className="text-center">
-          <div className="spinner-border text-primary" role="status">
+          <div className="spinner-border" role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
-          <p className="mt-3 text-muted">Loading marketplace items...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container-xxl py-4">
-      <div className="row">
-        <div className="col-12">
-          {/* Header */}
-          <div className="d-flex justify-content-between align-items-center mb-4">
+    <div className="container py-5 dashboard-page buyer-dashboard">
+      {/* Header */}
+      <div className="dashboard-hero">
+        <div className="welcome-content">
+          <div className="d-flex justify-content-between align-items-start">
             <div>
-              <h1 className="h3 mb-1">Buyer Features</h1>
-              <p className="text-muted mb-0">Discover great deals and purchase items from sellers</p>
-            </div>
-            <div className="text-end">
-              <div className="h5 text-primary mb-1">{marketplaceItems.length}</div>
-              <div className="small text-muted">Available Items</div>
-            </div>
-          </div>
-
-          {/* Search and Filters */}
-          <div className="card mb-4">
-            <div className="card-body">
-              <div className="row g-3">
-                <div className="col-md-6">
-                  <label htmlFor="searchInput" className="form-label">Search Items</label>
-                  <input
-                    type="text"
-                    id="searchInput"
-                    className="form-control"
-                    placeholder="Search for items..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+              <h1 className="title d-flex align-items-center gap-2">
+                Welcome{user?.profile?.name ? `, ${user.profile.name}` : ", hey"}
+                <div className="welcome-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 3L5 7m4-4l4 4M3 5h18v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z"/>
+                  </svg>
                 </div>
-                <div className="col-md-3">
-                  <label htmlFor="categorySelect" className="form-label">Category</label>
-                  <select
-                    id="categorySelect"
-                    className="form-select"
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                  >
-                    {categories.map(category => (
-                      <option key={category.value} value={category.value}>
-                        {category.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-md-3">
-                  <label htmlFor="sortSelect" className="form-label">Sort By</label>
-                  <select
-                    id="sortSelect"
-                    className="form-select"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                  >
-                    {sortOptions.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-md-3">
-                  <label htmlFor="minPrice" className="form-label">Min Price (₹)</label>
-                  <input
-                    type="number"
-                    id="minPrice"
-                    className="form-control"
-                    placeholder="0"
-                    value={priceRange.min}
-                    onChange={(e) => setPriceRange(prev => ({ ...prev, min: e.target.value }))}
-                  />
-                </div>
-                <div className="col-md-3">
-                  <label htmlFor="maxPrice" className="form-label">Max Price (₹)</label>
-                  <input
-                    type="number"
-                    id="maxPrice"
-                    className="form-control"
-                    placeholder="No limit"
-                    value={priceRange.max}
-                    onChange={(e) => setPriceRange(prev => ({ ...prev, max: e.target.value }))}
-                  />
-                </div>
+              </h1>
+              <div className="subtitle">
+                Browse, save, and purchase amazing items from our marketplace
               </div>
             </div>
+            <button 
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => fetchBuyerData()}
+              title="Refresh dashboard data"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{display: 'inline-block', marginRight: '6px'}}>
+                <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+              Refresh
+            </button>
           </div>
+        </div>
+      </div>
 
-          {/* Marketplace Items Grid */}
-          <div className="row g-4">
-            {marketplaceItems.length === 0 ? (
-              <div className="col-12">
-                <div className="text-center py-5">
-                  <div className="text-muted mb-3">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 3h18v18H3zM9 9h6v6H9z"/>
-                      <path d="M9 1v6M15 1v6M9 17v6M15 17v6M1 9h6M17 9h6M1 15h6M17 15h6"/>
+      {/* Buyer Stats */}
+      <div className="row g-4 mb-4">
+        <div className="col-12">
+          <div className="card shadow-sm">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+                      <line x1="3" y1="6" x2="21" y2="6"/>
                     </svg>
                   </div>
-                  <h4 className="text-muted">No items found</h4>
-                  <p className="text-muted">Try adjusting your search criteria or check back later for new listings.</p>
+                  <h5 className="card-title mb-0">Buying Summary</h5>
+                </div>
+                
+              </div>
+              <div className="row g-3 text-center">
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Total Orders</div>
+                  <div className="h4 mb-0 text-primary">{stats.totalOrders}</div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Total Spent</div>
+                  <div className="h4 mb-0 text-success">₹{(stats.totalSpent || 0).toLocaleString()}</div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Saved Items</div>
+                  <div className="h4 mb-0 text-info">{stats.savedItems}</div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Watching</div>
+                  <div className="h4 mb-0 text-warning">{stats.activeWatches}</div>
                 </div>
               </div>
-            ) : (
-              marketplaceItems.map(item => (
-                <div key={item._id} className="col-lg-4 col-md-6">
-                  <div className="card h-100 marketplace-item-card">
-                    {/* Item Image */}
-                    <div className="position-relative">
-                      {item.images && item.images[0] ? (
-                        <img
-                          src={item.images[0].url}
-                          alt={item.title}
-                          className="card-img-top"
-                          style={{ height: '200px', objectFit: 'cover' }}
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.nextElementSibling.style.display = 'flex';
-                          }}
-                        />
-                      ) : null}
-                      <div 
-                        className="card-img-top bg-light d-flex align-items-center justify-content-center"
-                        style={{ height: '200px', display: item.images && item.images[0] ? 'none' : 'flex' }}
-                      >
-                        <div className="text-center text-muted">
-                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                            <circle cx="8.5" cy="8.5" r="1.5"/>
-                            <polyline points="21,15 16,10 5,21"/>
-                          </svg>
-                          <div className="small mt-2">No Image</div>
-                        </div>
-                      </div>
-                      
-                      {/* Condition Badge */}
-                      <span className={`badge ${getConditionBadgeColor(item.condition)} position-absolute`} style={{ top: '10px', right: '10px' }}>
-                        {getConditionLabel(item.condition)}
-                      </span>
-                      
-                      {/* Status Badge */}
-                      <span className={`badge ${item.status === 'active' ? 'bg-success' : 'bg-secondary'} position-absolute`} style={{ top: '10px', left: '10px' }}>
-                        {item.status === 'active' ? 'Available' : item.status}
-                      </span>
-                    </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-                    {/* Card Body */}
-                    <div className="card-body d-flex flex-column">
+      {/* Recent Orders */}
+      <div className="row g-4 mb-4">
+        <div className="col-12">
+          <div className="card shadow-sm">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                  </div>
+                  <h5 className="card-title mb-0">Recent Orders</h5>
+                </div>
+                <a href="/orders" className="btn btn-sm btn-outline-primary">View All</a>
+              </div>
+              {orders.length === 0 ? (
+                <div className="text-center py-4">
+                  <div className="text-muted mb-2">No orders yet</div>
+                  <small className="text-muted">Start shopping to see your order history</small>
+                </div>
+              ) : (
+                <div className="d-grid gap-3">
+                  {orders.slice(0, 3).map((order) => (
+                    <div key={order._id} className="d-flex align-items-center justify-content-between p-3 border rounded">
                       <div className="flex-grow-1">
-                        <h5 className="card-title">{item.title}</h5>
-                        <p className="card-text text-muted small">
-                          {item.description?.length > 100 
-                            ? `${item.description.substring(0, 100)}...` 
-                            : item.description || 'No description provided'}
-                        </p>
-                        
-                        {/* Item Details */}
-                        <div className="row g-2 mb-3">
-                          <div className="col-6">
-                            <div className="small text-muted">Category</div>
-                            <div className="small fw-medium text-capitalize">{item.category || 'Other'}</div>
-                          </div>
-                          <div className="col-6">
-                            <div className="small text-muted">Listed</div>
-                            <div className="small fw-medium">{formatDate(item.createdAt)}</div>
-                          </div>
-                        </div>
+                        <div className="fw-semibold small">{order.itemTitle || 'Item'}</div>
+                        <div className="small text-muted">Order #{order._id?.substring(0, 8)}</div>
                       </div>
+                      <div className="text-end">
+                        <div className="text-success fw-bold small">₹{(order.total || 0).toLocaleString()}</div>
+                        <span className={`badge ${getOrderStatusColor(order.status)} small`}>
+                          {order.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
-                      {/* Price and Actions */}
-                      <div className="mt-auto">
-                        <div className="d-flex justify-content-between align-items-center mb-3">
-                          <div className="h5 text-primary mb-0">₹{item.price?.toLocaleString()}</div>
-                          <div className="small text-muted">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
-                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                              <circle cx="12" cy="12" r="3"/>
-                            </svg>
-                            {item.views || 0} views
-                          </div>
-                        </div>
-                        
-                        <div className="d-grid gap-2">
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => handleContactSeller(item)}
+      {/* Featured Items for Purchase */}
+      <div className="row g-4 mb-4">
+        <div className="col-12">
+          <div className="card shadow-sm">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-center mb-4">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="9" cy="21" r="1"/>
+                      <circle cx="20" cy="21" r="1"/>
+                      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                    </svg>
+                  </div>
+                  <h5 className="card-title mb-0">Featured Listings</h5>
+                </div>
+                <a href="/marketplace" className="btn btn-sm btn-outline-primary">Browse More</a>
+              </div>
+
+              {marketplaceItems.length === 0 ? (
+                <div className="text-center py-5">
+                  <div className="text-muted mb-3">No items available</div>
+                  <small className="text-muted">Check back later for new listings</small>
+                </div>
+              ) : (
+                <div className="row g-3">
+                  {marketplaceItems.slice(0, 6).map((item) => (
+                    <div key={item._id} className="col-md-6 col-lg-4">
+                      <div className="card h-100 marketplace-item-card">
+                        <div className="position-relative">
+                          {item.images && item.images[0] ? (
+                            <img
+                              src={getFileUrl(item.images[0]?.url || item.images[0])}
+                              alt={item.title}
+                              className="card-img-top"
+                              style={{ height: '150px', objectFit: 'cover' }}
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                if (e.target.nextElementSibling) {
+                                  e.target.nextElementSibling.style.display = 'flex';
+                                }
+                              }}
+                            />
+                          ) : null}
+                          <div 
+                            className="card-img-top bg-light d-flex align-items-center justify-content-center"
+                            style={{ height: '150px', display: item.images && item.images[0] ? 'none' : 'flex' }}
                           >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
-                              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted">
+                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                              <circle cx="8.5" cy="8.5" r="1.5"/>
+                              <polyline points="21,15 16,10 5,21"/>
                             </svg>
-                            Contact Seller
-                          </button>
-                          <button className="btn btn-outline-secondary btn-sm">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
-                              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z"/>
-                            </svg>
-                            Save for Later
-                          </button>
+                          </div>
+
+                          <span className={`badge ${getConditionBadgeColor(item.condition)} position-absolute`} style={{ top: '8px', right: '8px' }}>
+                            {getConditionLabel(item.condition)}
+                          </span>
+                        </div>
+
+                        <div className="card-body d-flex flex-column">
+                          <h6 className="card-title small">{item.title}</h6>
+                          <p className="card-text text-muted small flex-grow-1">
+                            {item.category && <span className="badge bg-light text-dark me-2">{item.category}</span>}
+                          </p>
+
+                          <div className="mt-auto">
+                            <div className="d-flex justify-content-between align-items-center mb-2">
+                              <div className="h6 text-primary mb-0">₹{(item.price || 0).toLocaleString()}</div>
+                              <small className="text-muted">{item.views || 0} views</small>
+                            </div>
+                            <div className="d-grid gap-2">
+                              <button
+                                className="btn btn-sm btn-primary"
+                                onClick={() => handleContactSeller(item)}
+                              >
+                                Contact Seller
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Stats Footer */}
+      <div className="row g-4 mb-4">
+        <div className="col-12">
+          <div className="card shadow-sm">
+            <div className="card-body">
+              <h6 className="card-title mb-3">Shopping Insights</h6>
+              <div className="row g-3 text-center">
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">This Month</div>
+                  <div className="h5 mb-0 text-primary">
+                    {orders.filter(o => new Date(o.createdAt) > new Date(Date.now() - 30*24*60*60*1000)).length} purchases
                   </div>
                 </div>
-              ))
-            )}
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Average Order</div>
+                  <div className="h5 mb-0 text-success">
+                    ₹{orders.length > 0 ? Math.round((stats.totalSpent || 0) / orders.length).toLocaleString() : '0'}
+                  </div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Most Viewed</div>
+                  <div className="h5 mb-0 text-info">
+                    {marketplaceItems.length > 0 ? Math.max(...marketplaceItems.map(i => i.views || 0)) : '0'} views
+                  </div>
+                </div>
+                <div className="col-6 col-md-3">
+                  <div className="small text-muted">Marketplace Items</div>
+                  <div className="h5 mb-0 text-warning">{marketplaceItems.length} available</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

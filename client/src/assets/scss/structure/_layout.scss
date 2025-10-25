@@ -303,6 +303,21 @@
   }
 }
 
+.page-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+    letter-spacing: -0.5px;
+  }
+}
+
 .header-actions {
   display: flex;
   align-items: center;

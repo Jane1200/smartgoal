@@ -14,9 +14,10 @@ router.get("/stats", requireAdmin, async (req, res) => {
     // Get user statistics
     const totalUsers = await User.countDocuments();
     const verifiedUsers = await User.countDocuments({ isVerified: true });
-    const adminUsers = await User.countDocuments({ role: "admin" });
-    const goalSetterUsers = await User.countDocuments({ role: "goal_setter" });
-    const buyerUsers = await User.countDocuments({ role: "buyer" });
+    // Count users by roles array (users can have multiple roles)
+    const adminUsers = await User.countDocuments({ roles: "admin" });
+    const goalSetterUsers = await User.countDocuments({ roles: "goal_setter" });
+    const buyerUsers = await User.countDocuments({ roles: "buyer" });
     
     // Calculate active users (users with goals or recently active)
     const thirtyDaysAgo = new Date();
@@ -101,6 +102,7 @@ router.get("/users/recent", requireAdmin, async (req, res) => {
       name: 1,
       email: 1,
       role: 1,
+      roles: 1,
       provider: 1,
       isVerified: 1,
       createdAt: 1
@@ -114,7 +116,8 @@ router.get("/users/recent", requireAdmin, async (req, res) => {
       id: user._id,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: user.role || (user.roles && user.roles[0]) || "goal_setter",
+      roles: user.roles || [user.role || "goal_setter"],
       provider: user.provider,
       isVerified: user.isVerified,
       joinedAt: formatTimeAgo(user.createdAt)
@@ -139,7 +142,8 @@ router.get("/users", requireAdmin, async (req, res) => {
     // Build query
     let query = {};
     if (role && role !== "all") {
-      query.role = role;
+      // Query roles array for users with this role
+      query.roles = role;
     }
     if (search) {
       query.$or = [
@@ -152,6 +156,7 @@ router.get("/users", requireAdmin, async (req, res) => {
       name: 1,
       email: 1,
       role: 1,
+      roles: 1,
       provider: 1,
       isVerified: 1,
       createdAt: 1,
@@ -194,29 +199,34 @@ router.get("/users", requireAdmin, async (req, res) => {
       const goalsCount = goalsCountMap[userId] || 0;
       const purchasesCount = purchaseCountMap[userId] || 0;
       
+      // Get user roles array
+      const userRoles = user.roles || [user.role || "goal_setter"];
+      const primaryRole = user.role || userRoles[0] || "goal_setter";
+      
       // Determine user status based on activity and verification
       // For goal setters: active if they have goals OR recently updated
       // For buyers: active if they have purchases OR recently updated
       // For admins: always active
       let isActive = user.isVerified;
       
-      if (user.role === 'goal_setter') {
+      if (userRoles.includes('admin')) {
+        isActive = true; // Admins are always considered active
+      } else if (userRoles.includes('goal_setter')) {
         const hasGoals = goalsCount > 0;
         const recentlyActive = (Date.now() - user.updatedAt.getTime()) < (30 * 24 * 60 * 60 * 1000); // 30 days
         isActive = user.isVerified && (hasGoals || recentlyActive);
-      } else if (user.role === 'buyer') {
+      } else if (userRoles.includes('buyer')) {
         const hasPurchases = purchasesCount > 0;
         const recentlyActive = (Date.now() - user.updatedAt.getTime()) < (30 * 24 * 60 * 60 * 1000); // 30 days
         isActive = user.isVerified && (hasPurchases || recentlyActive);
-      } else if (user.role === 'admin') {
-        isActive = true; // Admins are always considered active
       }
       
       return {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: primaryRole,
+        roles: userRoles,
         provider: user.provider,
         status: isActive ? 'active' : 'inactive',
         isVerified: user.isVerified,
@@ -249,6 +259,7 @@ router.get("/users/:id", requireAdmin, async (req, res) => {
       name: 1,
       email: 1,
       role: 1,
+      roles: 1,
       provider: 1,
       isVerified: 1,
       createdAt: 1,
@@ -268,12 +279,16 @@ router.get("/users/:id", requireAdmin, async (req, res) => {
     const recentlyActive = (Date.now() - user.updatedAt.getTime()) < (30 * 24 * 60 * 60 * 1000); // 30 days
     const isActive = user.isVerified && (hasGoals || recentlyActive);
     
+    const userRoles = user.roles || [user.role || "goal_setter"];
+    const primaryRole = user.role || userRoles[0] || "goal_setter";
+    
     res.json({
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: primaryRole,
+        roles: userRoles,
         provider: user.provider,
         status: isActive ? 'active' : 'inactive',
         isVerified: user.isVerified,
@@ -292,15 +307,26 @@ router.get("/users/:id", requireAdmin, async (req, res) => {
 // Update user role or status
 router.patch("/users/:id", requireAdmin, async (req, res) => {
   try {
-    const { role, isVerified } = req.body;
+    const { role, roles, isVerified } = req.body;
     const userId = req.params.id;
     
-    // Prevent changing admin role if it's the only admin
-    if (role && role !== "admin") {
-      const adminCount = await User.countDocuments({ role: "admin" });
-      const currentUser = await User.findById(userId);
+    const currentUser = await User.findById(userId);
+    if (!currentUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    // Prevent removing admin role if it's the only admin
+    const currentUserRoles = currentUser.roles || [currentUser.role];
+    const isCurrentlyAdmin = currentUserRoles.includes("admin");
+    
+    if (isCurrentlyAdmin) {
+      const adminCount = await User.countDocuments({ roles: "admin" });
       
-      if (currentUser.role === "admin" && adminCount <= 1) {
+      // Check if we're trying to remove admin role
+      const newRoles = roles || (role ? [role] : null);
+      const willRemoveAdmin = newRoles && !newRoles.includes("admin");
+      
+      if (willRemoveAdmin && adminCount <= 1) {
         return res.status(400).json({ 
           message: "Cannot remove admin role from the only admin user" 
         });
@@ -308,18 +334,27 @@ router.patch("/users/:id", requireAdmin, async (req, res) => {
     }
     
     const updateData = {};
-    if (role) updateData.role = role;
+    
+    // Handle roles array update
+    if (roles && Array.isArray(roles) && roles.length > 0) {
+      updateData.roles = roles;
+      updateData.role = roles[0]; // Keep legacy field in sync
+    } else if (role) {
+      // If single role provided, update both fields
+      updateData.role = role;
+      // Add to roles array if not already present
+      if (!currentUserRoles.includes(role)) {
+        updateData.roles = [...currentUserRoles.filter(r => r !== role), role];
+      }
+    }
+    
     if (typeof isVerified === "boolean") updateData.isVerified = isVerified;
     
     const user = await User.findByIdAndUpdate(
       userId,
       updateData,
-      { new: true, select: "name email role isVerified" }
+      { new: true, select: "name email role roles isVerified" }
     );
-    
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
     
     res.json({ message: "User updated successfully", user });
   } catch (error) {
@@ -389,14 +424,22 @@ router.delete("/users/:id", requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
     
-    // Prevent deleting the only admin
-    const adminCount = await User.countDocuments({ role: "admin" });
     const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
     
-    if (user.role === "admin" && adminCount <= 1) {
-      return res.status(400).json({ 
-        message: "Cannot delete the only admin user" 
-      });
+    // Prevent deleting the only admin
+    const userRoles = user.roles || [user.role];
+    const isAdmin = userRoles.includes("admin");
+    
+    if (isAdmin) {
+      const adminCount = await User.countDocuments({ roles: "admin" });
+      if (adminCount <= 1) {
+        return res.status(400).json({ 
+          message: "Cannot delete the only admin user" 
+        });
+      }
     }
     
     await User.findByIdAndDelete(userId);
@@ -440,7 +483,7 @@ router.get("/goals", requireAdmin, async (req, res) => {
     
     // Get goals with user details
     const goals = await Goal.find(query)
-      .populate('userId', 'name email role')
+      .populate('userId', 'name email role roles')
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -475,7 +518,8 @@ router.get("/goals", requireAdmin, async (req, res) => {
           id: goal.userId._id,
           name: goal.userId.name,
           email: goal.userId.email,
-          role: goal.userId.role
+          role: goal.userId.role || (goal.userId.roles && goal.userId.roles[0]) || "goal_setter",
+          roles: goal.userId.roles || [goal.userId.role || "goal_setter"]
         }
       };
     });
@@ -691,8 +735,8 @@ router.get("/marketplace/listings", requireAdmin, async (req, res) => {
     
     // Get listings with user details
     const listings = await Marketplace.find(query)
-      .populate('userId', 'name email role')
-      .populate('buyerId', 'name email role')
+      .populate('userId', 'name email role roles')
+      .populate('buyerId', 'name email role roles')
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -724,13 +768,15 @@ router.get("/marketplace/listings", requireAdmin, async (req, res) => {
           id: listing.userId._id,
           name: listing.userId.name,
           email: listing.userId.email,
-          role: listing.userId.role
+          role: listing.userId.role || (listing.userId.roles && listing.userId.roles[0]) || "goal_setter",
+          roles: listing.userId.roles || [listing.userId.role || "goal_setter"]
         },
         buyer: listing.buyerId ? {
           id: listing.buyerId._id,
           name: listing.buyerId.name,
           email: listing.buyerId.email,
-          role: listing.buyerId.role
+          role: listing.buyerId.role || (listing.buyerId.roles && listing.buyerId.roles[0]) || "buyer",
+          roles: listing.buyerId.roles || [listing.buyerId.role || "buyer"]
         } : null,
         images: listing.images
       };
@@ -867,8 +913,8 @@ router.get("/marketplace/purchases", requireAdmin, async (req, res) => {
     
     // Get purchases with user details
     const purchases = await Purchase.find(query)
-      .populate('buyerId', 'name email role')
-      .populate('sellerId', 'name email role')
+      .populate('buyerId', 'name email role roles')
+      .populate('sellerId', 'name email role roles')
       .populate('marketplaceItemId', 'title price images')
       .sort(sort)
       .skip(skip)
@@ -891,13 +937,15 @@ router.get("/marketplace/purchases", requireAdmin, async (req, res) => {
         id: purchase.buyerId._id,
         name: purchase.buyerId.name,
         email: purchase.buyerId.email,
-        role: purchase.buyerId.role
+        role: purchase.buyerId.role || (purchase.buyerId.roles && purchase.buyerId.roles[0]) || "buyer",
+        roles: purchase.buyerId.roles || [purchase.buyerId.role || "buyer"]
       },
       seller: {
         id: purchase.sellerId._id,
         name: purchase.sellerId.name,
         email: purchase.sellerId.email,
-        role: purchase.sellerId.role
+        role: purchase.sellerId.role || (purchase.sellerId.roles && purchase.sellerId.roles[0]) || "goal_setter",
+        roles: purchase.sellerId.roles || [purchase.sellerId.role || "goal_setter"]
       },
       marketplaceItem: purchase.marketplaceItemId ? {
         id: purchase.marketplaceItemId._id,
@@ -943,7 +991,7 @@ router.patch("/marketplace/listings/:id", requireAdmin, async (req, res) => {
       listingId,
       updateData,
       { new: true }
-    ).populate('userId', 'name email role');
+    ).populate('userId', 'name email role roles');
     
     if (!listing) {
       return res.status(404).json({ message: "Listing not found" });
@@ -960,7 +1008,8 @@ router.patch("/marketplace/listings/:id", requireAdmin, async (req, res) => {
           id: listing.userId._id,
           name: listing.userId.name,
           email: listing.userId.email,
-          role: listing.userId.role
+          role: listing.userId.role || (listing.userId.roles && listing.userId.roles[0]) || "goal_setter",
+          roles: listing.userId.roles || [listing.userId.role || "goal_setter"]
         }
       }
     });

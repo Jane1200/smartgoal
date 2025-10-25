@@ -19,35 +19,18 @@ export default function ConnectionRequests() {
     limit: 20
   });
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [analytics, setAnalytics] = useState({
-    responseTime: {
-      average: 0,
-      fastest: 0,
-      slowest: 0
-    },
-    acceptanceRate: 0,
-    rejectionRate: 0,
-    insights: [],
-    trends: {
-      daily: [],
-      weekly: [],
-      monthly: []
-    }
-  });
   const [acceptedBuyers, setAcceptedBuyers] = useState([]);
   const [acceptedBuyersLoading, setAcceptedBuyersLoading] = useState(false);
 
   useEffect(() => {
     fetchConnections();
     fetchStats();
-    fetchAnalytics();
     fetchAcceptedBuyers();
     
     // Set up real-time updates every 30 seconds
     const interval = setInterval(() => {
       fetchConnections(true); // Silent refresh
       fetchStats(true);
-      fetchAnalytics(true);
       fetchAcceptedBuyers(true);
     }, 30000);
 
@@ -73,102 +56,6 @@ export default function ConnectionRequests() {
     } finally {
       if (!silent) setLoading(false);
     }
-  };
-
-  const fetchAnalytics = async (silent = false) => {
-    try {
-      const { data } = await api.get("/connections/analytics");
-      setAnalytics(data.analytics || {
-        responseTime: { average: 0, fastest: 0, slowest: 0 },
-        acceptanceRate: 0,
-        rejectionRate: 0,
-        insights: [],
-        trends: { daily: [], weekly: [], monthly: [] }
-      });
-    } catch (error) {
-      console.error("Failed to fetch connection analytics:", error);
-      // Calculate analytics from existing connections data
-      calculateAnalyticsFromData();
-    }
-  };
-
-  const calculateAnalyticsFromData = () => {
-    try {
-      const allConnections = connections;
-      const acceptedConnections = allConnections.filter(conn => conn.status === 'accepted');
-      const rejectedConnections = allConnections.filter(conn => conn.status === 'rejected');
-      
-      // Calculate acceptance and rejection rates
-      const acceptanceRate = allConnections.length > 0 ? (acceptedConnections.length / allConnections.length) * 100 : 0;
-      const rejectionRate = allConnections.length > 0 ? (rejectedConnections.length / allConnections.length) * 100 : 0;
-      
-      // Calculate response times
-      const respondedConnections = allConnections.filter(conn => conn.status !== 'pending' && conn.respondedAt);
-      const responseTimes = respondedConnections.map(conn => {
-        const created = new Date(conn.createdAt);
-        const responded = new Date(conn.respondedAt);
-        return Math.abs(responded - created) / (1000 * 60 * 60); // Hours
-      });
-      
-      const averageResponseTime = responseTimes.length > 0 
-        ? responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length 
-        : 0;
-      const fastestResponseTime = responseTimes.length > 0 ? Math.min(...responseTimes) : 0;
-      const slowestResponseTime = responseTimes.length > 0 ? Math.max(...responseTimes) : 0;
-      
-      // Generate insights
-      const insights = generateConnectionInsights(acceptanceRate, rejectionRate, averageResponseTime, allConnections.length);
-      
-      setAnalytics({
-        responseTime: {
-          average: Math.round(averageResponseTime * 100) / 100,
-          fastest: Math.round(fastestResponseTime * 100) / 100,
-          slowest: Math.round(slowestResponseTime * 100) / 100
-        },
-        acceptanceRate: Math.round(acceptanceRate * 100) / 100,
-        rejectionRate: Math.round(rejectionRate * 100) / 100,
-        insights,
-        trends: {
-          daily: [],
-          weekly: [],
-          monthly: []
-        }
-      });
-    } catch (error) {
-      console.error("Failed to calculate analytics from data:", error);
-    }
-  };
-
-  const generateConnectionInsights = (acceptanceRate, rejectionRate, avgResponseTime, totalConnections) => {
-    const insights = [];
-    
-    if (acceptanceRate >= 70) {
-      insights.push("Excellent acceptance rate! You're building strong connections.");
-    } else if (acceptanceRate >= 50) {
-      insights.push("Good acceptance rate. Consider improving your profile to attract better matches.");
-    } else if (acceptanceRate >= 30) {
-      insights.push("Fair acceptance rate. Review your profile and connection preferences.");
-    } else {
-      insights.push("Low acceptance rate. Consider updating your profile and being more selective.");
-    }
-    
-    if (avgResponseTime <= 24) {
-      insights.push("Great response time! You're very responsive to connection requests.");
-    } else if (avgResponseTime <= 72) {
-      insights.push("Good response time. Try to respond within 24 hours for better engagement.");
-    } else {
-      insights.push("Slow response time. Consider setting up notifications to respond faster.");
-    }
-    
-    if (totalConnections === 0) {
-      insights.push("No connection requests yet. Make sure your profile is complete and visible.");
-    } else if (totalConnections < 5) {
-      insights.push("Few connection requests. Consider expanding your network and improving visibility.");
-    } else if (totalConnections >= 20) {
-      insights.push("Active network! You're receiving many connection requests.");
-    }
-    
-    return insights;
   };
 
   const fetchStats = async (silent = false) => {
@@ -202,10 +89,9 @@ export default function ConnectionRequests() {
       
       toast.success(`Connection request ${status} successfully!`);
       
-      // Refresh connections, stats, analytics, and accepted buyers
+      // Refresh connections, stats, and accepted buyers
       fetchConnections();
       fetchStats();
-      fetchAnalytics();
       fetchAcceptedBuyers();
     } catch (error) {
       console.error("Failed to respond to connection:", error);
@@ -218,10 +104,9 @@ export default function ConnectionRequests() {
       await api.delete(`/connections/${connectionId}`);
       toast.success("Connection request deleted successfully!");
       
-      // Refresh connections, stats, analytics, and accepted buyers
+      // Refresh connections, stats, and accepted buyers
       fetchConnections();
       fetchStats();
-      fetchAnalytics();
       fetchAcceptedBuyers();
     } catch (error) {
       console.error("Failed to delete connection:", error);
@@ -276,13 +161,13 @@ export default function ConnectionRequests() {
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <h2 className="mb-1">Connection Requests</h2>
+          
           <p className="text-muted mb-0">
-            Manage your connection requests • Last updated: {lastUpdated.toLocaleTimeString()}
+            Last updated: {lastUpdated.toLocaleTimeString()}
           </p>
         </div>
         <div className="d-flex align-items-center gap-2">
-          <div className="badge bg-success">Live Updates</div>
+          
           <button 
             className="btn btn-outline-primary btn-sm"
             onClick={() => fetchConnections()}
@@ -330,170 +215,6 @@ export default function ConnectionRequests() {
               <h6 className="card-title">Total</h6>
               <h3 className="mb-0">{stats.total}</h3>
               <small className="text-muted">All requests</small>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Analytics Cards */}
-      <div className="row g-3 mb-4">
-        <div className="col-md-3">
-          <div className="card">
-            <div className="card-body text-center">
-              <div className="text-success mb-2">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M9 12l2 2 4-4"/>
-                  <circle cx="12" cy="12" r="10"/>
-                </svg>
-              </div>
-              <h4 className="text-success mb-1">{analytics.acceptanceRate}%</h4>
-              <p className="text-muted mb-0">Acceptance Rate</p>
-              <small className="text-muted">
-                {analytics.acceptanceRate >= 70 ? 'Excellent' : 
-                 analytics.acceptanceRate >= 50 ? 'Good' : 
-                 analytics.acceptanceRate >= 30 ? 'Fair' : 'Needs Improvement'}
-              </small>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3">
-          <div className="card">
-            <div className="card-body text-center">
-              <div className="text-warning mb-2">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <path d="M12 6v6l4 2"/>
-                </svg>
-              </div>
-              <h4 className="text-warning mb-1">{analytics.responseTime.average}h</h4>
-              <p className="text-muted mb-0">Avg Response Time</p>
-              <small className="text-muted">
-                {analytics.responseTime.average <= 24 ? 'Very Fast' : 
-                 analytics.responseTime.average <= 72 ? 'Good' : 'Slow'}
-              </small>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3">
-          <div className="card">
-            <div className="card-body text-center">
-              <div className="text-info mb-2">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                  <circle cx="9" cy="7" r="4"/>
-                  <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-              </div>
-              <h4 className="text-info mb-1">{stats.total}</h4>
-              <p className="text-muted mb-0">Total Connections</p>
-              <small className="text-muted">
-                {stats.total >= 20 ? 'Very Active' : 
-                 stats.total >= 10 ? 'Active' : 
-                 stats.total >= 5 ? 'Moderate' : 'Getting Started'}
-              </small>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3">
-          <div className="card">
-            <div className="card-body text-center">
-              <div className="text-primary mb-2">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                  <circle cx="9" cy="7" r="4"/>
-                  <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-              </div>
-              <h4 className="text-primary mb-1">{acceptedBuyers.length}</h4>
-              <p className="text-muted mb-0">Accepted Buyers</p>
-              <small className="text-muted">
-                {acceptedBuyers.length >= 10 ? 'Large Network' : 
-                 acceptedBuyers.length >= 5 ? 'Growing Network' : 
-                 acceptedBuyers.length >= 1 ? 'Building Network' : 'No Connections Yet'}
-              </small>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Connection Insights */}
-      <div className="row g-4 mb-4">
-        <div className="col-12">
-          <div className="card">
-            <div className="card-header">
-              <h5 className="mb-0">Connection Insights & Analytics</h5>
-            </div>
-            <div className="card-body">
-              <div className="row g-4">
-                <div className="col-md-6">
-                  <h6>Performance Metrics:</h6>
-                  <div className="row g-3">
-                    <div className="col-12">
-                      <div className="d-flex justify-content-between align-items-center">
-                        <span className="text-muted">Acceptance Rate:</span>
-                        <div className="d-flex align-items-center">
-                          <div className="progress me-2" style={{ width: '100px', height: '8px' }}>
-                            <div 
-                              className={`progress-bar ${analytics.acceptanceRate >= 70 ? 'bg-success' : 
-                                         analytics.acceptanceRate >= 50 ? 'bg-warning' : 'bg-danger'}`}
-                              style={{ width: `${analytics.acceptanceRate}%` }}
-                            ></div>
-                          </div>
-                          <span className="fw-bold">{analytics.acceptanceRate}%</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="col-12">
-                      <div className="d-flex justify-content-between align-items-center">
-                        <span className="text-muted">Rejection Rate:</span>
-                        <div className="d-flex align-items-center">
-                          <div className="progress me-2" style={{ width: '100px', height: '8px' }}>
-                            <div 
-                              className={`progress-bar ${analytics.rejectionRate <= 30 ? 'bg-success' : 
-                                         analytics.rejectionRate <= 50 ? 'bg-warning' : 'bg-danger'}`}
-                              style={{ width: `${analytics.rejectionRate}%` }}
-                            ></div>
-                          </div>
-                          <span className="fw-bold">{analytics.rejectionRate}%</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="col-12">
-                      <div className="d-flex justify-content-between">
-                        <span className="text-muted">Average Response Time:</span>
-                        <span className="fw-bold">{analytics.responseTime.average}h</span>
-                      </div>
-                    </div>
-                    <div className="col-12">
-                      <div className="d-flex justify-content-between">
-                        <span className="text-muted">Fastest Response:</span>
-                        <span className="fw-bold text-success">{analytics.responseTime.fastest}h</span>
-                      </div>
-                    </div>
-                    <div className="col-12">
-                      <div className="d-flex justify-content-between">
-                        <span className="text-muted">Slowest Response:</span>
-                        <span className="fw-bold text-warning">{analytics.responseTime.slowest}h</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="col-md-6">
-                  <h6>Insights & Recommendations:</h6>
-                  <ul className="list-unstyled">
-                    {analytics.insights.map((insight, index) => (
-                      <li key={index} className="mb-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-info me-2">
-                          <circle cx="12" cy="12" r="10"/>
-                          <line x1="12" y1="16" x2="12" y2="12"/>
-                          <line x1="12" y1="8" x2="12.01" y2="8"/>
-                        </svg>
-                        {insight}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
             </div>
           </div>
         </div>

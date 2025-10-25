@@ -1,14 +1,35 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import Brand from "../components/Brand.jsx";
 import DashboardHeader from "@/components/DashboardHeader.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import api from "@/utils/api.js";
 
 export default function BuyerLayout() {
   const auth = useAuth();
   const logout = auth?.logout;
   const navigate = useNavigate();
+  const [cartCount, setCartCount] = useState(0);
 
   const onLogout = () => { logout(); navigate("/login"); };
+
+  // Fetch cart count
+  useEffect(() => {
+    const fetchCartCount = async () => {
+      try {
+        const { data } = await api.get("/cart");
+        setCartCount(data.totalItems || 0);
+      } catch (error) {
+        console.error("Failed to fetch cart count:", error);
+      }
+    };
+
+    fetchCartCount();
+    
+    // Refresh cart count every 30 seconds
+    const interval = setInterval(fetchCartCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <>
@@ -34,33 +55,27 @@ export default function BuyerLayout() {
               </svg>
               Browse Items
             </NavLink>
-            <button className="btn btn-outline-secondary text-start d-flex align-items-center gap-2">
+            <NavLink to="/cart" className={({ isActive }) => 
+              `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2 position-relative`
+            }>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z"/>
+                <circle cx="9" cy="21" r="1"/>
+                <circle cx="20" cy="21" r="1"/>
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
               </svg>
-              My Wishlist
-            </button>
-            <button className="btn btn-outline-secondary text-start d-flex align-items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-              Messages
-            </button>
-            <button className="btn btn-outline-secondary text-start d-flex align-items-center gap-2">
+              Shopping Cart
+              {cartCount > 0 && (
+                <span className="badge bg-danger rounded-pill ms-auto">{cartCount}</span>
+              )}
+            </NavLink>
+            <NavLink to="/orders" className={({ isActive }) => 
+              `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
+            }>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                 <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
               </svg>
-              Purchase History
-            </button>
-            <NavLink to="/buyer-profile" className={({ isActive }) => 
-              `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
-            }>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-              </svg>
-              Profile
+              My Orders
             </NavLink>
             <NavLink to="/find-goal-setters" className={({ isActive }) => 
               `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
@@ -73,15 +88,16 @@ export default function BuyerLayout() {
               </svg>
               Find Goal Setters
             </NavLink>
-            <hr className="my-2" />
-            <button className="btn btn-outline-danger text-start d-flex align-items-center gap-2" onClick={onLogout}>
+            <NavLink to="/buyer-profile" className={({ isActive }) => 
+              `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
+            }>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16,17 21,12 16,7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
               </svg>
-              Logout
-            </button>
+              Profile
+            </NavLink>
+            
           </nav>
         </aside>
         <main className="content">

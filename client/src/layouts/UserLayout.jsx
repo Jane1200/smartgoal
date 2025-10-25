@@ -72,15 +72,6 @@ export default function UserLayout() {
               </svg>
               Analytics
             </NavLink>
-            <NavLink to="/profile" className={({ isActive }) => 
-              `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
-            }>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-              </svg>
-              Profile
-            </NavLink>
             <NavLink to="/connection-requests" className={({ isActive }) => 
               `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
             }>
@@ -100,13 +91,15 @@ export default function UserLayout() {
               </svg>
               Find Buyers
             </NavLink>
-            <button className="btn btn-outline-secondary text-start d-flex align-items-center gap-2">
+            <NavLink to="/profile" className={({ isActive }) => 
+              `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
+            }>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-                <line x1="1" y1="10" x2="23" y2="10"/>
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
               </svg>
-              Payments
-            </button>
+              Profile
+            </NavLink>
           </nav>
         </aside>
         <main className="content">
