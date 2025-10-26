@@ -26,6 +26,9 @@ export default function BuyerMarketplace() {
   });
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [addingToCart, setAddingToCart] = useState({});
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [locationPermission, setLocationPermission] = useState(null);
+  const [needsLocation, setNeedsLocation] = useState(false);
 
   useEffect(() => {
     fetchNearbyItems();
@@ -64,7 +67,8 @@ export default function BuyerMarketplace() {
       console.error("Failed to fetch nearby items:", error);
       if (!silent) {
         if (error.response?.status === 400) {
-          toast.error("Please update your location first to find nearby items");
+          setNeedsLocation(true);
+          toast.error("Please set your location to see nearby items");
         } else if (error.response?.status === 403) {
           toast.error("Location sharing is disabled. Please enable it in your geo preferences");
         } else {
@@ -75,6 +79,85 @@ export default function BuyerMarketplace() {
       setNearbyGoalSetters([]);
     } finally {
       if (!silent) setLoading(false);
+    }
+  };
+
+  const requestLocationPermission = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by this browser");
+      return;
+    }
+
+    setLocationPermission("requesting");
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          
+          // Reverse geocoding to get address
+          const address = await reverseGeocode(latitude, longitude);
+          
+          await api.put("/profile/location", {
+            latitude,
+            longitude,
+            ...address
+          });
+          
+          setLocationPermission("granted");
+          setShowLocationModal(false);
+          setNeedsLocation(false);
+          toast.success("Location updated successfully!");
+          
+          // Refresh nearby items
+          fetchNearbyItems();
+        } catch (error) {
+          console.error("Failed to update location:", error);
+          toast.error("Failed to update location");
+          setLocationPermission("denied");
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setLocationPermission("denied");
+        toast.error("Location access denied");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000 // 5 minutes
+      }
+    );
+  };
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const response = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Geocoding service unavailable');
+      }
+      
+      const data = await response.json();
+      
+      return {
+        address: data.localityInfo?.administrative?.[0]?.name || "",
+        city: data.city || data.localityInfo?.administrative?.[1]?.name || "Unknown City",
+        state: data.principalSubdivision || data.localityInfo?.administrative?.[2]?.name || "Unknown State",
+        country: data.countryName || "India",
+        postalCode: data.postcode || ""
+      };
+    } catch (error) {
+      console.error("Reverse geocoding failed:", error);
+      return {
+        address: `Location at ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+        city: "Unknown City",
+        state: "Unknown State", 
+        country: "India",
+        postalCode: ""
+      };
     }
   };
 
@@ -165,6 +248,33 @@ export default function BuyerMarketplace() {
 
   return (
     <div className="container-xxl py-4 buyer-marketplace">
+      {/* Location Setup Alert */}
+      {needsLocation && (
+        <div className="alert alert-warning alert-dismissible fade show mb-4" role="alert">
+          <div className="d-flex align-items-center">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-3">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            <div className="flex-grow-1">
+              <h6 className="alert-heading mb-1">📍 Location Required</h6>
+              <p className="mb-0">To see items from goal setters in your area, please share your location. This helps us show you nearby resale items!</p>
+            </div>
+            <button 
+              className="btn btn-warning ms-3"
+              onClick={() => setShowLocationModal(true)}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              Set Location
+            </button>
+          </div>
+          <button type="button" className="btn-close" onClick={() => setNeedsLocation(false)}></button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
@@ -497,6 +607,77 @@ export default function BuyerMarketplace() {
               </div>
               <div className="modal-body">
                 <SellerInfoCard sellerId={selectedSellerId} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Location Setup Modal */}
+      {showLocationModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  Set Your Location
+                </h5>
+                <button 
+                  type="button" 
+                  className="btn-close btn-close-white" 
+                  onClick={() => setShowLocationModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body text-center py-4">
+                <div className="mb-4">
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary mb-3">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  <h6 className="mb-3">Why we need your location</h6>
+                  <p className="text-muted mb-0">
+                    To show you items from goal setters nearby (like in Kanjirapalli), we need to know your location. 
+                    This helps you find items that are easy to collect and reduces shipping costs!
+                  </p>
+                </div>
+                
+                <div className="alert alert-info text-start mb-4">
+                  <div className="d-flex align-items-start">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2 flex-shrink-0">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="16" x2="12" y2="12"/>
+                      <line x1="12" y1="8" x2="12.01" y2="8"/>
+                    </svg>
+                    <div>
+                      <strong>Privacy:</strong> Your exact location is kept private. Goal setters only see your city and approximate distance.
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  className="btn btn-primary btn-lg"
+                  onClick={requestLocationPermission}
+                  disabled={locationPermission === "requesting"}
+                >
+                  {locationPermission === "requesting" ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2"></span>
+                      Getting Location...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                      </svg>
+                      Share My Location
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>

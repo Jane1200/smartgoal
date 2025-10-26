@@ -8,7 +8,7 @@ const goalSchema = new mongoose.Schema(
     targetAmount: { type: Number, min: 0 },
     currentAmount: { type: Number, min: 0, default: 0 },
     dueDate: { type: Date },
-    status: { type: String, enum: ["planned", "in_progress", "completed", "archived"], default: "planned" },
+    status: { type: String, enum: ["planned", "in_progress", "completed", "archived", "achieved"], default: "planned" },
     category: { 
       type: String, 
       enum: ["emergency_fund", "debt_repayment", "essential_purchase", "education", "investment", "discretionary", "other"], 

@@ -42,7 +42,6 @@ export default function GoalsPage() {
   const [financeLoading, setFinanceLoading] = useState(false);
   const [goals, setGoals] = useState([]);
   const [goalsLoading, setGoalsLoading] = useState(false);
-  const [showEmergencyFundSuggestion, setShowEmergencyFundSuggestion] = useState(false);
   
   // Automation state
   const [autoTransfers, setAutoTransfers] = useState([]);
@@ -204,12 +203,7 @@ export default function GoalsPage() {
       const { data } = await api.get("/goals");
       setGoals(data);
       
-      // Check if emergency fund suggestion should be shown
-      if (financeData.monthlyExpense > 0 && !hasEmergencyFund(data)) {
-        setShowEmergencyFundSuggestion(true);
-      } else {
-        setShowEmergencyFundSuggestion(false);
-      }
+      // Emergency fund alert now handled by notification system
     } catch (error) {
       console.error("Failed to load goals:", error);
     } finally {
@@ -327,6 +321,12 @@ export default function GoalsPage() {
   };
 
   const openEditModal = (transfer) => {
+    // Safety check for null goalId
+    if (!transfer.goalId || !transfer.goalId._id) {
+      toast.error("This auto transfer has an invalid goal reference");
+      return;
+    }
+    
     setFormData({
       goalId: transfer.goalId._id,
       amount: transfer.amount,
@@ -337,7 +337,10 @@ export default function GoalsPage() {
   };
 
   const getAvailableGoals = () => {
-    const transferGoalIds = autoTransfers.map(t => t.goalId._id);
+    // Filter out auto transfers with null goalId before accessing _id
+    const transferGoalIds = autoTransfers
+      .filter(t => t.goalId && t.goalId._id)
+      .map(t => t.goalId._id);
     return goals.filter(g => 
       !transferGoalIds.includes(g._id) && 
       g.status !== "completed" && 
@@ -347,7 +350,7 @@ export default function GoalsPage() {
 
   const getTotalMonthlyTransfers = () => {
     return autoTransfers
-      .filter(t => t.isActive && t.frequency === "monthly")
+      .filter(t => t.goalId && t.goalId._id && t.isActive && t.frequency === "monthly")
       .reduce((sum, t) => sum + t.amount, 0);
   };
 
@@ -359,30 +362,8 @@ export default function GoalsPage() {
     });
   };
 
-  // Create emergency fund goal
-  const createEmergencyFundGoal = async () => {
-    try {
-      const targetAmount = calculateEmergencyFundTarget(financeData.monthlyExpense);
-      const payload = {
-        title: "Emergency Fund",
-        description: "Build a safety net for unexpected expenses (3-6 months of expenses)",
-        targetAmount,
-        currentAmount: Math.max(0, financeData.totalSavings || 0),
-        category: "emergency_fund",
-        priority: 1,
-        status: "in_progress",
-        isAutoSuggested: true
-      };
-      
-      await api.post("/goals", payload);
-      toast.success("Emergency Fund goal created! This is your top priority.");
-      loadGoals();
-      loadFinanceData();
-    } catch (error) {
-      console.error("Failed to create emergency fund goal:", error);
-      toast.error("Failed to create emergency fund goal");
-    }
-  };
+  // Emergency fund goal creation moved to notifications
+  // Users can create it from the notification action button
 
   // Function to refresh finance data
   const refreshFinanceData = () => {
@@ -394,18 +375,22 @@ export default function GoalsPage() {
     loadFinanceData();
     loadGoals();
     loadAutomationData();
+    checkExpiredGoals();
   }, []);
+
+  const checkExpiredGoals = async () => {
+    try {
+      await api.post('/goals/check-expired');
+      // Silently check - notifications will be created if needed
+    } catch (error) {
+      console.error('Failed to check expired goals:', error);
+      // Don't show toast - this should be silent
+    }
+  };
 
   useEffect(() => {
     loadFinanceData();
   }, [viewMode]);
-  
-  useEffect(() => {
-    // Check emergency fund suggestion when finance data changes
-    if (financeData.monthlyExpense > 0 && goals.length > 0) {
-      setShowEmergencyFundSuggestion(!hasEmergencyFund(goals));
-    }
-  }, [financeData, goals]);
 
   return (
     <div className="container-xxl py-4">
@@ -427,44 +412,6 @@ export default function GoalsPage() {
         financeLoading={financeLoading}
       />
       
-      {/* Emergency Fund Suggestion Banner */}
-      {showEmergencyFundSuggestion && financeData.monthlyExpense > 0 && (
-        <div className="alert alert-warning alert-dismissible fade show mb-4" role="alert">
-          <div className="d-flex align-items-start">
-            <div className="me-3" style={{ fontSize: '2rem' }}>🚨</div>
-            <div className="flex-grow-1">
-              <h5 className="alert-heading mb-2">Build Your Emergency Fund First!</h5>
-              <p className="mb-2">
-                Financial experts recommend having <strong>3-6 months of expenses</strong> saved for emergencies. 
-                Based on your monthly expenses of <strong>{formatCurrency(financeData.monthlyExpense)}</strong>, 
-                we recommend an emergency fund of <strong>{formatCurrency(calculateEmergencyFundTarget(financeData.monthlyExpense))}</strong>.
-              </p>
-              <p className="mb-3 small text-muted">
-                This safety net protects you from unexpected job loss, medical emergencies, or urgent repairs. 
-                It's the foundation of financial security and should be your top priority.
-              </p>
-              <button 
-                className="btn btn-warning btn-sm"
-                onClick={createEmergencyFundGoal}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="16"/>
-                  <line x1="8" y1="12" x2="16" y2="12"/>
-                </svg>
-                Create Emergency Fund Goal
-              </button>
-            </div>
-            <button 
-              type="button" 
-              className="btn-close" 
-              onClick={() => setShowEmergencyFundSuggestion(false)}
-              aria-label="Close"
-            ></button>
-          </div>
-        </div>
-      )}
-
       {/* Priority Goals Section */}
       {!goalsLoading && goals.length > 0 && getPriorityGoals(goals).length > 0 && (
         <div className="card mb-4 border-danger">
@@ -507,12 +454,20 @@ export default function GoalsPage() {
                               <small className="text-muted">{categoryInfo.label}</small>
                             </div>
                           </div>
-                          <span 
-                            className={`badge ${priorityInfo.color}`}
-                            title={priorityInfo.label}
-                          >
-                            {priorityInfo.badge}
-                          </span>
+                          <div className="d-flex gap-2">
+                            {goal.status === 'planned' && (
+                              <span className="badge bg-secondary">📋 Planned</span>
+                            )}
+                            {goal.status === 'in_progress' && (
+                              <span className="badge bg-info">🚀 In Progress</span>
+                            )}
+                            <span 
+                              className={`badge ${priorityInfo.color}`}
+                              title={priorityInfo.label}
+                            >
+                              {priorityInfo.badge}
+                            </span>
+                          </div>
                         </div>
                         
                         {goal.description && (
@@ -537,13 +492,104 @@ export default function GoalsPage() {
                         </div>
                         
                         <div className="d-flex justify-content-between">
-                          <div>
-                            <small className="text-muted d-block">Current</small>
-                            <strong>{formatCurrency(goal.currentAmount)}</strong>
+                          <div className="text-center w-100">
+                            <small className="text-muted d-block">Target Amount</small>
+                            <strong className="h5">{formatCurrency(goal.targetAmount)}</strong>
                           </div>
-                          <div className="text-end">
-                            <small className="text-muted d-block">Target</small>
-                            <strong>{formatCurrency(goal.targetAmount)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Achieved Goals Section */}
+      {!goalsLoading && goals.filter(g => g.status === 'achieved').length > 0 && (
+        <div className="card mb-4 border-success">
+          <div className="card-header bg-success bg-opacity-10 border-success">
+            <div className="d-flex align-items-center justify-content-between">
+              <div className="d-flex align-items-center">
+                <span style={{ fontSize: '1.5rem' }} className="me-2">🏆</span>
+                <div>
+                  <h5 className="mb-0">Achieved Goals</h5>
+                  <small className="text-muted">Goals you've successfully completed</small>
+                </div>
+              </div>
+              <span className="badge bg-success">{goals.filter(g => g.status === 'achieved').length}</span>
+            </div>
+          </div>
+          <div className="card-body">
+            <div className="alert alert-success mb-3">
+              <small>
+                <strong>🎉 Congratulations!</strong> You've achieved your goals! Keep up the great work and continue building your financial future.
+              </small>
+            </div>
+            <div className="row g-3">
+              {goals.filter(g => g.status === 'achieved').map((goal) => {
+                const categoryInfo = getCategoryInfo(goal.category);
+                const priorityInfo = getPriorityInfo(goal.priority);
+                
+                return (
+                  <div key={goal._id} className="col-md-6">
+                    <div className="card h-100 border-start border-4 border-success">
+                      <div className="card-body">
+                        <div className="d-flex align-items-start justify-content-between mb-2">
+                          <div className="d-flex align-items-center gap-2">
+                            <span style={{ fontSize: '1.5rem' }}>{categoryInfo.icon}</span>
+                            <div>
+                              <h6 className="mb-0">{goal.title}</h6>
+                              <small className="text-muted">{categoryInfo.label}</small>
+                            </div>
+                          </div>
+                          <div className="d-flex gap-2">
+                            <span className="badge bg-success">
+                              ✅ Achieved
+                            </span>
+                            <span 
+                              className={`badge ${priorityInfo.color}`}
+                              title={priorityInfo.label}
+                            >
+                              {priorityInfo.badge}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {goal.description && (
+                          <p className="small text-muted mb-2">{goal.description}</p>
+                        )}
+                        
+                        <div className="mb-2">
+                          <div className="d-flex justify-content-between mb-1">
+                            <small className="text-muted">Progress</small>
+                            <small className="fw-bold text-success">100% ✓</small>
+                          </div>
+                          <div className="progress" style={{ height: '8px' }}>
+                            <div 
+                              className="progress-bar bg-success" 
+                              role="progressbar" 
+                              style={{ width: '100%' }}
+                              aria-valuenow={100} 
+                              aria-valuemin="0" 
+                              aria-valuemax="100"
+                            ></div>
+                          </div>
+                        </div>
+                        
+                        <div className="d-flex justify-content-between">
+                          <div className="text-center w-100">
+                            <small className="text-muted d-block">Target Amount</small>
+                            <strong className="h5 text-success">{formatCurrency(goal.targetAmount)}</strong>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3 pt-2 border-top">
+                          <div className="d-flex justify-content-between text-muted small">
+                            <span>⏰ Due: {formatDate(goal.dueDate)}</span>
+                            <span>📅 Created: {formatDate(goal.createdAt)}</span>
                           </div>
                         </div>
                       </div>
@@ -721,7 +767,9 @@ export default function GoalsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {autoTransfers.map((transfer) => {
+                        {autoTransfers
+                          .filter(transfer => transfer.goalId && transfer.goalId._id) // Filter out invalid goal references
+                          .map((transfer) => {
                           const categoryInfo = getCategoryInfo(transfer.goalId.category);
                           const priorityInfo = getPriorityInfo(transfer.goalId.priority);
                           
@@ -899,7 +947,7 @@ export default function GoalsPage() {
                     </div>
                   )}
 
-                  {editingTransfer && (
+                  {editingTransfer && editingTransfer.goalId && (
                     <div className="mb-3">
                       <label className="form-label">Goal</label>
                       <input 

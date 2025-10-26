@@ -15,18 +15,20 @@ const PREMIUM_BRANDS = {
 const CONDITION_MULTIPLIERS = {
   'new': 0.95,           // 95% of estimated value
   'like-new': 0.82,      // 82% of estimated value
+  'excellent': 0.75,     // 75% of estimated value
   'good': 0.68,          // 68% of estimated value
   'fair': 0.48,          // 48% of estimated value
-  'poor': 0.28           // 28% of estimated value
+  'needs-repair': 0.28,  // 28% of estimated value (requires repair)
+  'poor': 0.28           // 28% of estimated value (legacy support)
 };
 
-// Category-specific depreciation rates (per month)
+// Category-specific depreciation rates (per month) - adjusted for exponential decay
 const DEPRECIATION_RATES = {
-  electronics: 0.08,     // Electronics lose ~8% value per month
-  sports: 0.03,          // Sports items lose ~3% per month
-  books: 0.01,           // Books lose ~1% per month
-  fashion: 0.02,         // Fashion loses ~2% per month
-  other: 0.04            // Others lose ~4% per month
+  electronics: 0.025,    // Electronics: ~60% value after 12 months, ~35% after 24 months
+  sports: 0.015,         // Sports items: ~83% after 12 months, ~70% after 24 months
+  books: 0.008,          // Books: ~91% after 12 months, ~82% after 24 months
+  fashion: 0.012,        // Fashion: ~86% after 12 months, ~75% after 24 months
+  other: 0.020           // Others: ~78% after 12 months, ~60% after 24 months
 };
 
 // Base demand multipliers by category
@@ -110,7 +112,17 @@ export function calculateDepreciation(monthsOld, category = 'other') {
   // This is more realistic than linear depreciation
   const depreciation = Math.exp(-rate * monthsOld);
   
-  return Math.max(0.1, depreciation); // Minimum 10% of original value
+  // More realistic floor values based on category
+  const floorValues = {
+    electronics: 0.25,  // Minimum 25% value for electronics
+    sports: 0.30,       // Minimum 30% value for sports
+    books: 0.20,        // Minimum 20% value for books
+    fashion: 0.15,      // Minimum 15% value for fashion
+    other: 0.20         // Minimum 20% value for others
+  };
+  
+  const minValue = floorValues[category] || floorValues.other;
+  return Math.max(minValue, depreciation);
 }
 
 /**

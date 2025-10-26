@@ -29,9 +29,14 @@ const marketplaceSchema = new mongoose.Schema(
       enum: ["electronics", "fashion", "home", "sports", "books", "vehicles", "other"],
       default: "other"
     },
+    subCategory: {
+      type: String,
+      enum: ["phone", "smartwatch", "earphones", "laptop", "tablet", "other"],
+      default: "other"
+    },
     condition: { 
       type: String, 
-      enum: ["new", "like-new", "good", "fair", "poor"],
+      enum: ["new", "like-new", "excellent", "good", "fair", "needs-repair"],
       default: "good"
     },
     status: { 

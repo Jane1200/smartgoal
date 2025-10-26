@@ -9,6 +9,8 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState({});
+  const [deleting, setDeleting] = useState({});
+  const [retryingPayment, setRetryingPayment] = useState({});
   const [feedbackItemId, setFeedbackItemId] = useState(null);
 
   useEffect(() => {
@@ -41,6 +43,38 @@ export default function Orders() {
       toast.error(error.response?.data?.message || 'Failed to cancel order');
     } finally {
       setCancelling(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    if (!confirm('Are you sure you want to delete this order? This action cannot be undone.')) return;
+
+    setDeleting(prev => ({ ...prev, [orderId]: true }));
+    try {
+      await api.delete(`/orders/${orderId}`);
+      toast.success('Order deleted successfully');
+      fetchOrders(); // Refresh orders
+    } catch (error) {
+      console.error('Delete order error:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete order');
+    } finally {
+      setDeleting(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const handleRetryPayment = async (orderId) => {
+    setRetryingPayment(prev => ({ ...prev, [orderId]: true }));
+    try {
+      // Recreate cart from order items
+      const { data } = await api.post(`/orders/${orderId}/recreate-cart`);
+      toast.success('Items added to cart! Redirecting to checkout...');
+      setTimeout(() => {
+        navigate('/checkout');
+      }, 1000);
+    } catch (error) {
+      console.error('Retry payment error:', error);
+      toast.error(error.response?.data?.message || 'Failed to recreate cart');
+      setRetryingPayment(prev => ({ ...prev, [orderId]: false }));
     }
   };
 
@@ -217,13 +251,41 @@ export default function Orders() {
                   </div>
 
                   {/* Actions */}
-                  <div className="d-flex gap-2 mt-3">
+                  <div className="d-flex gap-2 mt-3 flex-wrap">
                     <button 
                       className="btn btn-sm btn-outline-primary"
                       onClick={() => navigate(`/dashboard/order/${order._id}`)}
                     >
                       View Details
                     </button>
+                    
+                    {/* Retry Payment for Pending Orders */}
+                    {order.status === 'pending' && order.paymentStatus === 'pending' && (
+                      <button 
+                        className="btn btn-sm btn-warning"
+                        onClick={() => handleRetryPayment(order._id)}
+                        disabled={retryingPayment[order._id]}
+                      >
+                        {retryingPayment[order._id] ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm me-1"></span>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                              <path d="M21 3v5h-5"/>
+                              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                              <path d="M3 21v-5h5"/>
+                            </svg>
+                            Complete Payment
+                          </>
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Cancel Order */}
                     {(order.status === 'pending' || order.status === 'confirmed') && (
                       <button 
                         className="btn btn-sm btn-outline-danger"
@@ -233,6 +295,34 @@ export default function Orders() {
                         {cancelling[order._id] ? 'Cancelling...' : 'Cancel Order'}
                       </button>
                     )}
+                    
+                    {/* Delete Cancelled Order */}
+                    {order.status === 'cancelled' && (
+                      <button 
+                        className="btn btn-sm btn-danger"
+                        onClick={() => handleDeleteOrder(order._id)}
+                        disabled={deleting[order._id]}
+                      >
+                        {deleting[order._id] ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm me-1"></span>
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                              <polyline points="3 6 5 6 21 6"/>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                              <line x1="10" y1="11" x2="10" y2="17"/>
+                              <line x1="14" y1="11" x2="14" y2="17"/>
+                            </svg>
+                            Delete Order
+                          </>
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Leave Review for Delivered Orders */}
                     {order.status === 'delivered' && order.items.map((item, idx) => (
                       <button 
                         key={idx}

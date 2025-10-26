@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import { validateForm, validationRules, validateFileUpload, validateFieldLive } from "@/utils/validations.js";
 import { calculateResalePrice, getPricingInsight, extractBrand } from "@/utils/pricingCalculator.js";
 import TrustBadge from "@/components/TrustBadge.jsx";
+import ConditionExplainer from "@/components/ConditionExplainer.jsx";
 
 // Inline error components to avoid import issues
 const FormError = ({ error, className = "" }) => {
@@ -68,7 +69,8 @@ export default function Marketplace() {
     price: "",
     originalPrice: "",
     purchaseDate: "",
-    category: "",
+    category: "electronics", // Always electronics for resale items
+    subCategory: "",
     condition: "",
     images: []
   });
@@ -76,6 +78,7 @@ export default function Marketplace() {
   const [dragActive, setDragActive] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [pricingSuggestion, setPricingSuggestion] = useState(null);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     fetchMyListings();
@@ -88,7 +91,8 @@ export default function Marketplace() {
       price: "",
       originalPrice: "",
       purchaseDate: "",
-      category: "",
+      category: "electronics", // Always electronics for resale items
+      subCategory: "",
       condition: "",
       images: []
     });
@@ -105,7 +109,8 @@ export default function Marketplace() {
       price: item.price || "",
       originalPrice: item.originalPrice || "",
       purchaseDate: item.purchaseDate || "",
-      category: item.category || "",
+      category: "electronics", // Always electronics for resale items
+      subCategory: item.subCategory || "",
       condition: item.condition || "",
       images: item.images || []
     });
@@ -184,6 +189,29 @@ export default function Marketplace() {
       setItems([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncIncome = async () => {
+    try {
+      setSyncing(true);
+      const response = await api.post("/orders/sync-marketplace-income");
+      
+      if (response.data.success) {
+        if (response.data.incomesCreated > 0) {
+          toast.success(
+            `✅ Synced ${response.data.incomesCreated} sale(s) totaling ₹${response.data.totalAmount.toLocaleString()}! Check your Finance page.`,
+            { autoClose: 5000 }
+          );
+        } else {
+          toast.info("All marketplace sales are already synced with your finances!", { autoClose: 4000 });
+        }
+      }
+    } catch (error) {
+      console.error("Failed to sync income:", error);
+      toast.error(error.response?.data?.message || "Failed to sync marketplace income");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -382,7 +410,27 @@ export default function Marketplace() {
               <h1 className="h3 mb-1">Marketplace</h1>
               <p className="text-muted mb-0">List your items for resale and fund your goals</p>
             </div>
-            <div className="btn-group">
+            <div className="d-flex gap-2">
+              <button
+                className="btn btn-outline-success"
+                onClick={handleSyncIncome}
+                disabled={syncing}
+                title="Sync sold items to finance income"
+              >
+                {syncing ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                    </svg>
+                    Sync Income
+                  </>
+                )}
+              </button>
               <button
                 className="btn btn-primary"
                 onClick={() => {
@@ -390,12 +438,11 @@ export default function Marketplace() {
                   setShowListingForm(true);
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
                   <path d="M12 5v14M5 12h14"/>
                 </svg>
                 List New Item
               </button>
-            
             </div>
           </div>
 
@@ -505,8 +552,8 @@ export default function Marketplace() {
                         </div>
                         )}
 
-                        {/* Item Details */}
-                        <div className="col-md-6">
+                        {/* 1. Item Title */}
+                        <div className="col-12">
                           <label htmlFor="title" className="form-label fw-medium">Item Title *</label>
                           <input
                             type="text"
@@ -514,94 +561,142 @@ export default function Marketplace() {
                             className={`form-control ${formErrors.title ? 'is-invalid' : ''}`}
                             value={listingForm.title}
                             onChange={(e) => handleFieldChange('title', e.target.value)}
-                            placeholder="e.g., iPhone 12 Pro Max"
+                            placeholder="e.g., iPhone 13, Apple Watch Series 7, AirPods Pro"
                             required
                           />
                           <FormError error={formErrors.title} />
                         </div>
 
-                        {/* Original Price and Purchase Date - Only show during creation */}
+                        {/* 2 & 3. Original Price and Purchase Date - Only during creation */}
                         {!isEditMode && (
                         <>
                         <div className="col-md-6">
-                          <label htmlFor="originalPrice" className="form-label fw-medium">Original Price (₹)</label>
+                          <label htmlFor="originalPrice" className="form-label fw-medium">Original Price (₹) *</label>
                           <input
                             type="number"
                             id="originalPrice"
                             className={`form-control ${formErrors.originalPrice ? 'is-invalid' : ''}`}
                             value={listingForm.originalPrice}
                             onChange={(e) => handleFieldChange('originalPrice', e.target.value)}
-                            placeholder="Original purchase price"
+                            placeholder="e.g., 90000"
                             min="100"
                             max="100000"
-                            step="0.01"
+                            step="1"
+                            required
                           />
-                          <small className="text-muted d-block mt-1">₹100 to ₹1,00,000 (used to calculate fair resale price)</small>
+                          <small className="text-muted d-block mt-1">How much did you pay originally?</small>
                           <FormError error={formErrors.originalPrice} />
                         </div>
 
                         <div className="col-md-6">
-                          <label htmlFor="purchaseDate" className="form-label fw-medium">Purchase Date</label>
+                          <label htmlFor="purchaseDate" className="form-label fw-medium">Purchase Month & Year *</label>
                           <input
-                            type="date"
+                            type="month"
                             id="purchaseDate"
                             className={`form-control ${formErrors.purchaseDate ? 'is-invalid' : ''}`}
-                            value={listingForm.purchaseDate}
-                            onChange={(e) => handleFieldChange('purchaseDate', e.target.value)}
+                            value={listingForm.purchaseDate ? listingForm.purchaseDate.substring(0, 7) : ''}
+                            onChange={(e) => {
+                              // Convert YYYY-MM to YYYY-MM-01 for storage
+                              const monthValue = e.target.value;
+                              handleFieldChange('purchaseDate', monthValue ? `${monthValue}-01` : '');
+                            }}
                             min={(() => {
                               const date = new Date();
                               date.setFullYear(date.getFullYear() - 10);
-                              return date.toISOString().split('T')[0];
+                              const year = date.getFullYear();
+                              const month = String(date.getMonth() + 1).padStart(2, '0');
+                              return `${year}-${month}`;
                             })()}
-                            max={new Date().toISOString().split('T')[0]}
+                            max={(() => {
+                              const date = new Date();
+                              const year = date.getFullYear();
+                              const month = String(date.getMonth() + 1).padStart(2, '0');
+                              return `${year}-${month}`;
+                            })()}
+                            required
                           />
-                          <small className="text-muted d-block mt-1">Within last 10 years (helps adjust price for age)</small>
+                          <small className="text-muted d-block mt-1">When did you buy this?</small>
                           <FormError error={formErrors.purchaseDate} />
                         </div>
                         </>
                         )}
 
-                        {/* Pricing Suggestion Box - Only show during creation */}
+                        {/* 4. Device Type */}
+                        <div className="col-md-6">
+                          <label htmlFor="subCategory" className="form-label fw-medium">Device Type *</label>
+                          <select
+                            id="subCategory"
+                            className={`form-select ${formErrors.subCategory ? 'is-invalid' : ''}`}
+                            value={listingForm.subCategory}
+                            onChange={(e) => handleFieldChange('subCategory', e.target.value)}
+                            required
+                          >
+                            <option value="">Select Device Type</option>
+                            <option value="phone">📱 Phone</option>
+                            <option value="smartwatch">⌚ Smartwatch</option>
+                            <option value="earphones">🎧 Earphones</option>
+                          </select>
+                          <FormError error={formErrors.subCategory} />
+                        </div>
+
+                        {/* 5. Condition Explainer - Shows after device type is selected */}
+                        {['phone', 'smartwatch', 'earphones'].includes(listingForm.subCategory) && (
+                          <div className="col-12">
+                            <ConditionExplainer
+                              selectedCondition={listingForm.condition}
+                              onSelectCondition={(condition) => handleFieldChange('condition', condition)}
+                              deviceType={listingForm.subCategory}
+                            />
+                          </div>
+                        )}
+
+                        {/* 6. Smart Pricing Suggestion - Shows after condition is selected */}
                         {!isEditMode && pricingSuggestion && (
                           <div className="col-12">
-                            <div className="alert alert-info border-0 rounded-3" role="alert">
+                            <div className="alert alert-success border-0 rounded-3 shadow-sm" role="alert">
                               <div className="d-flex align-items-start">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-3 mt-1 flex-shrink-0">
-                                  <circle cx="12" cy="12" r="10"/>
-                                  <path d="M12 6v6l4 2"/>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-3 mt-1 flex-shrink-0 text-success">
+                                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                  <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
                                 </svg>
                                 <div className="flex-grow-1">
-                                  <strong className="d-block mb-2">💡 Smart Pricing Suggestion</strong>
-                                  <div className="row g-2 small">
-                                    <div className="col-6">
-                                      <div className="text-muted">Suggested Price:</div>
-                                      <div className="h5 mb-0 text-success">₹{pricingSuggestion.suggested.toLocaleString('en-IN')}</div>
+                                  <strong className="d-block mb-2 fs-5">💰 Smart Pricing Recommendation</strong>
+                                  <div className="row g-3">
+                                    <div className="col-md-4">
+                                      <div className="text-muted small">Suggested Price</div>
+                                      <div className="h4 mb-0 text-success fw-bold">₹{pricingSuggestion.suggested.toLocaleString('en-IN')}</div>
                                     </div>
-                                    <div className="col-6">
-                                      <div className="text-muted">Value Retained:</div>
-                                      <div className="h5 mb-0">{pricingSuggestion.percentOfOriginal}% of original</div>
+                                    <div className="col-md-4">
+                                      <div className="text-muted small">Value Retained</div>
+                                      <div className="h4 mb-0 fw-bold">{pricingSuggestion.percentOfOriginal}%</div>
+                                    </div>
+                                    <div className="col-md-4">
+                                      <div className="text-muted small">Confidence Score</div>
+                                      <div className="h4 mb-0 fw-bold">{pricingSuggestion.confidence}%</div>
                                     </div>
                                     <div className="col-12 mt-2 pt-2 border-top">
-                                      <div className="text-muted">Recommended Range: ₹{pricingSuggestion.recommendedRange.min.toLocaleString('en-IN')} - ₹{pricingSuggestion.recommendedRange.max.toLocaleString('en-IN')}</div>
+                                      <div className="text-muted small mb-1">Recommended Price Range</div>
+                                      <div className="fw-semibold">₹{pricingSuggestion.recommendedRange.min.toLocaleString('en-IN')} - ₹{pricingSuggestion.recommendedRange.max.toLocaleString('en-IN')}</div>
                                     </div>
                                     {pricingSuggestion.breakdown.age?.months !== undefined && (
-                                      <div className="col-12 mt-2">
-                                        <div className="text-muted">
-                                          <small>
-                                            📅 Age: {pricingSuggestion.breakdown.age.months} month(s) • 
-                                            🏷️ Condition: {pricingSuggestion.breakdown.condition.factor} • 
-                                            ⭐ Confidence: {pricingSuggestion.confidence}%
-                                          </small>
+                                      <div className="col-12">
+                                        <div className="small text-muted">
+                                          📅 Age: <strong>{pricingSuggestion.breakdown.age.months} months</strong> • 
+                                          🏷️ Condition: <strong>{pricingSuggestion.breakdown.condition.factor}</strong> • 
+                                          {pricingSuggestion.breakdown.brand.isPremium && 
+                                            <span> ⭐ <strong>Premium Brand</strong> • </span>
+                                          }
+                                          💎 Value: <strong>{pricingSuggestion.percentOfOriginal}% retained</strong>
                                         </div>
                                       </div>
                                     )}
                                   </div>
                                   <button 
                                     type="button"
-                                    className="btn btn-sm btn-outline-primary mt-2"
+                                    className="btn btn-success mt-3"
                                     onClick={() => handleFieldChange('price', pricingSuggestion.suggested.toString())}
                                   >
-                                    Use Suggested Price
+                                    ✓ Use Recommended Price (₹{pricingSuggestion.suggested.toLocaleString('en-IN')})
                                   </button>
                                 </div>
                               </div>
@@ -609,62 +704,34 @@ export default function Marketplace() {
                           </div>
                         )}
 
+                        {/* 7. Resale Price - Auto-filled from suggestion but editable */}
                         <div className="col-md-6">
-                          <label htmlFor="price" className="form-label fw-medium">Resale Price (₹) *</label>
+                          <label htmlFor="price" className="form-label fw-medium">
+                            Resale Price (₹) *
+                            {pricingSuggestion && (
+                              <span className="badge bg-success ms-2">AI Suggested</span>
+                            )}
+                          </label>
                           <input
                             type="number"
                             id="price"
                             className={`form-control ${formErrors.price ? 'is-invalid' : ''}`}
                             value={listingForm.price}
                             onChange={(e) => handleFieldChange('price', e.target.value)}
-                            placeholder="Set your resale price"
+                            placeholder={pricingSuggestion ? `Suggested: ₹${pricingSuggestion.suggested}` : "Your selling price"}
                             min="100"
-                            step="0.01"
+                            step="1"
                             disabled={isEditMode}
                             required
                           />
-                          {isEditMode && <small className="text-muted d-block mt-1">⚠️ Price cannot be changed after listing</small>}
+                          <small className="text-muted d-block mt-1">
+                            {pricingSuggestion ? 
+                              `You can adjust the AI-suggested price` : 
+                              `Fill details above for smart pricing`
+                            }
+                          </small>
+                          {isEditMode && <small className="text-warning d-block mt-1">⚠️ Price cannot be changed after listing</small>}
                           <FormError error={formErrors.price} />
-                        </div>
-
-                        <div className="col-md-6">
-                          <label htmlFor="category" className="form-label fw-medium">Category *</label>
-                          <select
-                            id="category"
-                            className={`form-select ${formErrors.category ? 'is-invalid' : ''}`}
-                            value={listingForm.category}
-                            onChange={(e) => handleFieldChange('category', e.target.value)}
-                            required
-                          >
-                            <option value="">Select Category</option>
-                            <option value="electronics">Electronics</option>
-                            <option value="fashion">Fashion & Apparel</option>
-                            <option value="sports">Sports & Outdoor</option>
-                            <option value="books">Books</option>
-                            <option value="other">Other</option>
-                          </select>
-                          <FormError error={formErrors.category} />
-                        </div>
-
-                        <div className="col-md-6">
-                          <label htmlFor="condition" className="form-label fw-medium">Condition *</label>
-                          <select
-                            id="condition"
-                            className={`form-select ${formErrors.condition ? 'is-invalid' : ''}`}
-                            value={listingForm.condition}
-                            onChange={(e) => handleFieldChange('condition', e.target.value)}
-                            disabled={isEditMode}
-                            required
-                          >
-                            <option value="">Select Condition</option>
-                            <option value="new">New</option>
-                            <option value="like-new">Like New</option>
-                            <option value="good">Good</option>
-                            <option value="fair">Fair</option>
-                            <option value="poor">Poor</option>
-                          </select>
-                          {isEditMode && <small className="text-muted d-block mt-1">⚠️ Condition cannot be changed after listing</small>}
-                          <FormError error={formErrors.condition} />
                         </div>
 
                         <div className="col-12">
@@ -749,7 +816,17 @@ export default function Marketplace() {
                             className="card-img-top"
                             style={{ height: '200px', objectFit: 'cover' }}
                           />
-                          
+                          {/* Status Badge */}
+                          {item.status === 'sold' && (
+                            <div className="position-absolute top-0 end-0 m-2">
+                              <span className="badge bg-danger">SOLD</span>
+                            </div>
+                          )}
+                          {item.status === 'pending' && (
+                            <div className="position-absolute top-0 end-0 m-2">
+                              <span className="badge bg-warning">PENDING</span>
+                            </div>
+                          )}
                         </div>
                         <div className="card-body d-flex flex-column">
                           <h6 className="card-title">{item.title}</h6>
@@ -766,6 +843,7 @@ export default function Marketplace() {
                                 type="button"
                                 className="btn btn-outline-primary"
                                 onClick={() => handleEditListing(item)}
+                                disabled={item.status === 'sold' || item.status === 'pending'}
                               >
                                 Edit
                               </button>
@@ -773,10 +851,16 @@ export default function Marketplace() {
                                 type="button"
                                 className="btn btn-outline-danger"
                                 onClick={() => handleDeleteListing(item._id || item.id)}
+                                disabled={item.status === 'sold' || item.status === 'pending'}
                               >
                                 Delete
                               </button>
                             </div>
+                            {(item.status === 'sold' || item.status === 'pending') && (
+                              <small className="text-muted d-block mt-2">
+                                {item.status === 'sold' ? '✓ This item has been sold' : '⏳ Payment pending'}
+                              </small>
+                            )}
                           </div>
                         </div>
                       </div>

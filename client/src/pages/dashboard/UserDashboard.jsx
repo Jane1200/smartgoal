@@ -114,6 +114,29 @@ export default function UserDashboard() {
     return Math.round(sum / activeGoals.length);
   })();
 
+  // Calculate achieved goals (100% progress)
+  const achievedGoals = activeGoals.filter((g) => {
+    const current = Number(g.currentAmount || 0);
+    const target = Number(g.targetAmount || 0);
+    const progress = target > 0 ? Math.round((current / target) * 100) : 0;
+    return progress >= 100;
+  }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)); // Sort by most recent first
+
+  // Helper function to format date/time
+  const formatTimeAgo = (date) => {
+    if (!date) return 'Recently';
+    const now = new Date();
+    const updated = new Date(date);
+    const diffInSeconds = Math.floor((now - updated) / 1000);
+
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`;
+    
+    return updated.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
   const savedPctThisMonth = 0;
   const recentActivity = [];
 
@@ -424,10 +447,133 @@ export default function UserDashboard() {
         <div className="col-12 col-lg-8">
           <div className="card shadow-sm">
             <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <h5 className="card-title mb-0">Recent Activity</h5>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 2v20M2 12h20"/>
+                    </svg>
+                  </div>
+                  <h5 className="card-title mb-0">Recent Activity</h5>
+                </div>
+                {achievedGoals.length > 0 && (
+                  <span className="badge bg-success">
+                    {achievedGoals.length} goal{achievedGoals.length > 1 ? 's' : ''} achieved
+                  </span>
+                )}
               </div>
-              <div className="text-muted">No recent activity yet.</div>
+
+              {achievedGoals.length === 0 ? (
+                <div className="text-center py-4">
+                  <div className="text-muted mb-2">No recent activity yet</div>
+                  <small className="text-muted">Complete your goals to see them here!</small>
+                </div>
+              ) : (
+                <div className="d-grid gap-3">
+                  {achievedGoals.slice(0, 5).map((goal) => {
+                    const current = Number(goal.currentAmount || 0);
+                    const target = Number(goal.targetAmount || 0);
+                    
+                    return (
+                      <div 
+                        key={goal._id} 
+                        className="activity-item p-3 border rounded"
+                        style={{
+                          backgroundColor: '#f0fff4',
+                          borderColor: '#28a745 !important',
+                          borderLeft: '4px solid #28a745',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#e8f5e9';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#f0fff4';
+                        }}
+                      >
+                        <div className="d-flex align-items-start gap-3">
+                          {/* Success Icon */}
+                          <div className="flex-shrink-0">
+                            <div 
+                              className="rounded-circle d-flex align-items-center justify-content-center"
+                              style={{
+                                width: '48px',
+                                height: '48px',
+                                backgroundColor: '#28a745',
+                                color: 'white'
+                              }}
+                            >
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                              </svg>
+                            </div>
+                          </div>
+
+                          {/* Goal Details */}
+                          <div className="flex-grow-1">
+                            <div className="d-flex justify-content-between align-items-start mb-2">
+                              <div>
+                                <h6 className="mb-1 fw-bold text-success">🎉 Goal Achieved!</h6>
+                                <div className="fw-semibold">{goal.title}</div>
+                              </div>
+                              <span className="badge bg-success">100%</span>
+                            </div>
+
+                            <div className="d-flex flex-wrap gap-3 mb-2">
+                              <div>
+                                <small className="text-muted d-block">Target Amount</small>
+                                <span className="fw-semibold text-success">
+                                  ₹{target.toLocaleString()}
+                                </span>
+                              </div>
+                              <div>
+                                <small className="text-muted d-block">Achieved Amount</small>
+                                <span className="fw-semibold text-success">
+                                  ₹{current.toLocaleString()}
+                                </span>
+                              </div>
+                              {goal.category && (
+                                <div>
+                                  <small className="text-muted d-block">Category</small>
+                                  <span className="badge bg-light text-dark">
+                                    {goal.category.replace('_', ' ')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="d-flex justify-content-between align-items-center">
+                              <small className="text-muted">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline', marginRight: '4px' }}>
+                                  <circle cx="12" cy="12" r="10"/>
+                                  <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                {formatTimeAgo(goal.updatedAt)}
+                              </small>
+                              <a 
+                                href="/goals" 
+                                className="btn btn-sm btn-success"
+                                style={{ fontSize: '0.75rem' }}
+                              >
+                                View Goal
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {achievedGoals.length > 5 && (
+                    <div className="text-center pt-2">
+                      <a href="/goals" className="text-primary text-decoration-none fw-semibold">
+                        View all {achievedGoals.length} achieved goals →
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

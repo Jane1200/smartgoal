@@ -15,6 +15,7 @@ const emptyForm = {
   category: "",
   imageUrl: "",
   notes: "",
+  dueDate: "",
 };
 
 export default function WishlistManager() {
@@ -61,6 +62,7 @@ export default function WishlistManager() {
       category: item.category || "",
       imageUrl: item.imageUrl || "",
       notes: item.notes || "",
+      dueDate: item.dueDate ? item.dueDate.substring(0, 10) : "",
     });
   }
 
@@ -97,6 +99,7 @@ export default function WishlistManager() {
         category: form.category.trim() || undefined,
         imageUrl: form.imageUrl.trim() || undefined,
         notes: form.notes.trim() || undefined,
+        dueDate: form.dueDate || undefined,
       };
 
       if (isEdit) {
@@ -108,15 +111,13 @@ export default function WishlistManager() {
         setWishlist((prev) => [data, ...prev]);
 
         try {
-          await createGoalFromWishlist({
-            title: data.title,
-            description: data.description,
-            price: data.price
-          });
+          await createGoalFromWishlist(data); // Pass full wishlist item data
           toast.success("Wishlist item added and goal created successfully");
         } catch (goalError) {
           console.error("Failed to create goal from wishlist:", goalError);
-          toast.warning("Wishlist item saved, but creating goal failed");
+          console.error("Goal creation error response:", goalError.response?.data);
+          const errorMsg = goalError.response?.data?.message || "Unknown error";
+          toast.error(`Wishlist saved, but goal creation failed: ${errorMsg}`);
         }
       }
       startCreate();
@@ -154,14 +155,30 @@ export default function WishlistManager() {
     }
   }
 
+  // Map wishlist priority to goal priority
+  const mapWishlistPriorityToGoalPriority = (wishlistPriority) => {
+    const priorityMap = {
+      high: 2,    // High priority wishlist item → High priority goal
+      medium: 3,  // Medium priority wishlist item → Medium priority goal
+      low: 4,     // Low priority wishlist item → Low priority goal
+    };
+    return priorityMap[wishlistPriority] || 3; // Default to medium (3)
+  };
+
   async function createGoalFromWishlist(item) {
     const payload = {
       title: item.title,
       description: item.description,
       targetAmount: item.price ?? 0,
       currentAmount: 0,
+      category: "discretionary", // Wishlist items are discretionary wants
+      priority: mapWishlistPriorityToGoalPriority(item.priority),
+      status: "planned",
+      dueDate: item.dueDate || undefined,
+      sourceWishlistId: item._id || item.id, // Link to source wishlist item
     };
 
+    console.log("Creating goal from wishlist with payload:", payload);
     return api.post("/goals", payload);
   }
 
@@ -460,6 +477,24 @@ export default function WishlistManager() {
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 />
+              </div>
+
+              <div>
+                <label className="form-label fw-semibold small">Target Purchase Date</label>
+                <input
+                  className="form-control"
+                  type="date"
+                  value={form.dueDate}
+                  min={(() => {
+                    const d = new Date();
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, "0");
+                    const dd = String(d.getDate()).padStart(2, "0");
+                    return `${yyyy}-${mm}-${dd}`;
+                  })()}
+                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                />
+                <small className="text-muted">Optional: When do you want to purchase this?</small>
               </div>
               
               <div className="d-flex gap-2 pt-2">

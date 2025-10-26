@@ -23,18 +23,17 @@ import AllGoals from "@/pages/admin/AllGoals.jsx";
 import MarketplaceControl from "@/pages/admin/MarketplaceControl.jsx";
 import FinancialOverview from "@/pages/admin/FinancialOverview.jsx";
 import SystemAnalytics from "@/pages/admin/SystemAnalytics.jsx";
-import GeoMatching from "@/sections/GeoMatching.jsx";
-import BuyerGeoMatching from "@/sections/BuyerGeoMatching.jsx";
 import BuyerMarketplace from "@/pages/dashboard/BuyerMarketplace.jsx";
 import Cart from "@/pages/dashboard/Cart.jsx";
 import Checkout from "@/pages/dashboard/Checkout.jsx";
 import Orders from "@/pages/dashboard/Orders.jsx";
-import ConnectionRequests from "@/sections/ConnectionRequests.jsx";
+import ConnectionsPage from "@/pages/dashboard/Connections.jsx";
 import GoalsPage from "@/pages/dashboard/Goals.jsx";
 import WishlistPage from "@/pages/dashboard/Wishlist.jsx";
 import MarketplacePage from "@/pages/dashboard/Marketplace.jsx";
 import FinancesPage from "@/pages/dashboard/Finances.jsx";
 import AnalyticsPage from "@/pages/dashboard/Analytics.jsx";
+import BuyerAnalyticsPage from "@/pages/dashboard/BuyerAnalytics.jsx";
 import ProfilePage from "@/pages/dashboard/Profile.jsx";
 
 import Home from "@/pages/public/Home.jsx";
@@ -146,8 +145,7 @@ export default function App() {
           <Route path="/finances" element={<FinancesPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/find-buyers" element={<GeoMatching />} />
-          <Route path="/connection-requests" element={<ConnectionRequests />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
         </Route>
 
         {/* Buyer Routes */}
@@ -162,7 +160,8 @@ export default function App() {
         >
           <Route path="/buyer-dashboard" element={<BuyerDashboard />} />
           <Route path="/buyer-profile" element={<BuyerProfile />} />
-          <Route path="/find-goal-setters" element={<BuyerGeoMatching />} />
+          <Route path="/buyer-finances" element={<FinancesPage />} />
+          <Route path="/buyer-analytics" element={<BuyerAnalyticsPage />} />
           <Route path="/buyer-marketplace" element={<BuyerMarketplace />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />

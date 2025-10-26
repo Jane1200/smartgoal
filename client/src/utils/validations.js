@@ -8,7 +8,7 @@ export const validationRules = {
       required: true,
       minLength: 3,
       maxLength: 100,
-      pattern: /^[a-zA-Z0-9\s\-_.,!?()]+$/,
+      pattern: /^[a-zA-Z0-9\s\-_.,!?():]+$/,
       meaningful: true,
       message: "Goal title must be 3-100 characters and contain only letters, numbers, spaces, and basic punctuation"
     },
@@ -20,15 +20,15 @@ export const validationRules = {
     targetAmount: {
       required: true,
       min: 100,
-      max: 10000000,
+      max: 100000,
       type: "number",
-      message: "Target amount must be between ₹100 and ₹1,00,00,000"
+      message: "Target amount must be between ₹100 and ₹1,00,000"
     },
     currentAmount: {
       min: 0,
-      max: 10000000,
+      max: 100000,
       type: "number",
-      message: "Current amount must be between ₹0 and ₹1,00,00,000"
+      message: "Current amount must be between ₹0 and ₹1,00,000"
     },
     dueDate: {
       required: true,
@@ -42,24 +42,24 @@ export const validationRules = {
   finance: {
     amount: {
       required: true,
-      min: 0.01,
-      max: 10000000,
+      min: 2,
+      max: 100000,
       type: "number",
-      message: "Amount must be between ₹0.01 and ₹1,00,00,000"
+      message: "Amount must be between ₹2 and ₹1,00,000"
     },
     incomeAmount: {
       required: true,
-      min: 100,
-      max: 10000000,
+      min: 2,
+      max: 100000,
       type: "number",
-      message: "Income amount must be between ₹100 and ₹1,00,00,000"
+      message: "Income amount must be between ₹2 and ₹1,00,000"
     },
     expenseAmount: {
       required: true,
-      min: 0.01,
-      max: 10000000,
+      min: 2,
+      max: 100000,
       type: "number",
-      message: "Expense amount must be between ₹0.01 and ₹1,00,00,000"
+      message: "Expense amount must be between ₹2 and ₹1,00,000"
     },
     source: {
       required: true,
@@ -76,14 +76,16 @@ export const validationRules = {
       message: "Category must be 2-50 characters and contain only letters, numbers, spaces, and basic punctuation"
     },
     description: {
-      maxLength: 200,
-      message: "Description cannot exceed 200 characters"
+      required: false,
+      maxLength: 100,
+      meaningful: true,
+      message: "Description cannot exceed 100 characters and must be meaningful"
     },
     date: {
       required: true,
       type: "date",
-      minDate: new Date().toISOString().split('T')[0],
-      message: "Date cannot be in the past"
+      maxDate: new Date().toISOString().split('T')[0],
+      message: "Date cannot be in the future"
     }
   },
 
@@ -93,7 +95,7 @@ export const validationRules = {
       required: true,
       minLength: 3,
       maxLength: 100,
-      pattern: /^[a-zA-Z0-9\s\-_.,!?()]+$/,
+      pattern: /^[a-zA-Z0-9\s\-_.,!?():]+$/,
       meaningful: true,
       message: "Item title must be 3-100 characters and contain only letters, numbers, spaces, and basic punctuation"
     },
@@ -129,7 +131,7 @@ export const validationRules = {
     },
     condition: {
       required: true,
-      enum: ["new", "like-new", "good", "fair", "poor"],
+      enum: ["new", "like-new", "excellent", "good", "fair", "needs-repair", "poor"],
       message: "Please select a valid condition"
     },
     category: {
@@ -145,7 +147,7 @@ export const validationRules = {
       required: true,
       minLength: 2,
       maxLength: 100,
-      pattern: /^[a-zA-Z0-9\s\-_.,!?()]+$/,
+      pattern: /^[a-zA-Z0-9\s\-_.,!?():]+$/,
       meaningful: true,
       message: "Item name must be 2-100 characters and contain only letters, numbers, spaces, and basic punctuation"
     },

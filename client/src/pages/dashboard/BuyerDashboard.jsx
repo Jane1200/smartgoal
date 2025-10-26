@@ -19,6 +19,12 @@ export default function BuyerDashboard() {
     savedItems: 0,
     activeWatches: 0
   });
+  const [financeData, setFinanceData] = useState({
+    monthlyIncome: 0,
+    monthlyExpense: 0,
+    monthlySavings: 0,
+    totalSavings: 0
+  });
 
   useEffect(() => {
     fetchBuyerData(false);
@@ -39,10 +45,11 @@ export default function BuyerDashboard() {
         setLoading(true);
       }
       
-      const [ordersRes, itemsRes, statsRes] = await Promise.allSettled([
+      const [ordersRes, itemsRes, statsRes, financeRes] = await Promise.allSettled([
         api.get("/orders"),
         api.get("/marketplace/browse?limit=6"),
-        api.get("/orders/stats")
+        api.get("/orders/stats"),
+        api.get("/finance/summary")
       ]);
 
       if (ordersRes.status === 'fulfilled') {
@@ -59,6 +66,16 @@ export default function BuyerDashboard() {
           totalSpent: 0,
           savedItems: 0,
           activeWatches: 0
+        });
+      }
+
+      if (financeRes.status === 'fulfilled') {
+        const financeDataRes = financeRes.value.data;
+        setFinanceData({
+          monthlyIncome: financeDataRes.monthlyIncome || 0,
+          monthlyExpense: financeDataRes.monthlyExpense || 0,
+          monthlySavings: financeDataRes.monthlySavings || 0,
+          totalSavings: Math.max(0, (financeDataRes.monthlyIncome || 0) - (financeDataRes.monthlyExpense || 0))
         });
       }
     } catch (error) {
@@ -166,9 +183,55 @@ export default function BuyerDashboard() {
         </div>
       </div>
 
-      {/* Buyer Stats */}
+      {/* Finance & Buying Stats */}
       <div className="row g-4 mb-4">
-        <div className="col-12">
+        {/* Finance Summary - Available Savings */}
+        <div className="col-12 col-lg-6">
+          <div className="card shadow-sm border-success" style={{ borderWidth: '2px' }}>
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-start mb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="6" width="20" height="12" rx="2"/>
+                      <path d="M6 10h12"/>
+                      <path d="M6 14h12"/>
+                      <circle cx="12" cy="12" r="2"/>
+                    </svg>
+                  </div>
+                  <h5 className="card-title mb-0">Available Savings</h5>
+                </div>
+                <a href="/buyer-finances" className="btn btn-sm btn-outline-success">View Details</a>
+              </div>
+              
+              <div className="mb-3">
+                <div className="h2 mb-1 text-success">₹{financeData.monthlySavings?.toLocaleString() || '0'}</div>
+                <small className="text-muted">💰 Your current purchasing power</small>
+              </div>
+              
+              <div className="alert alert-info mb-0 py-2 px-3" style={{ fontSize: '0.875rem' }}>
+                <div className="d-flex align-items-start gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 mt-1">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                  </svg>
+                  <div>
+                    <strong>Before you purchase:</strong> You can only buy items if you have sufficient savings. 
+                    {financeData.monthlySavings > 0 ? (
+                      <span className="text-success d-block mt-1">✓ You have ₹{financeData.monthlySavings?.toLocaleString()} available for purchases</span>
+                    ) : (
+                      <span className="text-warning d-block mt-1">⚠️ Add income to your finances to start shopping</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Buyer Stats */}
+        <div className="col-12 col-lg-6">
           <div className="card shadow-sm">
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center mb-3">
@@ -184,19 +247,19 @@ export default function BuyerDashboard() {
                 
               </div>
               <div className="row g-3 text-center">
-                <div className="col-6 col-md-3">
+                <div className="col-6">
                   <div className="small text-muted">Total Orders</div>
                   <div className="h4 mb-0 text-primary">{stats.totalOrders}</div>
                 </div>
-                <div className="col-6 col-md-3">
+                <div className="col-6">
                   <div className="small text-muted">Total Spent</div>
-                  <div className="h4 mb-0 text-success">₹{(stats.totalSpent || 0).toLocaleString()}</div>
+                  <div className="h4 mb-0 text-danger">₹{(stats.totalSpent || 0).toLocaleString()}</div>
                 </div>
-                <div className="col-6 col-md-3">
+                <div className="col-6">
                   <div className="small text-muted">Saved Items</div>
                   <div className="h4 mb-0 text-info">{stats.savedItems}</div>
                 </div>
-                <div className="col-6 col-md-3">
+                <div className="col-6">
                   <div className="small text-muted">Watching</div>
                   <div className="h4 mb-0 text-warning">{stats.activeWatches}</div>
                 </div>

@@ -23,8 +23,11 @@ export default function BuyerProfile() {
   });
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [locationPermission, setLocationPermission] = useState(null);
+  const [geoPreferences, setGeoPreferences] = useState(null);
 
   useEffect(() => {
     fetchProfile();
@@ -41,11 +44,105 @@ export default function BuyerProfile() {
         phone: response.data.phone || "",
         address: response.data.address || ""
       });
+      setGeoPreferences(response.data.geoPreferences);
     } catch (error) {
       console.error("Failed to fetch profile:", error);
       toast.error("Failed to load profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const requestLocationPermission = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by this browser");
+      return;
+    }
+
+    setLocationPermission("requesting");
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          
+          // Reverse geocoding to get address
+          const address = await reverseGeocode(latitude, longitude);
+          
+          await api.put("/profile/location", {
+            latitude,
+            longitude,
+            ...address
+          });
+          
+          setLocationPermission("granted");
+          setShowLocationModal(false);
+          toast.success("Location updated successfully!");
+          
+          // Refresh profile
+          fetchProfile();
+        } catch (error) {
+          console.error("Failed to update location:", error);
+          toast.error("Failed to update location");
+          setLocationPermission("denied");
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setLocationPermission("denied");
+        toast.error("Location access denied");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000 // 5 minutes
+      }
+    );
+  };
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const response = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Geocoding service unavailable');
+      }
+      
+      const data = await response.json();
+      
+      return {
+        address: data.localityInfo?.administrative?.[0]?.name || "",
+        city: data.city || data.localityInfo?.administrative?.[1]?.name || "Unknown City",
+        state: data.principalSubdivision || data.localityInfo?.administrative?.[2]?.name || "Unknown State",
+        country: data.countryName || "India",
+        postalCode: data.postcode || ""
+      };
+    } catch (error) {
+      console.error("Reverse geocoding failed:", error);
+      return {
+        address: `Location at ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+        city: "Unknown City",
+        state: "Unknown State", 
+        country: "India",
+        postalCode: ""
+      };
+    }
+  };
+
+  const handleUpdateGeoPreferences = async (newPrefs) => {
+    try {
+      setSaving(true);
+      await api.put("/profile/geo-preferences", newPrefs);
+      setGeoPreferences(newPrefs);
+      toast.success("Location preferences updated!");
+      fetchProfile();
+    } catch (error) {
+      console.error("Failed to update preferences:", error);
+      toast.error("Failed to update preferences");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -171,6 +268,104 @@ export default function BuyerProfile() {
           {/* Profile Information */}
           <div className="row g-4">
             <div className="col-md-8">
+              {/* Location Card */}
+              <div className="card mb-4">
+                <div className="card-header d-flex justify-content-between align-items-center">
+                  <h5 className="card-title mb-0">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                      <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    Location & Preferences
+                  </h5>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => setShowLocationModal(true)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                      <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    Update Location
+                  </button>
+                </div>
+                <div className="card-body">
+                  {profileData?.location ? (
+                    <>
+                      <div className="row g-3 mb-3">
+                        <div className="col-md-6">
+                          <label className="form-label fw-semibold small text-muted">City</label>
+                          <div className="d-flex align-items-center">
+                            <span className="fs-5">📍</span>
+                            <span className="ms-2">{profileData.location.city}</span>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label fw-semibold small text-muted">State</label>
+                          <div>{profileData.location.state}</div>
+                        </div>
+                        <div className="col-12">
+                          <label className="form-label fw-semibold small text-muted">Last Updated</label>
+                          <div className="text-muted small">
+                            {profileData.location.lastUpdated ? new Date(profileData.location.lastUpdated).toLocaleString('en-IN') : 'Not available'}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="border-top pt-3">
+                        <h6 className="mb-3">Privacy Settings</h6>
+                        <div className="form-check mb-2">
+                          <input 
+                            className="form-check-input" 
+                            type="checkbox" 
+                            id="allowLocationSharing"
+                            checked={geoPreferences?.allowLocationSharing || false}
+                            onChange={(e) => handleUpdateGeoPreferences({
+                              ...geoPreferences,
+                              allowLocationSharing: e.target.checked
+                            })}
+                          />
+                          <label className="form-check-label" htmlFor="allowLocationSharing">
+                            Allow location sharing
+                            <small className="d-block text-muted">Let goal setters find you when listing nearby items</small>
+                          </label>
+                        </div>
+                        <div className="form-check">
+                          <input 
+                            className="form-check-input" 
+                            type="checkbox" 
+                            id="showExactLocation"
+                            checked={geoPreferences?.showExactLocation || false}
+                            onChange={(e) => handleUpdateGeoPreferences({
+                              ...geoPreferences,
+                              showExactLocation: e.target.checked
+                            })}
+                          />
+                          <label className="form-check-label" htmlFor="showExactLocation">
+                            Show exact coordinates
+                            <small className="d-block text-muted">Display precise location to sellers (otherwise only city shown)</small>
+                          </label>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-4">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted mb-3">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                      </svg>
+                      <p className="text-muted mb-3">Location not set</p>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => setShowLocationModal(true)}
+                      >
+                        Set Your Location
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="card">
                 <div className="card-header">
                   <h5 className="card-title mb-0">Account Information</h5>
@@ -409,6 +604,77 @@ export default function BuyerProfile() {
                   disabled={saving}
                 >
                   {saving ? "Changing..." : "Change Password"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Location Setup Modal */}
+      {showLocationModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  Set Your Location
+                </h5>
+                <button 
+                  type="button" 
+                  className="btn-close btn-close-white" 
+                  onClick={() => setShowLocationModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body text-center py-4">
+                <div className="mb-4">
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary mb-3">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  <h6 className="mb-3">Why we need your location</h6>
+                  <p className="text-muted mb-0">
+                    To show you items from goal setters nearby (like in Kanjirapalli), we need to know your location. 
+                    This helps you find items that are easy to collect and reduces shipping costs!
+                  </p>
+                </div>
+                
+                <div className="alert alert-info text-start mb-4">
+                  <div className="d-flex align-items-start">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2 flex-shrink-0">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="16" x2="12" y2="12"/>
+                      <line x1="12" y1="8" x2="12.01" y2="8"/>
+                    </svg>
+                    <div>
+                      <strong>Privacy:</strong> Your exact location is kept private. Goal setters only see your city and approximate distance.
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  className="btn btn-primary btn-lg"
+                  onClick={requestLocationPermission}
+                  disabled={locationPermission === "requesting"}
+                >
+                  {locationPermission === "requesting" ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2"></span>
+                      Getting Location...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                      </svg>
+                      Share My Location
+                    </>
+                  )}
                 </button>
               </div>
             </div>

@@ -21,6 +21,7 @@ export default function ConnectionRequests() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [acceptedBuyers, setAcceptedBuyers] = useState([]);
   const [acceptedBuyersLoading, setAcceptedBuyersLoading] = useState(false);
+  const [cleaningUp, setCleaningUp] = useState(false);
 
   useEffect(() => {
     fetchConnections();
@@ -114,6 +115,29 @@ export default function ConnectionRequests() {
     }
   };
 
+  const handleCleanupOrphaned = async () => {
+    if (!confirm('This will remove all connection requests from deleted users. Continue?')) {
+      return;
+    }
+    
+    setCleaningUp(true);
+    try {
+      const { data } = await api.post('/connections/cleanup-orphaned');
+      if (data.success) {
+        toast.success(data.message);
+        // Refresh all data
+        fetchConnections();
+        fetchStats();
+        fetchAcceptedBuyers();
+      }
+    } catch (error) {
+      console.error("Failed to cleanup orphaned connections:", error);
+      toast.error(error.response?.data?.message || "Failed to cleanup connections");
+    } finally {
+      setCleaningUp(false);
+    }
+  };
+
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('en-IN', {
       year: 'numeric',
@@ -167,7 +191,26 @@ export default function ConnectionRequests() {
           </p>
         </div>
         <div className="d-flex align-items-center gap-2">
-          
+          <button 
+            className="btn btn-outline-warning btn-sm"
+            onClick={handleCleanupOrphaned}
+            disabled={cleaningUp}
+            title="Remove connection requests from deleted users"
+          >
+            {cleaningUp ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                Cleaning...
+              </>
+            ) : (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                  <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                Cleanup
+              </>
+            )}
+          </button>
           <button 
             className="btn btn-outline-primary btn-sm"
             onClick={() => fetchConnections()}

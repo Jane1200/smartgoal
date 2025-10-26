@@ -1,0 +1,23 @@
+{
+  "name": "smartgoal-playwright-tests",
+  "version": "1.0.0",
+  "description": "Playwright automated tests for SmartGoal - Focused test suite",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:auth": "playwright test tests/auth.spec.js",
+    "test:goals": "playwright test tests/goals.spec.js",
+    "test:wishlist": "playwright test tests/wishlist.spec.js",
+    "test:marketplace": "playwright test tests/marketplace.spec.js",
+    "test:cart": "playwright test tests/cart.spec.js",
+    "report": "playwright show-report",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}
+

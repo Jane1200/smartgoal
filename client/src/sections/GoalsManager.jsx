@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "@/utils/api.js";
 import { toast } from "react-toastify";
-import { validateForm, validationRules, formatCurrency, calculateProgress } from "@/utils/validations.js";
+import { validateForm, validationRules, formatCurrency, calculateProgress, validateMeaningfulTextSync } from "@/utils/validations.js";
 import { FormError } from "@/components/FormError.jsx";
 import { 
   GOAL_CATEGORIES, 
@@ -34,6 +34,31 @@ export default function GoalsManager({
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [formErrors, setFormErrors] = useState({});
+  
+  // Function to check for suspicious/meaningless text using the meaningful text validator
+  const hasSuspiciousWords = (text) => {
+    if (!text) return false;
+    const trimmed = text.trim();
+    
+    // Use the sophisticated meaningful text validator
+    const error = validateMeaningfulTextSync('text_field', trimmed);
+    
+    // If there's an error from the validator, it means the text is suspicious
+    return error !== '';
+  };
+  
+  // Function to count characters
+  const getCharacterCount = (text) => {
+    return (text || '').length;
+  };
+  
+  // Function to get character count color
+  const getCharCountClass = (current, max) => {
+    const percentage = (current / max) * 100;
+    if (percentage >= 90) return 'text-danger';
+    if (percentage >= 75) return 'text-warning';
+    return 'text-muted';
+  };
 
   const isEdit = useMemo(() => Boolean(editingId), [editingId]);
 
@@ -93,9 +118,38 @@ export default function GoalsManager({
       dueDate: validationRules.goal.dueDate
     });
 
-    if (!goalValidation.isValid) {
-      setFormErrors(goalValidation.errors);
-      toast.error("Please fix the validation errors");
+    // Additional validation for category and meaningful text
+    const errors = { ...goalValidation.errors };
+    if (!form.category || form.category === "") {
+      errors.category = "Please select a goal category";
+    }
+    
+    // Check for meaningful text in title
+    if (form.title) {
+      const titleError = validateMeaningfulTextSync('text_field', form.title.trim());
+      if (titleError) {
+        errors.title = titleError;
+      }
+    }
+    
+    // Check for meaningful text in description
+    if (form.description) {
+      const descriptionError = validateMeaningfulTextSync('text_field', form.description.trim());
+      if (descriptionError) {
+        errors.description = descriptionError;
+      }
+    }
+
+    if (!goalValidation.isValid || errors.category || errors.title || errors.description) {
+      setFormErrors(errors);
+      
+      // Show specific error message for better UX
+      const errorFields = Object.keys(errors);
+      if (errorFields.length === 1) {
+        toast.error(errors[errorFields[0]]);
+      } else {
+        toast.error(`Please fix ${errorFields.length} validation errors`);
+      }
       return;
     }
 
@@ -117,13 +171,17 @@ export default function GoalsManager({
       const payload = {
         title: form.title.trim(),
         description: form.description.trim(),
-        targetAmount: form.targetAmount === "" ? undefined : Number(form.targetAmount),
-        currentAmount: calculateCurrentAmount(), // Use calculated amount
+        targetAmount: form.targetAmount === "" ? undefined : parseInt(form.targetAmount, 10), // Parse as integer to avoid decimals
         dueDate: form.dueDate || undefined,
         status: form.status,
         category: form.category || "other",
         priority: form.priority || calculateAutoPriority(form.category),
       };
+      
+      // Only include currentAmount when editing, not when creating
+      if (isEdit && form.currentAmount) {
+        payload.currentAmount = parseInt(form.currentAmount, 10);
+      }
 
       if (!payload.title) {
         toast.error("Title is required");
@@ -174,8 +232,9 @@ export default function GoalsManager({
   // Get status badge color
   function getStatusBadgeClass(status) {
     switch (status) {
+      case "achieved": return "bg-success";
       case "completed": return "bg-success";
-      case "in_progress": return "bg-primary";
+      case "in_progress": return "bg-info";
       case "planned": return "bg-secondary";
       case "archived": return "bg-warning";
       default: return "bg-secondary";
@@ -199,40 +258,123 @@ export default function GoalsManager({
             
             <form className="d-grid gap-3" onSubmit={saveGoal}>
               <div>
-                <label className="form-label fw-semibold small">Goal Title *</label>
+                <label className="form-label fw-semibold small d-flex justify-content-between align-items-center">
+                  <span>Goal Title *</span>
+                  <span className={`badge ${getCharCountClass(getCharacterCount(form.title), 100)}`}>
+                    {getCharacterCount(form.title)}/100
+                  </span>
+                </label>
                 <input
-                  className={`form-control ${formErrors.title ? 'is-invalid' : ''}`}
-                  placeholder="e.g., Save for vacation"
+                  className={`form-control ${formErrors.title ? 'is-invalid' : (form.title.trim().length >= 3 && !hasSuspiciousWords(form.title.trim()) ? 'is-valid' : '')}`}
+                  placeholder="e.g., Save for vacation, Emergency Fund"
                   value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  onChange={(e) => {
+                    const newTitle = e.target.value;
+                    
+                    // Prevent exceeding max length
+                    if (newTitle.length > 100) {
+                      return;
+                    }
+                    
+                    setForm({ ...form, title: newTitle });
+                    
+                    // Live validation as user types
+                    const title = newTitle.trim();
+                    if (!title) {
+                      setFormErrors({ ...formErrors, title: null }); // Don't show error while typing
+                    } else if (title.length < 3) {
+                      setFormErrors({ ...formErrors, title: "Title must be at least 3 characters" });
+                    } else if (!/^[a-zA-Z0-9\s\-_.,!?():]+$/.test(title)) {
+                      setFormErrors({ ...formErrors, title: "Only letters, numbers, spaces, and basic punctuation allowed" });
+                    } else {
+                      // Use meaningful text validator for better validation
+                      const meaningError = validateMeaningfulTextSync('text_field', title);
+                      if (meaningError) {
+                        setFormErrors({ ...formErrors, title: meaningError });
+                      } else {
+                        setFormErrors({ ...formErrors, title: null }); // Clear error if valid
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // Validate on blur for required check
+                    const title = e.target.value.trim();
+                    if (!title) {
+                      setFormErrors({ ...formErrors, title: "Title is required" });
+                    }
+                  }}
                   disabled={!isGoalCreationEnabled() && !isEdit}
                   required
                 />
                 <FormError error={formErrors.title} />
+                {!formErrors.title && form.title.trim().length >= 3 && !hasSuspiciousWords(form.title.trim()) && (
+                  <small className="text-success">✓ Valid goal title</small>
+                )}
+                {!formErrors.title && !form.title && (
+                  <small className="text-muted">Min 3 characters, max 100. Use meaningful words only.</small>
+                )}
               </div>
               
               <div>
-                <label className="form-label fw-semibold small">Description</label>
+                <label className="form-label fw-semibold small d-flex justify-content-between align-items-center">
+                  <span>Description</span>
+                  <span className={`badge ${getCharCountClass(getCharacterCount(form.description), 500)}`}>
+                    {getCharacterCount(form.description)}/500
+                  </span>
+                </label>
                 <textarea
-                  className={`form-control ${formErrors.description ? 'is-invalid' : ''}`}
-                  placeholder="Describe your goal..."
+                  className={`form-control ${formErrors.description ? 'is-invalid' : (form.description.trim().length > 0 && !hasSuspiciousWords(form.description.trim()) ? 'is-valid' : '')}`}
+                  placeholder="Describe your goal... (e.g., Planning a family vacation to Goa in December)"
                   rows={3}
                   value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  onChange={(e) => {
+                    const newDescription = e.target.value;
+                    
+                    // Prevent exceeding max length
+                    if (newDescription.length > 500) {
+                      return;
+                    }
+                    
+                    setForm({ ...form, description: newDescription });
+                    
+                    // Live validation as user types
+                    const description = newDescription.trim();
+                    if (!description) {
+                      setFormErrors({ ...formErrors, description: null });
+                    } else {
+                      // Use meaningful text validator for better validation
+                      const meaningError = validateMeaningfulTextSync('text_field', description);
+                      if (meaningError) {
+                        setFormErrors({ ...formErrors, description: meaningError });
+                      } else {
+                        setFormErrors({ ...formErrors, description: null });
+                      }
+                    }
+                  }}
                   disabled={!isGoalCreationEnabled() && !isEdit}
                 />
                 <FormError error={formErrors.description} />
+                {!formErrors.description && form.description.trim().length > 0 && !hasSuspiciousWords(form.description.trim()) && (
+                  <small className="text-success">✓ Valid description</small>
+                )}
+                {!formErrors.description && !form.description && (
+                  <small className="text-muted">Optional, max 500 characters. Use meaningful text.</small>
+                )}
               </div>
               
               <div>
                 <label className="form-label fw-semibold small">Goal Category *</label>
                 <select
-                  className="form-select"
+                  className={`form-select ${formErrors.category ? 'is-invalid' : ''}`}
                   value={form.category}
                   onChange={(e) => {
                     const newCategory = e.target.value;
                     const autoPriority = calculateAutoPriority(newCategory);
                     setForm({ ...form, category: newCategory, priority: autoPriority });
+                    // Clear error when user selects a category
+                    if (formErrors.category) {
+                      setFormErrors({ ...formErrors, category: null });
+                    }
                   }}
                   disabled={!isGoalCreationEnabled() && !isEdit}
                 >
@@ -242,6 +384,7 @@ export default function GoalsManager({
                     </option>
                   ))}
                 </select>
+                <FormError error={formErrors.category} />
                 <small className="text-muted">
                   Priority is automatically set based on category. Critical goals should be completed first.
                 </small>
@@ -249,27 +392,56 @@ export default function GoalsManager({
               
               <div className="row g-2">
                 <div className="col">
-                  <label className="form-label fw-semibold small">Target Amount</label>
+                  <label className="form-label fw-semibold small">Target Amount *</label>
                   <div className="input-group">
                     <span className="input-group-text">₹</span>
                     <input
                       className={`form-control ${formErrors.targetAmount ? 'is-invalid' : ''}`}
                       type="number"
                       min="100"
-                      step="0.01"
-                      placeholder="100.00"
+                      max="100000"
+                      step="1"
+                      placeholder="100000"
                       value={form.targetAmount}
-                      onChange={(e) => setForm({ ...form, targetAmount: e.target.value })}
+                      onChange={(e) => {
+                        const newAmount = e.target.value;
+                        setForm({ ...form, targetAmount: newAmount });
+                        
+                        // Live validation as user types
+                        if (!newAmount || newAmount === "") {
+                          setFormErrors({ ...formErrors, targetAmount: null }); // Don't show error while typing
+                        } else {
+                          const numAmount = Number(newAmount);
+                          if (isNaN(numAmount)) {
+                            setFormErrors({ ...formErrors, targetAmount: "Must be a valid number" });
+                          } else                           if (numAmount < 100) {
+                            setFormErrors({ ...formErrors, targetAmount: "Minimum amount is ₹100" });
+                          } else if (numAmount > 100000) {
+                            setFormErrors({ ...formErrors, targetAmount: "Maximum amount is ₹1,00,000" });
+                          } else {
+                            setFormErrors({ ...formErrors, targetAmount: null }); // Clear error if valid
+                          }
+                        }
+                      }}
+                      onBlur={(e) => {
+                        // Validate on blur for required check
+                        const amount = e.target.value;
+                        if (!amount || amount === "") {
+                          setFormErrors({ ...formErrors, targetAmount: "Target amount is required" });
+                        }
+                      }}
                       disabled={!isGoalCreationEnabled() && !isEdit}
+                      required
                     />
                   </div>
                   <FormError error={formErrors.targetAmount} />
+                  <small className="text-muted">Min ₹100, Max ₹1,00,000</small>
                 </div>
               </div>
               
               <div className="row g-2">
-                <div className="col">
-                  <label className="form-label fw-semibold small">Due Date</label>
+                <div className={isEdit ? "col" : "col-12"}>
+                  <label className="form-label fw-semibold small">Due Date *</label>
                   <input
                     className={`form-control ${formErrors.dueDate ? 'is-invalid' : ''}`}
                     type="date"
@@ -281,25 +453,58 @@ export default function GoalsManager({
                       const dd = String(d.getDate()).padStart(2, "0");
                       return `${yyyy}-${mm}-${dd}`;
                     })()}
-                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                    onChange={(e) => {
+                      const newDate = e.target.value;
+                      setForm({ ...form, dueDate: newDate });
+                      
+                      // Live validation as user selects
+                      if (!newDate) {
+                        setFormErrors({ ...formErrors, dueDate: null }); // Don't show error immediately
+                      } else {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const dueDate = new Date(newDate);
+                        dueDate.setHours(0, 0, 0, 0);
+                        
+                        if (dueDate < today) {
+                          setFormErrors({ ...formErrors, dueDate: "Due date must be today or in the future" });
+                        } else {
+                          setFormErrors({ ...formErrors, dueDate: null }); // Clear error if valid
+                        }
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // Validate on blur for required check
+                      const selectedDate = e.target.value;
+                      if (!selectedDate) {
+                        setFormErrors({ ...formErrors, dueDate: "Due date is required" });
+                      }
+                    }}
                     disabled={!isGoalCreationEnabled() && !isEdit}
+                    required
                   />
                   <FormError error={formErrors.dueDate} />
+                  <small className="text-muted">Must be today or future date</small>
                 </div>
-                <div className="col">
-                  <label className="form-label fw-semibold small">Status</label>
-                  <select
-                    className="form-select"
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    disabled={!isGoalCreationEnabled() && !isEdit}
-                  >
-                    <option value="planned">Planned</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="archived">Archived</option>
-                  </select>
-                </div>
+                {isEdit && (
+                  <div className="col">
+                    <label className="form-label fw-semibold small">Status</label>
+                    <select
+                      className="form-select"
+                      value={form.status}
+                      onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    >
+                      <option value="planned">📋 Planned</option>
+                      <option value="in_progress">🚀 In Progress</option>
+                      <option value="achieved">✅ Achieved</option>
+                      <option value="completed">✓ Completed</option>
+                      <option value="archived">📦 Archived</option>
+                    </select>
+                    <small className="text-muted">
+                      Status updates automatically based on progress
+                    </small>
+                  </div>
+                )}
               </div>
               
               <div className="d-flex gap-2 pt-2">

@@ -21,7 +21,7 @@ const financeSchema = new mongoose.Schema(
     source: { 
       type: String, 
       required: function() { return this.type === 'income'; },
-      enum: ["salary", "freelance", "business", "investment", "rental", "other"]
+      enum: ["salary", "freelance", "business", "investment", "rental", "marketplace-sale", "other"]
     },
     category: { 
       type: String, 

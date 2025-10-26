@@ -13,6 +13,7 @@ const wishlistSchema = new mongoose.Schema(
     imageUrl: { type: String, trim: true, maxlength: 2048 },
     status: { type: String, enum: ["wishlist", "purchased", "removed"], default: "wishlist" },
     notes: { type: String, trim: true, maxlength: 1000 },
+    dueDate: { type: Date }, // When user wants to purchase this item by
   },
   { timestamps: true }
 );

@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext.jsx";
 import { Navigate } from "react-router-dom";
 import api from "@/utils/api.js";
 import { toast } from "react-toastify";
-import { validateForm, validationRules, formatCurrency } from "@/utils/validations.js";
+import { validateForm, validationRules, formatCurrency, validateFieldLive } from "@/utils/validations.js";
 import { FormError, FormErrors } from "@/components/FormError.jsx";
 
 export default function Finances() {
@@ -15,10 +15,20 @@ export default function Finances() {
     return <Navigate to="/login" replace />;
   }
 
-  // Redirect if not a goal setter
-  if (user?.profile?.role !== "goal_setter") {
+  // Allow both goal_setter and buyer roles to access finances
+  if (user?.profile?.role !== "goal_setter" && user?.profile?.role !== "buyer") {
     return <Navigate to="/dashboard-redirect" replace />;
   }
+
+  // Helper function to format source/category display
+  const formatLabel = (text) => {
+    if (!text) return '-';
+    // Convert 'marketplace-sale' to 'Marketplace Sale'
+    return text
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
 
   const [financeData, setFinanceData] = useState({
     monthlyIncome: 0,
@@ -36,10 +46,13 @@ export default function Finances() {
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState('all-time'); // 'current-month' or 'all-time'
   const [formErrors, setFormErrors] = useState({});
-  const [expenseAlerts, setExpenseAlerts] = useState([]);
+  const [liveErrors, setLiveErrors] = useState({
+    income: {},
+    expense: {}
+  });
 
-  // Real-time automation states
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // Real-time automation states (disabled by default to reduce server load)
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   // Form states
   const [showIncomeForm, setShowIncomeForm] = useState(false);
@@ -57,18 +70,82 @@ export default function Finances() {
     date: new Date().toISOString().split('T')[0]
   });
 
+  // Get minimum allowed date (account creation date)
+  const getMinDate = () => {
+    if (user?.profile?.createdAt) {
+      return new Date(user.profile.createdAt).toISOString().split('T')[0];
+    }
+    // Fallback to a reasonable past date if createdAt is not available
+    const fallbackDate = new Date();
+    fallbackDate.setFullYear(fallbackDate.getFullYear() - 1);
+    return fallbackDate.toISOString().split('T')[0];
+  };
+
+  // Get maximum allowed date (today)
+  const getMaxDate = () => {
+    return new Date().toISOString().split('T')[0];
+  };
+
+  // Live validation handler for income fields
+  const handleIncomeFieldChange = (field, value) => {
+    setIncomeForm(prev => ({ ...prev, [field]: value }));
+    
+    // Validate field live
+    const rules = {
+      amount: validationRules.finance.incomeAmount,
+      source: validationRules.finance.source,
+      description: validationRules.finance.description,
+      date: validationRules.finance.date
+    }[field];
+    
+    if (rules) {
+      const error = validateFieldLive(value, rules, field);
+      setLiveErrors(prev => ({
+        ...prev,
+        income: {
+          ...prev.income,
+          [field]: error
+        }
+      }));
+    }
+  };
+
+  // Live validation handler for expense fields
+  const handleExpenseFieldChange = (field, value) => {
+    setExpenseForm(prev => ({ ...prev, [field]: value }));
+    
+    // Validate field live
+    const rules = {
+      amount: validationRules.finance.expenseAmount,
+      category: validationRules.finance.category,
+      description: validationRules.finance.description,
+      date: validationRules.finance.date
+    }[field];
+    
+    if (rules) {
+      const error = validateFieldLive(value, rules, field);
+      setLiveErrors(prev => ({
+        ...prev,
+        expense: {
+          ...prev.expense,
+          [field]: error
+        }
+      }));
+    }
+  };
+
   useEffect(() => {
     fetchFinanceData();
   }, [viewMode]);
 
-  // Real-time auto-refresh with polling
+  // Real-time auto-refresh with polling (disabled by default to reduce console spam)
   useEffect(() => {
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
-      console.log('Auto-refreshing finance data...');
+      // Silent refresh - only log errors
       fetchFinanceData();
-    }, 30000); // Refresh every 30 seconds
+    }, 60000); // Refresh every 60 seconds (reduced from 30)
 
     return () => clearInterval(interval);
   }, [autoRefresh, viewMode]);
@@ -90,21 +167,6 @@ export default function Finances() {
         monthlySavingsRate: calculatedTotals.monthlySavingsRate,
         totalSavingsRate: calculatedTotals.totalSavingsRate
       }));
-
-      // Analyze expenses and generate alerts/suggestions
-      const { alerts, suggestions } = analyzeExpenses(incomeEntries, expenseEntries);
-      setExpenseAlerts([...alerts, ...suggestions]);
-
-      // Show single consolidated toast notification for critical alerts
-      const criticalAlerts = alerts.filter(alert => alert.type === 'danger' || alert.type === 'warning');
-      if (criticalAlerts.length > 0) {
-        const mostCritical = criticalAlerts[0]; // Show only the most critical alert
-        if (mostCritical.type === 'danger') {
-          toast.error(`${mostCritical.icon} ${mostCritical.title}: ${mostCritical.message}`);
-        } else if (mostCritical.type === 'warning') {
-          toast.warning(`${mostCritical.icon} ${mostCritical.title}: ${mostCritical.message}`);
-        }
-      }
     }
   }, [incomeEntries, expenseEntries]);
 
@@ -230,210 +292,6 @@ export default function Finances() {
     };
   };
 
-  // Analyze expenses and generate alerts/suggestions
-  const analyzeExpenses = (incomeEntries, expenseEntries) => {
-    const alerts = [];
-    const suggestions = [];
-
-    // Calculate totals
-    const totalIncome = incomeEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
-    const totalExpenses = expenseEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
-    
-    // Current month calculations
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-    
-    const monthlyIncome = incomeEntries
-      .filter(entry => {
-        const entryDate = new Date(entry.date);
-        return entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
-      })
-      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
-      
-    const monthlyExpenses = expenseEntries
-      .filter(entry => {
-        const entryDate = new Date(entry.date);
-        return entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
-      })
-      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
-
-    // Get current month expenses for 50/30/20 analysis
-    const currentMonthExpenses = expenseEntries.filter(entry => {
-      const entryDate = new Date(entry.date);
-      return entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
-    });
-
-    // Categorize expenses by type (Needs/Wants/Savings)
-    const categorized = categorizeExpensesByType(currentMonthExpenses);
-    
-    // Calculate 50/30/20 percentages
-    if (monthlyIncome > 0) {
-      const needsPercentage = (categorized.needs.total / monthlyIncome) * 100;
-      const wantsPercentage = (categorized.wants.total / monthlyIncome) * 100;
-      const actualSavings = monthlyIncome - monthlyExpenses;
-      const savingsPercentage = (actualSavings / monthlyIncome) * 100;
-      
-      // Alert if needs exceed 50%
-      if (needsPercentage > 50) {
-        alerts.push({
-          type: 'warning',
-          title: '50/30/20 Rule: Needs Alert',
-          message: `Your essential expenses (${needsPercentage.toFixed(1)}%) exceed the recommended 50% of income. Consider ways to reduce housing, food, or transport costs.`,
-          icon: '🏠'
-        });
-      }
-      
-      // Alert if wants exceed 30%
-      if (wantsPercentage > 30) {
-        const excessWants = categorized.wants.total - (monthlyIncome * 0.30);
-        alerts.push({
-          type: 'warning',
-          title: '50/30/20 Rule: Wants Alert',
-          message: `Your discretionary spending (${wantsPercentage.toFixed(1)}%) exceeds the recommended 30%. You could save ₹${excessWants.toLocaleString()} by reducing entertainment, shopping, or travel expenses.`,
-          icon: '🎭'
-        });
-        
-        // Provide specific suggestions for reducing wants
-        if (categorized.wants.entries.length > 0) {
-          const categoryTotals = {};
-          categorized.wants.entries.forEach(entry => {
-            categoryTotals[entry.category] = (categoryTotals[entry.category] || 0) + (entry.amount || 0);
-          });
-          
-          const topWantCategory = Object.entries(categoryTotals).sort(([,a], [,b]) => b - a)[0];
-          if (topWantCategory) {
-            suggestions.push({
-              type: 'info',
-              title: 'Reduce Non-Essential Spending',
-              message: `Your highest discretionary expense is ${topWantCategory[0]} (₹${topWantCategory[1].toLocaleString()}). Consider cutting back here to increase savings.`,
-              icon: '✂️'
-            });
-          }
-        }
-      }
-      
-      // Alert if savings below 20%
-      if (savingsPercentage < 20) {
-        const targetSavings = monthlyIncome * 0.20;
-        const savingsGap = targetSavings - actualSavings;
-        alerts.push({
-          type: 'danger',
-          title: '50/30/20 Rule: Savings Alert',
-          message: `Your savings rate (${savingsPercentage.toFixed(1)}%) is below the recommended 20%. You need to save ₹${savingsGap.toLocaleString()} more to reach your target.`,
-          icon: '💰'
-        });
-        
-        // Suggest specific areas to cut
-        if (categorized.wants.total > 0) {
-          suggestions.push({
-            type: 'tip',
-            title: 'Increase Savings Goal',
-            message: `You're spending ₹${categorized.wants.total.toLocaleString()} on wants. Reducing this by ${Math.min(100, (savingsGap / categorized.wants.total * 100)).toFixed(0)}% would help you reach the 20% savings target.`,
-            icon: '🎯'
-          });
-        }
-      } else {
-        suggestions.push({
-          type: 'success',
-          title: 'Great Savings Rate!',
-          message: `You're saving ${savingsPercentage.toFixed(1)}% of your income, which meets or exceeds the 20% target. Keep up the good work!`,
-          icon: '🌟'
-        });
-      }
-    }
-
-    // Check for expense alerts
-    if (monthlyExpenses > monthlyIncome && monthlyIncome > 0) {
-      const overspend = monthlyExpenses - monthlyIncome;
-      alerts.push({
-        type: 'danger',
-        title: 'Monthly Overspending Alert!',
-        message: `You're spending ₹${overspend.toLocaleString()} more than you earn this month. Review your expenses immediately.`,
-        icon: '⚠️'
-      });
-    }
-
-    if (totalExpenses > totalIncome && totalIncome > 0) {
-      const totalOverspend = totalExpenses - totalIncome;
-      alerts.push({
-        type: 'warning',
-        title: 'Total Overspending Alert!',
-        message: `Your total expenses exceed income by ₹${totalOverspend.toLocaleString()}.`,
-        icon: '🚨'
-      });
-    }
-
-    // Generate suggestions based on expense patterns
-    if (expenseEntries.length > 0) {
-      // Analyze expense categories
-      const categoryTotals = {};
-      expenseEntries.forEach(entry => {
-        const category = entry.category || 'other';
-        categoryTotals[category] = (categoryTotals[category] || 0) + (entry.amount || 0);
-      });
-
-      const sortedCategories = Object.entries(categoryTotals)
-        .sort(([,a], [,b]) => b - a);
-
-      // Find highest spending category
-      if (sortedCategories.length > 0) {
-        const [topCategory, topAmount] = sortedCategories[0];
-        const percentage = totalExpenses > 0 ? (topAmount / totalExpenses) * 100 : 0;
-        
-        if (percentage > 40) {
-          suggestions.push({
-            type: 'info',
-            title: 'High Spending Category',
-            message: `${topCategory} accounts for ${percentage.toFixed(1)}% of your expenses (₹${topAmount.toLocaleString()}). Consider reviewing this category.`,
-            icon: '📊'
-          });
-        }
-      }
-
-      // Check for frequent small expenses
-      const smallExpenses = expenseEntries.filter(entry => (entry.amount || 0) < 100);
-      if (smallExpenses.length > 10) {
-        const smallTotal = smallExpenses.reduce((sum, entry) => sum + (entry.amount || 0), 0);
-        suggestions.push({
-          type: 'warning',
-          title: 'Small Expenses Add Up',
-          message: `You have ${smallExpenses.length} small expenses (<₹100) totaling ₹${smallTotal.toLocaleString()}. Track these carefully!`,
-          icon: '💰'
-        });
-      }
-
-      // Check for recent high expenses
-      const recentExpenses = expenseEntries
-        .filter(entry => {
-          const entryDate = new Date(entry.date);
-          const daysDiff = (currentDate - entryDate) / (1000 * 60 * 60 * 24);
-          return daysDiff <= 7 && (entry.amount || 0) > 1000;
-        });
-
-      if (recentExpenses.length > 0) {
-        suggestions.push({
-          type: 'info',
-          title: 'Recent High Expenses',
-          message: `You've made ${recentExpenses.length} expense(s) over ₹1,000 in the last week. Monitor your spending pattern.`,
-          icon: '📈'
-        });
-      }
-    }
-
-    // Generate general tips
-    if (monthlyIncome > 0 && (monthlyExpenses / monthlyIncome) > 0.9) {
-      suggestions.push({
-        type: 'tip',
-        title: 'Emergency Fund',
-        message: 'Build an emergency fund covering 3-6 months of expenses for financial security.',
-        icon: '🛡️'
-      });
-    }
-
-    return { alerts, suggestions };
-  };
-
   // Calculate totals from entries
   const calculateTotalsFromEntries = (incomeEntries, expenseEntries) => {
     // Calculate totals based on view mode
@@ -503,11 +361,16 @@ export default function Finances() {
 
     if (!incomeValidation.isValid) {
       setFormErrors(incomeValidation.errors);
+      setLiveErrors(prev => ({
+        ...prev,
+        income: incomeValidation.errors
+      }));
       toast.error("Please fix the validation errors");
       return;
     }
 
     setFormErrors({});
+    setLiveErrors(prev => ({ ...prev, income: {} }));
 
     try {
       setSaving(true);
@@ -524,7 +387,8 @@ export default function Finances() {
       fetchFinanceData();
     } catch (error) {
       console.error("Failed to add income:", error);
-      toast.error("Failed to add income entry");
+      const errorMessage = error.response?.data?.message || "Failed to add income entry";
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -543,11 +407,16 @@ export default function Finances() {
 
     if (!expenseValidation.isValid) {
       setFormErrors(expenseValidation.errors);
+      setLiveErrors(prev => ({
+        ...prev,
+        expense: expenseValidation.errors
+      }));
       toast.error("Please fix the validation errors");
       return;
     }
 
     setFormErrors({});
+    setLiveErrors(prev => ({ ...prev, expense: {} }));
 
     try {
       setSaving(true);
@@ -564,7 +433,8 @@ export default function Finances() {
       fetchFinanceData();
     } catch (error) {
       console.error("Failed to add expense:", error);
-      toast.error("Failed to add expense entry");
+      const errorMessage = error.response?.data?.message || "Failed to add expense entry";
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -888,11 +758,6 @@ export default function Finances() {
                                   <small className="text-muted">
                                     Housing, Food, Transport, Healthcare
                                   </small>
-                                  {needsPercentage > 50 && (
-                                    <div className="alert alert-warning mt-2 mb-0 py-1 px-2 small">
-                                      ⚠️ Exceeds 50% target
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             </div>
@@ -922,11 +787,6 @@ export default function Finances() {
                                   <small className="text-muted">
                                     Entertainment, Shopping, Travel
                                   </small>
-                                  {wantsPercentage > 30 && (
-                                    <div className="alert alert-warning mt-2 mb-0 py-1 px-2 small">
-                                      ⚠️ Exceeds 30% target - Consider reducing
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             </div>
@@ -956,16 +816,6 @@ export default function Finances() {
                                   <small className="text-muted">
                                     Emergency Fund, Goals, Investments
                                   </small>
-                                  {savingsPercentage < 20 && (
-                                    <div className="alert alert-danger mt-2 mb-0 py-1 px-2 small">
-                                      ⚠️ Below 20% target - Increase savings
-                                    </div>
-                                  )}
-                                  {savingsPercentage >= 20 && (
-                                    <div className="alert alert-success mt-2 mb-0 py-1 px-2 small">
-                                      ✅ Great job! Meeting savings goal
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1002,32 +852,6 @@ export default function Finances() {
                       );
                     })()}
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Expense Alerts */}
-          {expenseAlerts.length > 0 && (
-            <div className="row g-4 mb-4">
-              <div className="col-12">
-                <div className="row g-3">
-                  {expenseAlerts.map((alert, index) => (
-                    <div key={index} className="col-md-6">
-                      <div className={`alert alert-${alert.type === 'tip' ? 'info' : alert.type} d-flex align-items-start mb-0`}>
-                        <div className="me-3 fs-5">{alert.icon}</div>
-                        <div className="flex-grow-1">
-                          <h6 className="alert-heading mb-1">{alert.title}</h6>
-                          <p className="mb-0 small">{alert.message}</p>
-                        </div>
-                        <button 
-                          type="button" 
-                          className="btn-close btn-close-sm"
-                          onClick={() => setExpenseAlerts(prev => prev.filter((_, i) => i !== index))}
-                        ></button>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
@@ -1073,7 +897,7 @@ export default function Finances() {
                             <tr key={entry._id}>
                               <td>{index + 1}</td>
                               <td>{new Date(entry.date).toLocaleDateString()}</td>
-                              <td>{entry.source}</td>
+                              <td>{formatLabel(entry.source)}</td>
                               <td>{entry.description || '-'}</td>
                               <td className="text-success fw-bold">₹{entry.amount?.toLocaleString()}</td>
                               <td>
@@ -1138,7 +962,7 @@ export default function Finances() {
                             <tr key={entry._id}>
                               <td>{index + 1}</td>
                               <td>{new Date(entry.date).toLocaleDateString()}</td>
-                              <td><small className="text-capitalize">{entry.category.replace('_', ' ')}</small></td>
+                              <td><small>{formatLabel(entry.category.replace('_', ' '))}</small></td>
                               <td>
                                 <span className={`badge bg-${categoryType.badge}`}>
                                   {categoryType.emoji} {categoryType.type}
@@ -1206,23 +1030,25 @@ export default function Finances() {
                           <input
                             type="number"
                             id="incomeAmount"
-                            className={`form-control ${formErrors.amount ? 'is-invalid' : ''}`}
+                            className={`form-control ${liveErrors.income.amount ? 'is-invalid' : ''}`}
                             value={incomeForm.amount}
-                            onChange={(e) => setIncomeForm(prev => ({ ...prev, amount: e.target.value }))}
+                            onChange={(e) => handleIncomeFieldChange('amount', e.target.value)}
                             placeholder="100"
-                            min="100"
+                            min="2"
+                            max="100000"
                             step="0.01"
                             required
                           />
-                          <FormError error={formErrors.amount} />
+                          {liveErrors.income.amount && <div className="invalid-feedback d-block">{liveErrors.income.amount}</div>}
+                          <small className="text-muted d-block mt-1">₹2 to ₹1,00,000</small>
                         </div>
                         <div className="col-md-6">
                           <label htmlFor="incomeSource" className="form-label">Source *</label>
                           <select
                             id="incomeSource"
-                            className={`form-select ${formErrors.source ? 'is-invalid' : ''}`}
+                            className={`form-select ${liveErrors.income.source ? 'is-invalid' : ''}`}
                             value={incomeForm.source}
-                            onChange={(e) => setIncomeForm(prev => ({ ...prev, source: e.target.value }))}
+                            onChange={(e) => handleIncomeFieldChange('source', e.target.value)}
                             required
                           >
                             <option value="">Select Source</option>
@@ -1231,38 +1057,41 @@ export default function Finances() {
                             <option value="business">Business</option>
                             <option value="investment">Investment</option>
                             <option value="rental">Rental Income</option>
+                            <option value="marketplace-sale">Marketplace Sale</option>
                             <option value="other">Other</option>
                           </select>
-                          <FormError error={formErrors.source} />
+                          {liveErrors.income.source && <div className="invalid-feedback d-block">{liveErrors.income.source}</div>}
                         </div>
                         <div className="col-md-6">
-                          <label htmlFor="incomeDate" className="form-label">Date</label>
+                          <label htmlFor="incomeDate" className="form-label">Date *</label>
                           <input
                             type="date"
                             id="incomeDate"
-                            className="form-control"
+                            className={`form-control ${liveErrors.income.date ? 'is-invalid' : ''}`}
                             value={incomeForm.date}
-                            onChange={(e) => setIncomeForm(prev => ({ ...prev, date: e.target.value }))}
-                            min={(() => {
-                              const date = new Date();
-                              date.setDate(1);
-                              return date.toISOString().split('T')[0];
-                            })()}
-                            max={new Date().toISOString().split('T')[0]}
+                            onChange={(e) => handleIncomeFieldChange('date', e.target.value)}
+                            min={getMinDate()}
+                            max={getMaxDate()}
                             required
                           />
-                          <small className="text-muted d-block mt-1">📅 Current month only (1st to today)</small>
+                          {liveErrors.income.date && <div className="invalid-feedback d-block">{liveErrors.income.date}</div>}
+                          <small className="text-muted d-block mt-1">📅 From account creation to today</small>
                         </div>
                         <div className="col-12">
-                          <label htmlFor="incomeDescription" className="form-label">Description</label>
+                          <label htmlFor="incomeDescription" className="form-label">Description (Optional)</label>
                           <textarea
                             id="incomeDescription"
-                            className="form-control"
+                            className={`form-control ${liveErrors.income.description ? 'is-invalid' : ''}`}
                             rows="3"
                             value={incomeForm.description}
-                            onChange={(e) => setIncomeForm(prev => ({ ...prev, description: e.target.value }))}
+                            onChange={(e) => handleIncomeFieldChange('description', e.target.value)}
                             placeholder="Additional details about this income..."
+                            maxLength="100"
                           />
+                          {liveErrors.income.description && <div className="invalid-feedback d-block">{liveErrors.income.description}</div>}
+                          <small className="text-muted d-block mt-1">
+                            {incomeForm.description.length}/100 characters • No repetitive characters or suspicious words
+                          </small>
                         </div>
                       </div>
                     </div>
@@ -1334,22 +1163,25 @@ export default function Finances() {
                           <input
                             type="number"
                             id="expenseAmount"
-                            className="form-control"
+                            className={`form-control ${liveErrors.expense.amount ? 'is-invalid' : ''}`}
                             value={expenseForm.amount}
-                            onChange={(e) => setExpenseForm(prev => ({ ...prev, amount: e.target.value }))}
+                            onChange={(e) => handleExpenseFieldChange('amount', e.target.value)}
                             placeholder="2500"
-                            min="0"
+                            min="2"
+                            max="100000"
                             step="0.01"
                             required
                           />
+                          {liveErrors.expense.amount && <div className="invalid-feedback d-block">{liveErrors.expense.amount}</div>}
+                          <small className="text-muted d-block mt-1">₹2 to ₹1,00,000</small>
                         </div>
                         <div className="col-md-6">
                           <label htmlFor="expenseCategory" className="form-label">Category *</label>
                           <select
                             id="expenseCategory"
-                            className="form-select"
+                            className={`form-select ${liveErrors.expense.category ? 'is-invalid' : ''}`}
                             value={expenseForm.category}
-                            onChange={(e) => setExpenseForm(prev => ({ ...prev, category: e.target.value }))}
+                            onChange={(e) => handleExpenseFieldChange('category', e.target.value)}
                             required
                           >
                             <option value="">Select Category</option>
@@ -1371,36 +1203,39 @@ export default function Finances() {
                               <option value="other">Other</option>
                             </optgroup>
                           </select>
-                          <small className="text-muted">Choose the category that best fits your expense</small>
+                          {liveErrors.expense.category && <div className="invalid-feedback d-block">{liveErrors.expense.category}</div>}
+                          <small className="text-muted d-block mt-1">Choose the category that best fits your expense</small>
                         </div>
                         <div className="col-md-6">
-                          <label htmlFor="expenseDate" className="form-label">Date</label>
+                          <label htmlFor="expenseDate" className="form-label">Date *</label>
                           <input
                             type="date"
                             id="expenseDate"
-                            className="form-control"
+                            className={`form-control ${liveErrors.expense.date ? 'is-invalid' : ''}`}
                             value={expenseForm.date}
-                            onChange={(e) => setExpenseForm(prev => ({ ...prev, date: e.target.value }))}
-                            min={(() => {
-                              const date = new Date();
-                              date.setDate(1);
-                              return date.toISOString().split('T')[0];
-                            })()}
-                            max={new Date().toISOString().split('T')[0]}
+                            onChange={(e) => handleExpenseFieldChange('date', e.target.value)}
+                            min={getMinDate()}
+                            max={getMaxDate()}
                             required
                           />
-                          <small className="text-muted d-block mt-1">📅 Current month only (1st to today)</small>
+                          {liveErrors.expense.date && <div className="invalid-feedback d-block">{liveErrors.expense.date}</div>}
+                          <small className="text-muted d-block mt-1">📅 From account creation to today</small>
                         </div>
                         <div className="col-12">
-                          <label htmlFor="expenseDescription" className="form-label">Description</label>
+                          <label htmlFor="expenseDescription" className="form-label">Description (Optional)</label>
                           <textarea
                             id="expenseDescription"
-                            className="form-control"
+                            className={`form-control ${liveErrors.expense.description ? 'is-invalid' : ''}`}
                             rows="3"
                             value={expenseForm.description}
-                            onChange={(e) => setExpenseForm(prev => ({ ...prev, description: e.target.value }))}
+                            onChange={(e) => handleExpenseFieldChange('description', e.target.value)}
                             placeholder="Additional details about this expense..."
+                            maxLength="100"
                           />
+                          {liveErrors.expense.description && <div className="invalid-feedback d-block">{liveErrors.expense.description}</div>}
+                          <small className="text-muted d-block mt-1">
+                            {expenseForm.description.length}/100 characters • No repetitive characters or suspicious words
+                          </small>
                         </div>
                       </div>
                     </div>

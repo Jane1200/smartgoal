@@ -108,7 +108,8 @@ export function getPriorityGoals(goals) {
   return goals.filter(g => 
     g.priority <= 2 && 
     g.status !== 'completed' && 
-    g.status !== 'archived'
+    g.status !== 'archived' &&
+    g.status !== 'achieved'
   );
 }
 
@@ -119,7 +120,8 @@ export function getFoundationalGoals(goals) {
   return goals.filter(g => 
     GOAL_CATEGORIES[g.category]?.isFoundational &&
     g.status !== 'completed' && 
-    g.status !== 'archived'
+    g.status !== 'archived' &&
+    g.status !== 'achieved'
   );
 }
 

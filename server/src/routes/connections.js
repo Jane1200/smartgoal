@@ -200,10 +200,16 @@ router.get("/requests", requireAuth, async (req, res) => {
 
     let query = {};
     
-    if (user.hasRole('goal_setter')) {
+    // Check user role - support both single role and multi-role system
+    const isGoalSetter = user.hasRole ? user.hasRole('goal_setter') : 
+                        (user.role === 'goal_setter' || (user.roles && user.roles.includes('goal_setter')));
+    const isBuyer = user.hasRole ? user.hasRole('buyer') : 
+                   (user.role === 'buyer' || (user.roles && user.roles.includes('buyer')));
+    
+    if (isGoalSetter) {
       // Goal setter receives requests
       query.goalSetterId = userObjectId;
-    } else if (user.hasRole('buyer')) {
+    } else if (isBuyer) {
       // Buyer sees their sent requests
       query.buyerId = userObjectId;
     } else {
@@ -221,44 +227,60 @@ router.get("/requests", requireAuth, async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await Connection.countDocuments(query);
+    // Filter out connections with null references and format the rest
+    const formattedConnections = connections
+      .filter(conn => conn.buyerId && conn.goalSetterId) // Only include valid connections
+      .map(conn => ({
+        id: conn._id,
+        status: conn.status,
+        message: conn.message,
+        connectionType: conn.connectionType,
+        buyerLocation: conn.buyerLocation,
+        responseMessage: conn.responseMessage,
+        respondedAt: conn.respondedAt,
+        createdAt: conn.createdAt,
+        updatedAt: conn.updatedAt,
+        buyer: {
+          id: conn.buyerId._id,
+          name: conn.buyerId.name,
+          email: conn.buyerId.email,
+          avatar: conn.buyerId.avatar
+        },
+        goalSetter: {
+          id: conn.goalSetterId._id,
+          name: conn.goalSetterId.name,
+          email: conn.goalSetterId.email,
+          avatar: conn.goalSetterId.avatar
+        }
+      }));
 
-    const formattedConnections = connections.map(conn => ({
-      id: conn._id,
-      status: conn.status,
-      message: conn.message,
-      connectionType: conn.connectionType,
-      buyerLocation: conn.buyerLocation,
-      responseMessage: conn.responseMessage,
-      respondedAt: conn.respondedAt,
-      createdAt: conn.createdAt,
-      updatedAt: conn.updatedAt,
-      buyer: {
-        id: conn.buyerId._id,
-        name: conn.buyerId.name,
-        email: conn.buyerId.email,
-        avatar: conn.buyerId.avatar
-      },
-      goalSetter: {
-        id: conn.goalSetterId._id,
-        name: conn.goalSetterId.name,
-        email: conn.goalSetterId.email,
-        avatar: conn.goalSetterId.avatar
-      }
-    }));
+    // Calculate total using the filtered connections count
+    const filteredTotal = formattedConnections.length;
 
     res.json({
       connections: formattedConnections,
       pagination: {
         current: parseInt(page),
-        total: Math.ceil(total / parseInt(limit)),
-        count: total,
+        total: Math.ceil(filteredTotal / parseInt(limit)),
+        count: filteredTotal,
         limit: parseInt(limit)
       }
     });
   } catch (error) {
     console.error("Get connection requests error:", error);
-    res.status(500).json({ message: "Failed to fetch connection requests" });
+    console.error("Error stack:", error.stack);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      userId: req.user?.id,
+      status: req.query?.status,
+      page: req.query?.page,
+      limit: req.query?.limit
+    });
+    res.status(500).json({ 
+      message: "Failed to fetch connection requests",
+      error: error.message 
+    });
   }
 });
 
@@ -345,8 +367,12 @@ router.get("/accepted-buyers", requireAuth, async (req, res) => {
     console.log("AcceptedBuyers request - User:", userId);
     console.log("User roles:", user.roles);
 
+    // Check if user is a goal setter - support both single role and multi-role system
+    const isGoalSetter = user.hasRole ? user.hasRole('goal_setter') : 
+                        (user.role === 'goal_setter' || (user.roles && user.roles.includes('goal_setter')));
+
     // Only goal setters can view accepted buyers
-    if (!user.hasRole('goal_setter')) {
+    if (!isGoalSetter) {
       console.log("User is not a goal_setter, returning 403");
       return res.status(403).json({ message: "Access denied. Only goal setters can view accepted buyers." });
     }
@@ -362,21 +388,23 @@ router.get("/accepted-buyers", requireAuth, async (req, res) => {
 
     console.log("Found accepted connections count:", acceptedConnections.length);
 
-    // Format the buyers data
-    const buyers = acceptedConnections.map(conn => ({
-      id: conn.buyerId._id,
-      name: conn.buyerId.name,
-      email: conn.buyerId.email,
-      avatar: conn.buyerId.avatar,
-      bio: conn.buyerId.bio,
-      location: conn.buyerId.location,
-      interests: conn.buyerId.interests || [],
-      connectedAt: conn.respondedAt,
-      connectionType: conn.connectionType,
-      originalMessage: conn.message,
-      responseMessage: conn.responseMessage,
-      buyerLocation: conn.buyerLocation
-    }));
+    // Filter out connections with null buyerId (deleted users) and format the buyers data
+    const buyers = acceptedConnections
+      .filter(conn => conn.buyerId && conn.buyerId._id)
+      .map(conn => ({
+        id: conn.buyerId._id,
+        name: conn.buyerId.name,
+        email: conn.buyerId.email,
+        avatar: conn.buyerId.avatar,
+        bio: conn.buyerId.bio,
+        location: conn.buyerId.location,
+        interests: conn.buyerId.interests || [],
+        connectedAt: conn.respondedAt,
+        connectionType: conn.connectionType,
+        originalMessage: conn.message,
+        responseMessage: conn.responseMessage,
+        buyerLocation: conn.buyerLocation
+      }));
 
     res.json({ 
       buyers,
@@ -385,7 +413,16 @@ router.get("/accepted-buyers", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Get accepted buyers error:", error);
-    res.status(500).json({ message: "Failed to fetch accepted buyers" });
+    console.error("Error stack:", error.stack);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      userId: req.user?.id
+    });
+    res.status(500).json({ 
+      message: "Failed to fetch accepted buyers",
+      error: error.message 
+    });
   }
 });
 
@@ -405,10 +442,16 @@ router.get("/analytics", requireAuth, async (req, res) => {
       ? new mongoose.Types.ObjectId(userId) 
       : userId;
 
+    // Check user role - support both single role and multi-role system
+    const isGoalSetter = user.hasRole ? user.hasRole('goal_setter') : 
+                        (user.role === 'goal_setter' || (user.roles && user.roles.includes('goal_setter')));
+    const isBuyer = user.hasRole ? user.hasRole('buyer') : 
+                   (user.role === 'buyer' || (user.roles && user.roles.includes('buyer')));
+
     let query = {};
-    if (user.hasRole('goal_setter')) {
+    if (isGoalSetter) {
       query.goalSetterId = userObjectId;
-    } else if (user.hasRole('buyer')) {
+    } else if (isBuyer) {
       query.buyerId = userObjectId;
     } else {
       return res.status(403).json({ message: "Access denied" });
@@ -562,8 +605,15 @@ router.get("/stats", requireAuth, async (req, res) => {
 
     console.log("Stats request - User:", userId);
     console.log("User roles:", user.roles);
-    console.log("User hasRole('goal_setter'):", user.hasRole('goal_setter'));
-    console.log("User hasRole('buyer'):", user.hasRole('buyer'));
+
+    // Check user role - support both single role and multi-role system
+    const isGoalSetter = user.hasRole ? user.hasRole('goal_setter') : 
+                        (user.role === 'goal_setter' || (user.roles && user.roles.includes('goal_setter')));
+    const isBuyer = user.hasRole ? user.hasRole('buyer') : 
+                   (user.role === 'buyer' || (user.roles && user.roles.includes('buyer')));
+
+    console.log("User isGoalSetter:", isGoalSetter);
+    console.log("User isBuyer:", isBuyer);
 
     // Convert userId to ObjectId for aggregation pipeline
     let userObjectId = mongoose.Types.ObjectId.isValid(userId) 
@@ -571,10 +621,10 @@ router.get("/stats", requireAuth, async (req, res) => {
       : userId;
 
     let query = {};
-    if (user.hasRole('goal_setter')) {
+    if (isGoalSetter) {
       query.goalSetterId = userObjectId;
       console.log("Query for goal_setter:", query);
-    } else if (user.hasRole('buyer')) {
+    } else if (isBuyer) {
       query.buyerId = userObjectId;
       console.log("Query for buyer:", query);
     } else {
@@ -585,6 +635,24 @@ router.get("/stats", requireAuth, async (req, res) => {
     console.log("Executing aggregation with query:", query);
     const stats = await Connection.aggregate([
       { $match: query },
+      // Lookup to check if buyer and goal setter exist
+      { $lookup: {
+        from: 'users',
+        localField: 'buyerId',
+        foreignField: '_id',
+        as: 'buyer'
+      }},
+      { $lookup: {
+        from: 'users',
+        localField: 'goalSetterId',
+        foreignField: '_id',
+        as: 'goalSetter'
+      }},
+      // Filter out connections where buyer or goal setter is null/deleted
+      { $match: {
+        'buyer.0': { $exists: true },
+        'goalSetter.0': { $exists: true }
+      }},
       { $group: {
         _id: '$status',
         count: { $sum: 1 }
@@ -610,7 +678,16 @@ router.get("/stats", requireAuth, async (req, res) => {
     res.json({ stats: formattedStats });
   } catch (error) {
     console.error("Get connection stats error:", error);
-    res.status(500).json({ message: "Failed to fetch connection statistics" });
+    console.error("Error stack:", error.stack);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      userId: req.user?.id
+    });
+    res.status(500).json({ 
+      message: "Failed to fetch connection statistics",
+      error: error.message 
+    });
   }
 });
 
@@ -652,5 +729,57 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c; // Distance in kilometers
 }
+
+// Cleanup orphaned connections (connections with deleted users)
+router.post("/cleanup-orphaned", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get user to check admin access (optional, can be restricted to admins)
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    console.log(`🧹 Starting orphaned connections cleanup...`);
+
+    // Find all connections
+    const allConnections = await Connection.find({})
+      .populate('buyerId')
+      .populate('goalSetterId');
+
+    let deletedCount = 0;
+    const orphanedIds = [];
+
+    for (const conn of allConnections) {
+      if (!conn.buyerId || !conn.goalSetterId) {
+        orphanedIds.push(conn._id);
+        deletedCount++;
+      }
+    }
+
+    // Delete orphaned connections
+    if (orphanedIds.length > 0) {
+      await Connection.deleteMany({ _id: { $in: orphanedIds } });
+      console.log(`✅ Deleted ${deletedCount} orphaned connections`);
+    } else {
+      console.log(`✅ No orphaned connections found`);
+    }
+
+    res.json({
+      success: true,
+      message: `Cleanup completed. Removed ${deletedCount} orphaned connection(s).`,
+      deletedCount
+    });
+  } catch (error) {
+    console.error("❌ Cleanup orphaned connections error:", error);
+    console.error("Error stack:", error.stack);
+    res.status(500).json({
+      success: false,
+      message: "Failed to cleanup orphaned connections",
+      error: error.message
+    });
+  }
+});
 
 export default router;

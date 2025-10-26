@@ -97,7 +97,19 @@ export default function WishlistScraper({ onItemAdded }) {
       if (rawTitle.length > 200) {
         toast.warning("Title was too long and has been truncated to 200 characters.");
       }
-      const title = rawTitle.slice(0, 200);
+      
+      // Clean up title: remove website names and extra suffixes
+      let cleanedTitle = rawTitle;
+      
+      // Remove common e-commerce site patterns from title
+      cleanedTitle = cleanedTitle
+        .replace(/\s*:\s*(Amazon|Flipkart|Myntra|Nykaa|Ajio)\.(in|com).*$/i, '') // Remove ": Amazon.in: ..." or ": Flipkart.com: ..."
+        .replace(/\s*-\s*(Amazon|Flipkart|Myntra|Nykaa|Ajio).*$/i, '') // Remove "- Amazon ..."
+        .replace(/\s*\|\s*(Amazon|Flipkart|Myntra|Nykaa|Ajio).*$/i, '') // Remove "| Amazon ..."
+        .replace(/\s*@\s*(Amazon|Flipkart|Myntra|Nykaa|Ajio).*$/i, '') // Remove "@ Amazon ..."
+        .trim();
+      
+      const title = cleanedTitle.slice(0, 200);
 
       const priceValue =
         typeof editingData.price === "number"
@@ -157,6 +169,8 @@ export default function WishlistScraper({ onItemAdded }) {
         imageUrl,
         currency,
         notes,
+        priority: editingData.priority || "medium",
+        dueDate: editingData.dueDate || undefined,
       };
 
       const payload = Object.fromEntries(
@@ -167,17 +181,30 @@ export default function WishlistScraper({ onItemAdded }) {
 
       if (data && data._id) {
         try {
-          await api.post("/goals", {
+          // Map wishlist priority to goal priority (default to medium if not set)
+          const priorityMap = { high: 2, medium: 3, low: 4 };
+          const goalPriority = priorityMap[data.priority] || 3;
+          
+          const goalPayload = {
             title: data.title,
             description: data.description,
             targetAmount: data.price ?? 0,
             currentAmount: 0,
+            category: "discretionary", // Wishlist items are discretionary wants
+            priority: goalPriority,
+            status: "planned",
+            dueDate: data.dueDate || undefined,
             sourceWishlistId: data._id // Link the goal to this wishlist item
-          });
+          };
+          
+          console.log("Creating goal from scraper with payload:", goalPayload);
+          await api.post("/goals", goalPayload);
           toast.success("Added to wishlist and created goal!");
         } catch (goalError) {
           console.error("Goal creation from scraper failed:", goalError);
-          toast.warning(goalError.response?.data?.message || "Wishlist saved but goal creation failed");
+          console.error("Goal creation error response:", goalError.response?.data);
+          const errorMsg = goalError.response?.data?.message || "Unknown error";
+          toast.error(`Wishlist saved, but goal creation failed: ${errorMsg}`);
         }
 
         setScrapedData(null);
@@ -343,6 +370,44 @@ export default function WishlistScraper({ onItemAdded }) {
                   value={editingData.description || ''}
                   onChange={(e) => handleFieldChange('description', e.target.value)}
                 />
+              </div>
+            </div>
+            <div className="col-12">
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <div className="mb-3">
+                    <label className="form-label">Priority</label>
+                    <select
+                      className="form-control"
+                      value={editingData.priority || 'medium'}
+                      onChange={(e) => handleFieldChange('priority', e.target.value)}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                    <small className="text-muted">How important is this purchase?</small>
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <div className="mb-3">
+                    <label className="form-label">Target Purchase Date</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={editingData.dueDate || ''}
+                      min={(() => {
+                        const d = new Date();
+                        const yyyy = d.getFullYear();
+                        const mm = String(d.getMonth() + 1).padStart(2, "0");
+                        const dd = String(d.getDate()).padStart(2, "0");
+                        return `${yyyy}-${mm}-${dd}`;
+                      })()}
+                      onChange={(e) => handleFieldChange('dueDate', e.target.value)}
+                    />
+                    <small className="text-muted">Optional: When do you want to purchase?</small>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="col-12">

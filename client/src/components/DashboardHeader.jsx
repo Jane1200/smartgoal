@@ -2,6 +2,7 @@ import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useState, useRef, useEffect } from "react";
 import Brand from "@/components/Brand.jsx";
 import { useAuth } from "@/context/AuthContext.jsx";
+import NotificationCenter from "@/components/NotificationCenter.jsx";
 
 export default function DashboardHeader({ variant = "user" }) {
   const auth = useAuth();
@@ -135,7 +136,10 @@ export default function DashboardHeader({ variant = "user" }) {
               <h2>{getPageTitle()}</h2>
             </div>
 
-            <div className="header-actions d-flex align-items-center">
+            <div className="header-actions d-flex align-items-center gap-3">
+              {/* Notification Center */}
+              <NotificationCenter />
+
               {/* User Menu Dropdown */}
               <div className="position-relative" ref={dropdownRef}>
                 <button 

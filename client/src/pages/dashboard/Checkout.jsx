@@ -11,7 +11,7 @@ export default function Checkout() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('cod');
-  const [paymentPlan, setPaymentPlan] = useState('full'); // full, emi3, emi6, bnpl
+  const [paymentPlan, setPaymentPlan] = useState('full'); // full, emi
   const [emiMonths, setEmiMonths] = useState(3); // 3, 6, or 12 months
   const [shippingAddress, setShippingAddress] = useState({
     fullName: user?.name || '',
@@ -26,6 +26,19 @@ export default function Checkout() {
 
   useEffect(() => {
     fetchCart();
+    
+    // Load Razorpay script
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+    
+    return () => {
+      // Cleanup: remove script when component unmounts
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    };
   }, []);
 
   const fetchCart = async () => {
@@ -77,6 +90,83 @@ export default function Checkout() {
     return Math.ceil((totalAmount * (1 + interestRate / 100)) / months);
   };
 
+  const handlePaymentFailure = async (orderId) => {
+    try {
+      const { data } = await api.post(`/orders/${orderId}/payment-failed`);
+      if (data.success) {
+        toast.info(`${data.itemsCount} item(s) added back to cart!`);
+        navigate('/cart');
+      }
+    } catch (error) {
+      console.error('Payment failure handler error:', error);
+      toast.error('Please check your orders or cart');
+      navigate('/orders');
+    }
+  };
+
+  const handleRazorpayPayment = async (orderId, amount) => {
+    try {
+      // Create Razorpay order
+      const { data: razorpayData } = await api.post('/orders/create-razorpay-order', {
+        orderId,
+        amount
+      });
+
+      const options = {
+        key: razorpayData.key,
+        amount: razorpayData.amount,
+        currency: razorpayData.currency,
+        name: 'SmartGoal Marketplace',
+        description: `Order Payment - ${orderId}`,
+        order_id: razorpayData.orderId,
+        prefill: {
+          name: shippingAddress.fullName,
+          contact: shippingAddress.phone,
+        },
+        theme: {
+          color: '#0d6efd'
+        },
+        handler: async function (response) {
+          try {
+            // Verify payment
+            const { data: verifyData } = await api.post('/orders/verify-razorpay-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              orderId
+            });
+
+            if (verifyData.success) {
+              toast.success('Payment successful! Order confirmed.');
+              navigate('/orders');
+            } else {
+              toast.error('Payment verification failed. Items added back to cart.');
+              await handlePaymentFailure(orderId);
+            }
+          } catch (error) {
+            console.error('Payment verification error:', error);
+            toast.error('Payment failed. Items added back to cart.');
+            await handlePaymentFailure(orderId);
+          }
+        },
+        modal: {
+          ondismiss: async function() {
+            toast.info('Payment cancelled. Items added back to cart.');
+            setProcessing(false);
+            await handlePaymentFailure(orderId);
+          }
+        }
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error) {
+      console.error('Razorpay payment error:', error);
+      toast.error('Failed to initialize payment');
+      setProcessing(false);
+    }
+  };
+
   const handlePlaceOrder = async () => {
     if (!validateForm()) return;
 
@@ -91,16 +181,19 @@ export default function Checkout() {
 
       toast.success('Order placed successfully!');
       
-      // If online payment, redirect to payment page
-      if (paymentMethod !== 'cod') {
+      // If UPI payment, open Razorpay
+      if (paymentMethod === 'upi') {
+        await handleRazorpayPayment(data.order._id, cart.totalAmount);
+      } else if (paymentMethod !== 'cod') {
+        // Other online payment methods
         navigate(`/payment/${data.order._id}`);
       } else {
+        // COD
         navigate('/orders');
       }
     } catch (error) {
       console.error('Checkout error:', error);
       toast.error(error.response?.data?.message || 'Failed to place order');
-    } finally {
       setProcessing(false);
     }
   };
@@ -322,23 +415,6 @@ export default function Checkout() {
                   </select>
                 </div>
               )}
-
-              <div className="form-check">
-                <input 
-                  className="form-check-input" 
-                  type="radio" 
-                  name="paymentPlan" 
-                  id="planBnpl"
-                  value="bnpl"
-                  checked={paymentPlan === 'bnpl'}
-                  onChange={(e) => setPaymentPlan(e.target.value)}
-                />
-                <label className="form-check-label" htmlFor="planBnpl">
-                  <strong>BNPL (Buy Now, Pay Later)</strong>
-                  <p className="text-muted small mb-0">Get item now, pay {formatCurrency(cart?.totalAmount || 0)} within 14 days after delivery</p>
-                  <small className="text-success">Income deducted only after delivery confirmation</small>
-                </label>
-              </div>
             </div>
           </div>
         </div>
@@ -389,11 +465,25 @@ export default function Checkout() {
               </div>
               <hr />
               <div className="d-flex justify-content-between mb-3">
-                <span className="fw-bold">Total</span>
+                <span className="fw-bold">
+                  {paymentPlan === 'emi' ? 'Monthly Payment' : 'Total'}
+                </span>
                 <span className="fw-bold text-primary fs-5">
-                  {formatCurrency(cart?.totalAmount || 0)}
+                  {paymentPlan === 'emi' 
+                    ? formatCurrency(calculateEmiAmount(cart?.totalAmount || 0, emiMonths))
+                    : formatCurrency(cart?.totalAmount || 0)
+                  }
                 </span>
               </div>
+              {paymentPlan === 'emi' && (
+                <div className="alert alert-info py-2 mb-3">
+                  <small>
+                    <strong>Total Amount:</strong> {formatCurrency(cart?.totalAmount || 0)}<br/>
+                    <strong>Duration:</strong> {emiMonths} months<br/>
+                    <strong>Per Month:</strong> {formatCurrency(calculateEmiAmount(cart?.totalAmount || 0, emiMonths))}
+                  </small>
+                </div>
+              )}
 
               {/* Place Order Button */}
               <button 
@@ -412,7 +502,10 @@ export default function Checkout() {
                       <path d="M9 11l3 3L22 4"/>
                       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
                     </svg>
-                    Place Order
+                    {paymentPlan === 'emi' 
+                      ? `Place Order - ${formatCurrency(calculateEmiAmount(cart?.totalAmount || 0, emiMonths))}/mo`
+                      : 'Place Order'
+                    }
                   </>
                 )}
               </button>
@@ -440,13 +533,6 @@ export default function Checkout() {
                         <p className="mb-1">📋 <strong>EMI - {emiMonths} Months</strong></p>
                         <p className="mb-0 text-muted">Monthly payment: {formatCurrency(calculateEmiAmount(cart?.totalAmount || 0, emiMonths))}</p>
                         <p className="mb-0 text-muted">Income deducted with each monthly payment.</p>
-                      </div>
-                    )}
-                    {paymentPlan === 'bnpl' && (
-                      <div className="small mt-2">
-                        <p className="mb-1">📋 <strong>Buy Now, Pay Later</strong></p>
-                        <p className="mb-0 text-muted">Pay {formatCurrency(cart?.totalAmount || 0)} within 14 days after delivery</p>
-                        <p className="mb-0 text-success">Income deducted after delivery confirmation.</p>
                       </div>
                     )}
                   </div>

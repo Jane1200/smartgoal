@@ -91,7 +91,10 @@ router.get('/featured', async (req, res) => {
     const limit = parseInt(req.query.limit) || 8;
     
     // Build query to exclude current user's listings if authenticated
-    const query = { status: 'active' };
+    // Exclude sold, archived, or pending items (show active and items without status)
+    const query = { 
+      status: { $nin: ['sold', 'archived', 'pending'] }
+    };
     if (req.user?.id) {
       // Convert JWT string ID to MongoDB ObjectId for query comparison
       const currentUserId = new mongoose.Types.ObjectId(req.user.id);
@@ -104,7 +107,10 @@ router.get('/featured', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit);
     
-    res.json(featuredItems);
+    // Filter out items with null/deleted users
+    const validFeaturedItems = featuredItems.filter(item => item.userId && item.userId._id);
+    
+    res.json(validFeaturedItems);
   } catch (error) {
     console.error('Featured items error:', error);
     res.status(500).json({ message: 'Failed to fetch featured items' });
@@ -350,11 +356,14 @@ router.get("/browse", requireAuth, async (req, res) => {
       .limit(parseInt(limit) * 1)
       .skip((parseInt(page) - 1) * parseInt(limit));
 
+    // Filter out items with null/deleted users
+    const validItems = items.filter(item => item.userId && item.userId._id);
+    
     // Map items with seller info and ratings
-    const itemsWithSeller = await Promise.all(items.map(async (item) => {
+    const itemsWithSeller = await Promise.all(validItems.map(async (item) => {
       const itemObj = item.toObject();
       
-      // Get seller rating
+      // Get seller rating (with defensive check)
       const sellerRating = await MarketplaceFeedback.getSellerRating(item.userId._id);
       
       return {
@@ -518,14 +527,22 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
     }
     
     // Build query for marketplace items
+    // Show active items or items without explicit status (backwards compatibility)
     let query = {
-      userId: { $in: nearbyGoalSetterIds },
-      status: { $in: ['active', 'featured'] }
+      userId: { $in: nearbyGoalSetterIds }
     };
     
+    // Add category filter if specified
     if (category && category !== 'all') {
       query.category = category;
     }
+    
+    // Exclude sold, archived, or pending items
+    query.status = { $nin: ['sold', 'archived', 'pending'] };
+    
+    // Debug logging
+    console.log('Nearby marketplace query:', JSON.stringify(query, null, 2));
+    console.log('Nearby goal setter IDs:', nearbyGoalSetterIds);
     
     // Get marketplace items from nearby goal setters
     const items = await Marketplace.find(query)
@@ -534,11 +551,13 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
     
+    console.log(`Found ${items.length} marketplace items from nearby sellers`);
+    
     const total = await Marketplace.countDocuments(query);
     
     // Format items with seller distance information
     const formattedItems = items
-      .filter(item => item.userId?._id?.toString() !== userId)
+      .filter(item => item.userId && item.userId._id && item.userId._id.toString() !== userId)
       .map(item => {
         const seller = nearbyGoalSetters.find(gs => gs.id.toString() === item.userId._id.toString());
         const daysAgo = Math.ceil((new Date() - new Date(item.createdAt)) / (1000 * 60 * 60 * 24));
@@ -678,6 +697,10 @@ router.post('/feedback/:itemId', requireAuth, async (req, res) => {
     const item = await Marketplace.findById(itemId).populate('userId', 'name');
     if (!item) {
       return res.status(404).json({ message: 'Item not found' });
+    }
+
+    if (!item.userId || !item.userId._id) {
+      return res.status(400).json({ message: 'Item seller not found' });
     }
 
     const sellerId = item.userId._id;
