@@ -13,6 +13,8 @@
     "test:wishlist": "playwright test tests/wishlist.spec.js",
     "test:marketplace": "playwright test tests/marketplace.spec.js",
     "test:cart": "playwright test tests/cart.spec.js",
+    "test:all": "node run-all-tests.js",
+    "generate-report": "node generate-report.js",
     "report": "playwright show-report",
     "install-browsers": "playwright install chromium"
   },

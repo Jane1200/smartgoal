@@ -16,6 +16,7 @@ import cartRoutes from "./routes/cart.js";
 import orderRoutes from "./routes/orders.js";
 import autoTransferRoutes from "./routes/autoTransfer.js";
 import notificationRoutes from "./routes/notifications.js";
+import mlPricingRoutes from './routes/ml-pricing.js';
 
 const app = express();
 app.use(express.json());
@@ -40,6 +41,8 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/auto-transfer", autoTransferRoutes);
 app.use("/api/notifications", notificationRoutes);
+
+app.use('/api/ml-pricing', mlPricingRoutes);
 
 const port = process.env.PORT || 5000;
 connectDB(process.env.MONGO_URI).then(() => {

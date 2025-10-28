@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "@/utils/api.js";
 import { toast } from "react-toastify";
-import UserModal from "@/components/admin/UserModal.jsx";
 import UserDetailsModal from "@/components/admin/UserDetailsModal.jsx";
 
 export default function UserManagement() {
@@ -12,9 +11,7 @@ export default function UserManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [showUserModal, setShowUserModal] = useState(false);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
-  const [modalMode, setModalMode] = useState("create"); // "create" or "edit"
   const [selectedUsers, setSelectedUsers] = useState([]);
 
   const itemsPerPage = 10;
@@ -66,12 +63,6 @@ export default function UserManagement() {
           setSelectedUser(user);
           setShowUserDetailsModal(true);
           break;
-        case 'edit':
-          const userToEdit = users.find(u => u.id === userId);
-          setSelectedUser(userToEdit);
-          setModalMode("edit");
-          setShowUserModal(true);
-          break;
         case 'delete':
           if (window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
             await api.delete(`/admin/users/${userId}`);
@@ -107,44 +98,6 @@ export default function UserManagement() {
       } else {
         toast.error(`Failed to ${action} user. Please try again.`);
       }
-    }
-  };
-
-  const handleCreateUser = () => {
-    setSelectedUser(null);
-    setModalMode("create");
-    setShowUserModal(true);
-  };
-
-  const handleSaveUser = async (userData) => {
-    try {
-      if (modalMode === "create") {
-        await api.post("/admin/users", userData);
-        toast.success("User created successfully");
-      } else {
-        await api.put(`/admin/users/${selectedUser.id}`, userData);
-        toast.success("User updated successfully");
-      }
-      fetchUsers();
-    } catch (error) {
-      console.error("Failed to save user:", error);
-      
-      if (error.response?.status === 400) {
-        toast.error("Invalid data provided. Please check all fields.");
-      } else if (error.response?.status === 401) {
-        toast.error("Unauthorized access. Please log in again.");
-      } else if (error.response?.status === 403) {
-        toast.error("You don't have permission to manage users.");
-      } else if (error.response?.status === 409) {
-        toast.error("A user with this email already exists.");
-      } else if (error.response?.status >= 500) {
-        toast.error("Server error. Please try again later.");
-      } else if (error.code === 'NETWORK_ERROR') {
-        toast.error("Network error. Please check your connection.");
-      } else {
-        toast.error("Failed to save user. Please try again.");
-      }
-      throw error; // Re-throw to prevent modal from closing
     }
   };
 
@@ -348,18 +301,6 @@ export default function UserManagement() {
                 </svg>
                 Export Users
               </button>
-              <button 
-                className="btn btn-primary"
-                onClick={handleCreateUser}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                  <circle cx="8.5" cy="7" r="4"/>
-                  <line x1="20" y1="8" x2="20" y2="14"/>
-                  <line x1="23" y1="11" x2="17" y2="11"/>
-                </svg>
-                Add User
-              </button>
             </div>
           </div>
         </div>
@@ -458,9 +399,21 @@ export default function UserManagement() {
                 Users ({filteredUsers.length})
               </h5>
               <div className="d-flex gap-2">
-                <span className="badge bg-primary">{users.filter(u => u.role === 'goal_setter').length} Goal Setters</span>
-                <span className="badge bg-secondary">{users.filter(u => u.role === 'buyer').length} Buyers</span>
-                <span className="badge bg-danger">{users.filter(u => u.role === 'admin').length} Admins</span>
+                <span className="badge bg-primary">
+                  {users.filter(u => (u.activeRoles || [u.role]).includes('goal_setter')).length} Goal Setters
+                </span>
+                <span className="badge bg-secondary">
+                  {users.filter(u => (u.activeRoles || [u.role]).includes('buyer')).length} Buyers
+                </span>
+                <span className="badge bg-danger">
+                  {users.filter(u => (u.activeRoles || [u.role]).includes('admin')).length} Admins
+                </span>
+                <span className="badge bg-warning text-dark">
+                  {users.filter(u => {
+                    const roles = u.activeRoles || [u.role];
+                    return (roles.includes('goal_setter') && roles.includes('buyer'));
+                  }).length} Both Roles
+                </span>
               </div>
             </div>
             <div className="card-body p-0">
@@ -533,9 +486,13 @@ export default function UserManagement() {
                           </div>
                         </td>
                         <td>
-                          <span className={`badge ${getRoleBadgeClass(user.role)}`}>
-                            {getRoleDisplayName(user.role)}
-                          </span>
+                          <div className="d-flex flex-wrap gap-1">
+                            {(user.activeRoles || [user.role]).map((role, index) => (
+                              <span key={index} className={`badge ${getRoleBadgeClass(role)}`}>
+                                {getRoleDisplayName(role)}
+                              </span>
+                            ))}
+                          </div>
                         </td>
                         <td>
                           <span className={`badge ${user.status === 'active' ? 'bg-success' : 'bg-warning'}`}>
@@ -543,11 +500,26 @@ export default function UserManagement() {
                           </span>
                         </td>
                         <td>
-                          <span className="badge bg-light text-dark">
-                            {user.role === 'admin' ? 'N/A' : 
-                             user.role === 'buyer' ? `${user.purchasesCount || 0} purchases` : 
-                             `${user.goalsCount || 0} goals`}
-                          </span>
+                          <div className="d-flex flex-wrap gap-1">
+                            {user.listingsCount > 0 && (
+                              <span className="badge bg-primary text-white">
+                                {user.listingsCount} listing{user.listingsCount !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {user.goalsCount > 0 && (
+                              <span className="badge bg-info text-white">
+                                {user.goalsCount} goal{user.goalsCount !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {user.purchasesCount > 0 && (
+                              <span className="badge bg-secondary text-white">
+                                {user.purchasesCount} purchase{user.purchasesCount !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {!user.listingsCount && !user.goalsCount && !user.purchasesCount && (
+                              <span className="badge bg-light text-dark">No activity</span>
+                            )}
+                          </div>
                         </td>
                         <td>
                           <span className="text-muted small">
@@ -569,16 +541,6 @@ export default function UserManagement() {
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                                 <circle cx="12" cy="12" r="3"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-outline-warning"
-                              onClick={() => handleUserAction(user.id, 'edit')}
-                              title="Edit User"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                               </svg>
                             </button>
                             <button
@@ -658,17 +620,6 @@ export default function UserManagement() {
       )}
 
       {/* Modals */}
-      <UserModal
-        isOpen={showUserModal}
-        onClose={() => {
-          setShowUserModal(false);
-          setSelectedUser(null);
-        }}
-        user={selectedUser}
-        mode={modalMode}
-        onSave={handleSaveUser}
-      />
-
       <UserDetailsModal
         isOpen={showUserDetailsModal}
         onClose={() => {

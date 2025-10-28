@@ -1,0 +1,205 @@
+[
+  {
+    "title": "iPhone 12 64GB",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Mumbai",
+    "originalPrice": 65000,
+    "sellingPrice": 32000,
+    "ageMonths": 24,
+    "brand": "Apple"
+  },
+  {
+    "title": "iPhone 12 128GB",
+    "category": "electronics",
+    "condition": "good",
+    "location": "Mumbai",
+    "originalPrice": 70000,
+    "sellingPrice": 35000,
+    "ageMonths": 30,
+    "brand": "Apple"
+  },
+  {
+    "title": "Samsung Galaxy S21",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Delhi",
+    "originalPrice": 55000,
+    "sellingPrice": 28000,
+    "ageMonths": 20,
+    "brand": "Samsung"
+  },
+  {
+    "title": "OnePlus 9 Pro",
+    "category": "electronics",
+    "condition": "good",
+    "location": "Bangalore",
+    "originalPrice": 50000,
+    "sellingPrice": 22000,
+    "ageMonths": 28,
+    "brand": "OnePlus"
+  },
+  {
+    "title": "MacBook Air M1",
+    "category": "electronics",
+    "condition": "like-new",
+    "location": "Mumbai",
+    "originalPrice": 92000,
+    "sellingPrice": 70000,
+    "ageMonths": 18,
+    "brand": "Apple"
+  },
+  {
+    "title": "Dell XPS 13",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Pune",
+    "originalPrice": 85000,
+    "sellingPrice": 55000,
+    "ageMonths": 24,
+    "brand": "Dell"
+  },
+  {
+    "title": "Nike Air Max Shoes",
+    "category": "sports",
+    "condition": "good",
+    "location": "Chennai",
+    "originalPrice": 8000,
+    "sellingPrice": 4500,
+    "ageMonths": 12,
+    "brand": "Nike"
+  },
+  {
+    "title": "Adidas Running Shoes",
+    "category": "sports",
+    "condition": "fair",
+    "location": "Hyderabad",
+    "originalPrice": 6000,
+    "sellingPrice": 2800,
+    "ageMonths": 18,
+    "brand": "Adidas"
+  },
+  {
+    "title": "Sony WH-1000XM4 Headphones",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Mumbai",
+    "originalPrice": 28000,
+    "sellingPrice": 18000,
+    "ageMonths": 15,
+    "brand": "Sony"
+  },
+  {
+    "title": "Canon EOS 200D Camera",
+    "category": "electronics",
+    "condition": "good",
+    "location": "Delhi",
+    "originalPrice": 45000,
+    "sellingPrice": 25000,
+    "ageMonths": 30,
+    "brand": "Canon"
+  },
+  {
+    "title": "Tommy Hilfiger Jacket",
+    "category": "fashion",
+    "condition": "like-new",
+    "location": "Bangalore",
+    "originalPrice": 12000,
+    "sellingPrice": 7500,
+    "ageMonths": 8,
+    "brand": "Tommy Hilfiger"
+  },
+  {
+    "title": "Levi's Jeans",
+    "category": "fashion",
+    "condition": "good",
+    "location": "Pune",
+    "originalPrice": 3500,
+    "sellingPrice": 1800,
+    "ageMonths": 12,
+    "brand": "Levi"
+  },
+  {
+    "title": "iPad Air 2020",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Mumbai",
+    "originalPrice": 55000,
+    "sellingPrice": 35000,
+    "ageMonths": 20,
+    "brand": "Apple"
+  },
+  {
+    "title": "Samsung Galaxy Tab S7",
+    "category": "electronics",
+    "condition": "good",
+    "location": "Chennai",
+    "originalPrice": 48000,
+    "sellingPrice": 28000,
+    "ageMonths": 24,
+    "brand": "Samsung"
+  },
+  {
+    "title": "PlayStation 5",
+    "category": "electronics",
+    "condition": "like-new",
+    "location": "Delhi",
+    "originalPrice": 50000,
+    "sellingPrice": 42000,
+    "ageMonths": 10,
+    "brand": "Sony"
+  },
+  {
+    "title": "Xbox Series X",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Bangalore",
+    "originalPrice": 48000,
+    "sellingPrice": 38000,
+    "ageMonths": 12,
+    "brand": "Microsoft"
+  },
+  {
+    "title": "iPhone 13 128GB",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Mumbai",
+    "originalPrice": 75000,
+    "sellingPrice": 52000,
+    "ageMonths": 15,
+    "brand": "Apple"
+  },
+  {
+    "title": "Samsung Galaxy S22",
+    "category": "electronics",
+    "condition": "like-new",
+    "location": "Delhi",
+    "originalPrice": 60000,
+    "sellingPrice": 42000,
+    "ageMonths": 12,
+    "brand": "Samsung"
+  },
+  {
+    "title": "Boat Airdopes Earbuds",
+    "category": "electronics",
+    "condition": "good",
+    "location": "Pune",
+    "originalPrice": 2500,
+    "sellingPrice": 1200,
+    "ageMonths": 10,
+    "brand": "Boat"
+  },
+  {
+    "title": "Noise Smart Watch",
+    "category": "electronics",
+    "condition": "excellent",
+    "location": "Hyderabad",
+    "originalPrice": 3500,
+    "sellingPrice": 2000,
+    "ageMonths": 8,
+    "brand": "Noise"
+  }
+]
+
+
+

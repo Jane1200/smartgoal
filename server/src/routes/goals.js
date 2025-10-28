@@ -374,14 +374,26 @@ router.post(
       if (!errors.isEmpty()) {
         const errorMessages = errors.array().map(err => err.msg).join(', ');
         console.log("❌ Goal creation validation failed:", errorMessages);
-        console.log("Validation errors:", errors.array());
-        return res.status(400).json({ message: errorMessages, errors: errors.array() });
+        console.log("❌ Validation errors:", errors.array());
+        console.log("❌ Request body that failed:", {
+          title: req.body.title,
+          titleLength: req.body.title?.length,
+          category: req.body.category,
+          priority: req.body.priority,
+          sourceWishlistId: req.body.sourceWishlistId
+        });
+        return res.status(400).json({ 
+          message: errorMessages, 
+          errors: errors.array(),
+          receivedTitle: req.body.title,
+          titleLength: req.body.title?.length
+        });
       }
 
       const userId = req.user.id;
-      console.log("Creating goal with data:", { ...req.body, userId });
+      console.log("🎯 Creating goal with data:", { ...req.body, userId });
       const goal = await Goal.create({ ...req.body, userId });
-      console.log("✓ Goal created successfully:", goal._id, goal.title);
+      console.log("✅ Goal created successfully:", goal._id, goal.title, "from wishlist:", req.body.sourceWishlistId || 'N/A');
       
       // ===== AUTO-AUTOMATION SETUP USING 50/30/20 RULE =====
       try {

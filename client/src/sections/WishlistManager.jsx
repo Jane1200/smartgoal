@@ -111,13 +111,37 @@ export default function WishlistManager() {
         setWishlist((prev) => [data, ...prev]);
 
         try {
-          await createGoalFromWishlist(data); // Pass full wishlist item data
-          toast.success("Wishlist item added and goal created successfully");
+          console.log('🎯 Attempting to create goal from wishlist item:', data);
+          const goalResponse = await createGoalFromWishlist(data);
+          console.log('✅ Goal created successfully:', goalResponse.data);
+          toast.success("Wishlist item added and goal created successfully!");
         } catch (goalError) {
-          console.error("Failed to create goal from wishlist:", goalError);
-          console.error("Goal creation error response:", goalError.response?.data);
-          const errorMsg = goalError.response?.data?.message || "Unknown error";
-          toast.error(`Wishlist saved, but goal creation failed: ${errorMsg}`);
+          console.error('❌ Failed to create goal from wishlist:', goalError);
+          console.error('❌ Goal creation error response:', goalError.response?.data);
+          console.error('❌ Goal creation error details:', {
+            status: goalError.response?.status,
+            message: goalError.response?.data?.message,
+            errors: goalError.response?.data?.errors,
+            details: goalError.response?.data?.details
+          });
+          
+          let errorMsg = "Failed to create goal";
+          
+          if (goalError.response?.data?.errors && Array.isArray(goalError.response.data.errors)) {
+            // Validation errors
+            const validationErrors = goalError.response.data.errors.map(err => err.msg).join(', ');
+            errorMsg = `Validation failed: ${validationErrors}`;
+          } else if (goalError.response?.data?.message) {
+            errorMsg = goalError.response.data.message;
+          } else if (goalError.response?.data?.notification?.message) {
+            errorMsg = goalError.response.data.notification.message;
+          } else if (goalError.message) {
+            errorMsg = goalError.message;
+          }
+          
+          toast.error(`Wishlist saved, but goal creation failed: ${errorMsg}`, {
+            autoClose: 8000 // Show error longer
+          });
         }
       }
       startCreate();
@@ -166,9 +190,31 @@ export default function WishlistManager() {
   };
 
   async function createGoalFromWishlist(item) {
+    // Sanitize title - remove extra colons and clean up
+    let cleanTitle = (item.title || item.itemName || "Wishlist Item")
+      .replace(/\s*:\s*Amazon\..*$/, '') // Remove ": Amazon.in: Electronics" etc
+      .replace(/\s*\(.*?\)\s*:\s*.*$/, '') // Remove "(Bold Black) : Amazon..."
+      .trim();
+    
+    // Ensure title meets minimum length
+    if (cleanTitle.length < 3) {
+      cleanTitle = item.title || item.itemName || "Wishlist Goal";
+    }
+    
+    // Truncate if too long
+    if (cleanTitle.length > 100) {
+      cleanTitle = cleanTitle.substring(0, 97) + '...';
+    }
+
+    // Clean description - remove Amazon/Flipkart suffixes
+    let cleanDescription = (item.description || item.notes || "")
+      .replace(/\s*:\s*Amazon\..*$/, '')
+      .replace(/\s*:\s*Flipkart\..*$/, '')
+      .trim();
+    
     const payload = {
-      title: item.title,
-      description: item.description,
+      title: cleanTitle,
+      description: cleanDescription || `Wishlist item: ${cleanTitle}`,
       targetAmount: item.price ?? 0,
       currentAmount: 0,
       category: "discretionary", // Wishlist items are discretionary wants
@@ -178,7 +224,10 @@ export default function WishlistManager() {
       sourceWishlistId: item._id || item.id, // Link to source wishlist item
     };
 
-    console.log("Creating goal from wishlist with payload:", payload);
+    console.log("📋 Creating goal from wishlist with cleaned payload:", payload);
+    console.log("📋 Original wishlist item title:", item.title);
+    console.log("📋 Cleaned goal title:", cleanTitle);
+
     return api.post("/goals", payload);
   }
 

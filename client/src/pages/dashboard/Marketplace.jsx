@@ -401,6 +401,20 @@ export default function Marketplace() {
     );
   }
 
+  function resolveImageSrc(imageObjOrStr) {
+    // Accepts array element (either string or object), returns actual usable URL or undefined
+    if (!imageObjOrStr) return undefined;
+    // If already string and looks like a URL, just return it through getFileUrl
+    if (typeof imageObjOrStr === "string") {
+      return getFileUrl(imageObjOrStr);
+    }
+    // If it's an object with a .url field, return via getFileUrl
+    if (typeof imageObjOrStr === "object" && imageObjOrStr.url) {
+      return getFileUrl(imageObjOrStr.url);
+    }
+    return undefined;
+  }
+
   return (
     <div className="container-xxl py-4 marketplace-page">
       <div className="row">
@@ -530,7 +544,7 @@ export default function Marketplace() {
                                   <div key={index} className="col-3">
                                     <div className="position-relative">
                                       <img
-                                        src={getFileUrl(imageUrl)}
+                                        src={resolveImageSrc(imageUrl)}
                                         alt={`Preview ${index + 1}`}
                                         className="img-fluid rounded border"
                                         style={{ width: '100%', height: '100px', objectFit: 'cover' }}
@@ -650,7 +664,7 @@ export default function Marketplace() {
                           </div>
                         )}
 
-                        {/* 6. Smart Pricing Suggestion - Shows after condition is selected */}
+                        {/* 5.5. Smart Pricing Suggestion - Shows after condition is selected */}
                         {!isEditMode && pricingSuggestion && (
                           <div className="col-12">
                             <div className="alert alert-success border-0 rounded-3 shadow-sm" role="alert">
@@ -809,8 +823,11 @@ export default function Marketplace() {
                         <div className="position-relative">
                           <img
                             src={
-                              getFileUrl(item.images?.[0]?.url || item.images?.[0] || "") ||
-                              "https://via.placeholder.com/300x200?text=No+Image"
+                              resolveImageSrc(
+                                Array.isArray(item.images)
+                                  ? (item.images[0] || "")
+                                  : ""
+                              ) || "https://via.placeholder.com/300x200?text=No+Image"
                             }
                             alt={item.title}
                             className="card-img-top"
@@ -851,7 +868,7 @@ export default function Marketplace() {
                                 type="button"
                                 className="btn btn-outline-danger"
                                 onClick={() => handleDeleteListing(item._id || item.id)}
-                                disabled={item.status === 'sold' || item.status === 'pending'}
+                                disabled={item.status === 'sold'}
                               >
                                 Delete
                               </button>

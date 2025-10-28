@@ -3,6 +3,35 @@ import { toast } from "react-toastify";
 import api from "@/utils/api.js";
 
 export default function AllGoals() {
+  // Add custom scrollbar styles
+  const scrollbarStyles = `
+    .goals-table-scrollable {
+      scrollbar-width: auto !important;
+      scrollbar-color: #667eea #e9ecef !important;
+    }
+    .goals-table-scrollable::-webkit-scrollbar {
+      width: 12px !important;
+      height: 12px !important;
+    }
+    .goals-table-scrollable::-webkit-scrollbar-track {
+      background: #e9ecef !important;
+      border-radius: 6px !important;
+      margin: 2px !important;
+    }
+    .goals-table-scrollable::-webkit-scrollbar-thumb {
+      background: #667eea !important;
+      border-radius: 6px !important;
+      border: 2px solid #e9ecef !important;
+    }
+    .goals-table-scrollable::-webkit-scrollbar-thumb:hover {
+      background: #5568d3 !important;
+      border-color: #d1d5db !important;
+    }
+    .goals-table-scrollable::-webkit-scrollbar-corner {
+      background: #e9ecef !important;
+    }
+  `;
+
   const [goals, setGoals] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10,10 +39,10 @@ export default function AllGoals() {
     current: 1,
     total: 1,
     count: 0,
-    limit: 50
+    limit: 100 // Increased default to show more goals
   });
   const [filters, setFilters] = useState({
-    status: 'all',
+    status: 'all', // Default to "all" to show all goals
     search: '',
     sortBy: 'createdAt',
     sortOrder: 'desc'
@@ -47,12 +76,34 @@ export default function AllGoals() {
         sortOrder: filters.sortOrder
       });
 
+      console.log('🔍 Fetching goals with filters:', {
+        status: filters.status,
+        search: filters.search,
+        sortBy: filters.sortBy,
+        sortOrder: filters.sortOrder,
+        page: pagination.current
+      });
+
       const { data } = await api.get(`/admin/goals?${params}`);
+      
+      console.log('✅ Goals fetched:', {
+        totalGoals: data.goals.length,
+        pagination: data.pagination,
+        summary: data.summary,
+        goals: data.goals.map(g => ({
+          title: g.title,
+          user: g.user.name,
+          status: g.status,
+          createdAt: g.createdAt
+        }))
+      });
+
       setGoals(data.goals);
       setPagination(data.pagination);
       setLastUpdated(new Date());
     } catch (error) {
-      console.error("Failed to fetch goals:", error);
+      console.error("❌ Failed to fetch goals:", error);
+      toast.error(error.response?.data?.message || "Failed to load goals");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -62,14 +113,36 @@ export default function AllGoals() {
     try {
       const { data } = await api.get("/admin/goals/stats");
       setStats(data);
+      
+      // Log real-time stats
+      if (!silent) {
+        console.log('📊 Real-time Admin Goal Stats:', {
+          total: data.overview.total,
+          active: data.overview.active,
+          completed: data.overview.completed,
+          overdue: data.overview.overdue,
+          breakdown: data.breakdown
+        });
+      }
     } catch (error) {
-      console.error("Failed to fetch goal stats:", error);
+      console.error("❌ Failed to fetch goal stats:", error);
     }
   };
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, current: 1 }));
+  };
+
+  const handleClearFilters = () => {
+    setFilters({
+      status: 'all',
+      search: '',
+      sortBy: 'createdAt',
+      sortOrder: 'desc'
+    });
+    setPagination(prev => ({ ...prev, current: 1 }));
+    toast.info('Filters cleared');
   };
 
   const handlePageChange = (page) => {
@@ -165,6 +238,9 @@ export default function AllGoals() {
 
   return (
     <div className="container-xxl py-4 admin-goals">
+      {/* Custom scrollbar styles */}
+      <style>{scrollbarStyles}</style>
+      
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
@@ -212,56 +288,117 @@ export default function AllGoals() {
 
       {/* Stats Cards */}
       {stats && (
-        <div className="row g-3 mb-4">
-          <div className="col-6 col-md-3">
-            <div className="card admin-stat-card admin-stat-primary h-100">
-              <div className="card-body text-center">
-                <h6 className="card-title">Total Goals</h6>
-                <h3 className="mb-0">{stats.overview.total.toLocaleString()}</h3>
-              </div>
-            </div>
-          </div>
-          <div className="col-6 col-md-3">
-            <div className="card admin-stat-card admin-stat-info h-100">
-              <div className="card-body text-center">
-                <h6 className="card-title">Active Goals</h6>
-                <h3 className="mb-0">{stats.overview.active.toLocaleString()}</h3>
-              </div>
-            </div>
-          </div>
-          <div className="col-6 col-md-3">
-            <div className="card admin-stat-card admin-stat-success h-100">
-              <div className="card-body text-center">
-                <h6 className="card-title">Completed</h6>
-                <h3 className="mb-0">{stats.overview.completed.toLocaleString()}</h3>
-              </div>
-            </div>
-          </div>
-          <div className="col-6 col-md-3">
-            <div className={`card admin-stat-card ${stats.overview.overdue > 0 ? 'admin-stat-danger' : 'admin-stat-warning'} h-100`}>
-              <div className="card-body text-center">
-                <h6 className="card-title">
-                  Overdue
-                  {stats.overview.overdue > 0 && (
-                    <span className="badge bg-danger ms-2">Deletable</span>
+        <>
+          <div className="row g-3 mb-3">
+            <div className="col-6 col-md-3">
+              <div className="card admin-stat-card admin-stat-primary h-100">
+                <div className="card-body text-center">
+                  <h6 className="card-title">Total Goals</h6>
+                  <h3 className="mb-0">{stats.overview.total.toLocaleString()}</h3>
+                  {stats.breakdown && (
+                    <small className="text-muted d-block mt-1">
+                      Valid goals only
+                    </small>
                   )}
-                </h6>
-                <h3 className="mb-0">{stats.overview.overdue.toLocaleString()}</h3>
-                {stats.overview.overdue > 0 && (
-                  <small className="text-muted">Click delete button to remove</small>
-                )}
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card admin-stat-card admin-stat-info h-100">
+                <div className="card-body text-center">
+                  <h6 className="card-title">Active Goals</h6>
+                  <h3 className="mb-0">{stats.overview.active.toLocaleString()}</h3>
+                  {stats.breakdown && (
+                    <small className="text-muted d-block mt-1">
+                      {stats.breakdown.planned} planned, {stats.breakdown.in_progress} in progress
+                    </small>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card admin-stat-card admin-stat-success h-100">
+                <div className="card-body text-center">
+                  <h6 className="card-title">Completed</h6>
+                  <h3 className="mb-0">{stats.overview.completed.toLocaleString()}</h3>
+                  {stats.breakdown && stats.breakdown.archived > 0 && (
+                    <small className="text-muted d-block mt-1">
+                      {stats.breakdown.archived} archived
+                    </small>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className={`card admin-stat-card ${stats.overview.overdue > 0 ? 'admin-stat-danger' : 'admin-stat-warning'} h-100`}>
+                <div className="card-body text-center">
+                  <h6 className="card-title">
+                    Overdue
+                    {stats.overview.overdue > 0 && (
+                      <span className="badge bg-danger ms-2">Deletable</span>
+                    )}
+                  </h6>
+                  <h3 className="mb-0">{stats.overview.overdue.toLocaleString()}</h3>
+                  {stats.overview.overdue > 0 && (
+                    <small className="text-muted">Click delete button to remove</small>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+
+          {/* Orphaned Goals Warning */}
+          {stats.breakdown && stats.breakdown.orphaned > 0 && (
+            <div className="alert alert-warning d-flex align-items-center mb-3" role="alert">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2 flex-shrink-0">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <div className="flex-grow-1">
+                <strong>Database Cleanup Needed:</strong> Found {stats.breakdown.orphaned} orphaned goal(s) (goals with deleted users). 
+                <button 
+                  className="btn btn-sm btn-warning ms-2"
+                  onClick={() => {
+                    if (window.confirm(`Clean up ${stats.breakdown.orphaned} orphaned goals? This will permanently delete goals whose users no longer exist.`)) {
+                      toast.info('Please run: node server/cleanup-orphaned-goals.js --confirm');
+                    }
+                  }}
+                >
+                  View Cleanup Instructions
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Filters */}
       <div className="card mb-4">
+        <div className="card-header d-flex justify-content-between align-items-center">
+          <h6 className="mb-0">Filters & Search</h6>
+          {(filters.status !== 'all' || filters.search || filters.sortBy !== 'createdAt' || filters.sortOrder !== 'desc') && (
+            <button 
+              className="btn btn-sm btn-outline-danger"
+              onClick={handleClearFilters}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+              Clear All Filters
+            </button>
+          )}
+        </div>
         <div className="card-body">
           <div className="row g-3">
             <div className="col-md-3">
-              <label className="form-label">Status Filter</label>
+              <label className="form-label">
+                Status Filter 
+                {filters.status !== 'all' && (
+                  <span className="badge bg-primary ms-2">Active Filter</span>
+                )}
+              </label>
               <select 
                 className="form-select"
                 value={filters.status}
@@ -272,6 +409,7 @@ export default function AllGoals() {
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
                 <option value="archived">Archived</option>
+                <option value="overdue">Overdue (Deletable)</option>
               </select>
             </div>
             <div className="col-md-3">
@@ -300,7 +438,12 @@ export default function AllGoals() {
               </select>
             </div>
             <div className="col-md-4">
-              <label className="form-label">Search</label>
+              <label className="form-label">
+                Search
+                {filters.search && (
+                  <span className="badge bg-primary ms-2">Searching</span>
+                )}
+              </label>
               <div className="input-group">
                 <input
                   type="text"
@@ -309,17 +452,62 @@ export default function AllGoals() {
                   value={filters.search}
                   onChange={(e) => handleFilterChange('search', e.target.value)}
                 />
-                <button 
-                  className="btn btn-outline-secondary"
-                  onClick={() => handleFilterChange('search', '')}
-                >
-                  Clear
-                </button>
+                {filters.search && (
+                  <button 
+                    className="btn btn-outline-secondary"
+                    onClick={() => handleFilterChange('search', '')}
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Active Filters Alert */}
+      {(filters.status !== 'all' || filters.search) && (
+        <div className="alert alert-warning d-flex align-items-center mb-3" role="alert">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2 flex-shrink-0">
+            <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>
+          </svg>
+          <div className="flex-grow-1">
+            <strong>⚠️ Filters Active:</strong> Some goals may be hidden. 
+            {filters.status !== 'all' && <span className="badge bg-warning text-dark ms-2">Status: {filters.status}</span>}
+            {filters.search && <span className="badge bg-warning text-dark ms-2">Search: "{filters.search}"</span>}
+            <button 
+              className="btn btn-sm btn-warning ms-2"
+              onClick={handleClearFilters}
+            >
+              Clear All Filters to See All Goals
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Info Banner */}
+      {goals.length < pagination.count && (
+        <div className="alert alert-info d-flex align-items-center mb-3" role="alert">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2 flex-shrink-0">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4M12 8h.01"/>
+          </svg>
+          <div className="flex-grow-1">
+            <strong>Limited View:</strong> Showing only {goals.length} of {pagination.count} goals. 
+            <button 
+              className="btn btn-sm btn-info ms-2"
+              onClick={() => setPagination(prev => ({ 
+                ...prev, 
+                limit: pagination.count || 1000,
+                current: 1 
+              }))}
+            >
+              Click here to load all {pagination.count} goals
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Goals Table */}
       <div className="card">
@@ -327,10 +515,48 @@ export default function AllGoals() {
           <h5 className="card-title mb-0">
             Goals List ({pagination.count.toLocaleString()} total)
           </h5>
-          <div className="d-flex align-items-center gap-2">
-            <small className="text-muted">
+          <div className="d-flex align-items-center gap-3">
+            <small className={goals.length < pagination.count ? 'text-warning fw-bold' : 'text-muted'}>
               Showing {goals.length} of {pagination.count}
+              {goals.length < pagination.count && ' ⚠️'}
             </small>
+            {goals.length < pagination.count && (
+              <button 
+                className="btn btn-sm btn-primary"
+                onClick={() => setPagination(prev => ({ 
+                  ...prev, 
+                  limit: pagination.count || 1000,
+                  current: 1 
+                }))}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="16"/>
+                  <line x1="8" y1="12" x2="16" y2="12"/>
+                </svg>
+                Show All {pagination.count} Goals
+              </button>
+            )}
+            <div className="d-flex align-items-center gap-2">
+              <label className="mb-0 small text-muted">Per page:</label>
+              <select 
+                className="form-select form-select-sm"
+                style={{ width: 'auto' }}
+                value={pagination.limit}
+                onChange={(e) => setPagination(prev => ({ 
+                  ...prev, 
+                  limit: parseInt(e.target.value),
+                  current: 1 
+                }))}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={500}>500</option>
+                <option value={1000}>All</option>
+              </select>
+            </div>
           </div>
         </div>
         <div className="card-body p-0">
@@ -346,18 +572,55 @@ export default function AllGoals() {
               <p className="text-muted">Try adjusting your filters or search terms.</p>
             </div>
           ) : (
-            <div className="table-responsive">
+            <div 
+              className="table-responsive goals-table-scrollable" 
+              style={{ 
+                maxHeight: '70vh', // Use viewport height for better responsive behavior
+                minHeight: '400px',
+                overflowY: 'scroll', // Always show scrollbar track
+                overflowX: 'auto',
+                position: 'relative',
+                border: '1px solid #dee2e6',
+                borderRadius: '0.25rem'
+              }}
+            >
+              {goals.length > 3 && (
+                <div 
+                  className="position-absolute text-center w-100" 
+                  style={{ 
+                    bottom: '5px', 
+                    left: 0, 
+                    right: '15px', // Account for scrollbar
+                    background: 'linear-gradient(to top, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.8) 50%, transparent 100%)',
+                    padding: '30px 0 15px',
+                    pointerEvents: 'none',
+                    zIndex: 5
+                  }}
+                >
+                  <small className="text-primary fw-bold" style={{ textShadow: '0 0 3px white' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="me-1">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                    Scroll down to see {goals.length - 3} more goals
+                  </small>
+                </div>
+              )}
               <table className="table table-hover mb-0">
-                <thead className="table-light">
+                <thead className="table-light" style={{ 
+                  position: 'sticky', 
+                  top: 0, 
+                  zIndex: 10,
+                  backgroundColor: '#f8f9fa'
+                }}>
                   <tr>
-                    <th>Goal</th>
-                    <th>User</th>
-                    <th>Progress</th>
-                    <th>Amount</th>
-                    <th>Due Date</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Actions</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>Goal</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>User</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>Progress</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>Amount</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>Due Date</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>Status</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>Created</th>
+                    <th style={{ backgroundColor: '#f8f9fa' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>

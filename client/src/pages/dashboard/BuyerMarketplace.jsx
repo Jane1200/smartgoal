@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import { useAuth } from "@/context/AuthContext.jsx";
 import TrustBadge from "@/components/TrustBadge.jsx";
 import SellerInfoCard from "@/components/SellerInfoCard.jsx";
+import MatchedSellers from "@/components/MatchedSellers.jsx";
 
 export default function BuyerMarketplace() {
   const { user } = useAuth();
@@ -18,6 +19,8 @@ export default function BuyerMarketplace() {
     maxDistance: 50,
     sortBy: 'distance'
   });
+  const [viewMode, setViewMode] = useState('standard'); // 'standard' or 'ai-matched'
+  const [budgetRange, setBudgetRange] = useState({ min: 5000, max: 50000 });
   const [pagination, setPagination] = useState({
     current: 1,
     total: 0,
@@ -278,14 +281,20 @@ export default function BuyerMarketplace() {
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <h2 className="mb-1">Nearby Marketplace</h2>
+          <h2 className="mb-1">
+            {viewMode === 'ai-matched' ? '🤖 AI Matched Sellers' : 'Nearby Marketplace'}
+          </h2>
           <p className="text-muted mb-0">
-            Items from goal setters in your area • Last updated: {lastUpdated.toLocaleTimeString()}
+            {viewMode === 'ai-matched' 
+              ? 'Intelligent matching based on your budget, location, and preferences'
+              : `Items from goal setters in your area • Last updated: ${lastUpdated.toLocaleTimeString()}`
+            }
           </p>
         </div>
         <div className="d-flex align-items-center gap-2">
           <div className="badge bg-success">Live Location</div>
-          <div className="badge bg-info">Auto Refresh</div>
+          {viewMode === 'ai-matched' && <div className="badge bg-warning">AI Powered</div>}
+          {viewMode === 'standard' && <div className="badge bg-info">Auto Refresh</div>}
           <button 
             className="btn btn-outline-primary btn-sm"
             onClick={() => fetchNearbyItems()}
@@ -295,6 +304,46 @@ export default function BuyerMarketplace() {
             </svg>
             Refresh
           </button>
+        </div>
+      </div>
+
+      {/* View Mode Toggle */}
+      <div className="card mb-4 bg-gradient" style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'}}>
+        <div className="card-body">
+          <div className="d-flex justify-content-between align-items-center">
+            <div className="text-white">
+              <h6 className="mb-1">
+                {viewMode === 'standard' ? '📍 Standard View' : '🤖 AI Matched View'}
+              </h6>
+              <small className="opacity-75">
+                {viewMode === 'standard' 
+                  ? 'Browse all nearby items sorted by distance'
+                  : 'See sellers matched by our ML algorithm based on your preferences'
+                }
+              </small>
+            </div>
+            <button
+              className={`btn ${viewMode === 'ai-matched' ? 'btn-light' : 'btn-warning'}`}
+              onClick={() => setViewMode(viewMode === 'standard' ? 'ai-matched' : 'standard')}
+            >
+              {viewMode === 'standard' ? (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 16v-4M12 8h.01"/>
+                  </svg>
+                  Try AI Matching
+                </>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                  </svg>
+                  Standard View
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -347,61 +396,137 @@ export default function BuyerMarketplace() {
       {/* Filters */}
       <div className="card mb-4">
         <div className="card-header">
-          <h6 className="card-title mb-0">Filters</h6>
+          <h6 className="card-title mb-0">
+            {viewMode === 'ai-matched' ? 'AI Matching Preferences' : 'Filters'}
+          </h6>
         </div>
         <div className="card-body">
           <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label">Category</label>
-              <select 
-                className="form-select"
-                value={filters.category}
-                onChange={(e) => handleFilterChange('category', e.target.value)}
-              >
-                <option value="all">All Categories</option>
-                <option value="electronics">Electronics</option>
-                <option value="sports">Sports</option>
-                <option value="books">Books</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">Max Distance</label>
-              <select 
-                className="form-select"
-                value={filters.maxDistance}
-                onChange={(e) => handleFilterChange('maxDistance', parseInt(e.target.value))}
-              >
-                <option value={10}>Within 10 km</option>
-                <option value={25}>Within 25 km</option>
-                <option value={50}>Within 50 km</option>
-                <option value={100}>Within 100 km</option>
-              </select>
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">Sort By</label>
-              <select 
-                className="form-select"
-                value={filters.sortBy}
-                onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-              >
-                <option value="distance">Distance (Closest First)</option>
-                <option value="price_low">Price (Low to High)</option>
-                <option value="price_high">Price (High to Low)</option>
-                <option value="newest">Newest First</option>
-                <option value="featured">Featured First</option>
-              </select>
-            </div>
+            {viewMode === 'ai-matched' ? (
+              <>
+                <div key="budget-filter" className="col-md-6">
+                  <label className="form-label">Budget Range</label>
+                  <div className="d-flex gap-2 align-items-center">
+                    <input
+                      type="number"
+                      className="form-control"
+                      placeholder="Min"
+                      value={budgetRange.min}
+                      onChange={(e) => setBudgetRange({...budgetRange, min: Number(e.target.value)})}
+                    />
+                    <span>to</span>
+                    <input
+                      type="number"
+                      className="form-control"
+                      placeholder="Max"
+                      value={budgetRange.max}
+                      onChange={(e) => setBudgetRange({...budgetRange, max: Number(e.target.value)})}
+                    />
+                  </div>
+                  <small className="text-muted">
+                    Current: ₹{budgetRange.min.toLocaleString()} - ₹{budgetRange.max.toLocaleString()}
+                  </small>
+                </div>
+                <div key="category-filter" className="col-md-3">
+                  <label className="form-label">Category</label>
+                  <select 
+                    className="form-select"
+                    value={filters.category}
+                    onChange={(e) => handleFilterChange('category', e.target.value)}
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="electronics">Electronics</option>
+                    <option value="phone">Phone</option>
+                    <option value="laptop">Laptop</option>
+                    <option value="sports">Sports</option>
+                    <option value="books">Books</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div key="distance-filter" className="col-md-3">
+                  <label className="form-label">Max Distance</label>
+                  <select 
+                    className="form-select"
+                    value={filters.maxDistance}
+                    onChange={(e) => handleFilterChange('maxDistance', parseInt(e.target.value))}
+                  >
+                    <option value={5}>Within 5 km</option>
+                    <option value={10}>Within 10 km</option>
+                    <option value={25}>Within 25 km</option>
+                    <option value={50}>Within 50 km</option>
+                  </select>
+                </div>
+              </>
+            ) : (
+              <>
+                <div key="standard-category" className="col-md-4">
+                  <label className="form-label">Category</label>
+                  <select 
+                    className="form-select"
+                    value={filters.category}
+                    onChange={(e) => handleFilterChange('category', e.target.value)}
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="electronics">Electronics</option>
+                    <option value="sports">Sports</option>
+                    <option value="books">Books</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div key="standard-distance" className="col-md-4">
+                  <label className="form-label">Max Distance</label>
+                  <select 
+                    className="form-select"
+                    value={filters.maxDistance}
+                    onChange={(e) => handleFilterChange('maxDistance', parseInt(e.target.value))}
+                  >
+                    <option value={10}>Within 10 km</option>
+                    <option value={25}>Within 25 km</option>
+                    <option value={50}>Within 50 km</option>
+                    <option value={100}>Within 100 km</option>
+                  </select>
+                </div>
+                <div key="standard-sort" className="col-md-4">
+                  <label className="form-label">Sort By</label>
+                  <select 
+                    className="form-select"
+                    value={filters.sortBy}
+                    onChange={(e) => handleFilterChange('sortBy', e.target.value)}
+                  >
+                    <option value="distance">Distance (Closest First)</option>
+                    <option value="price_low">Price (Low to High)</option>
+                    <option value="price_high">Price (High to Low)</option>
+                    <option value="newest">Newest First</option>
+                    <option value="featured">Featured First</option>
+                  </select>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Items Grid */}
-      <div className="card">
-        <div className="card-header">
-          <h6 className="card-title mb-0">Available Items ({pagination.count})</h6>
-        </div>
-        <div className="card-body">
+      {/* AI Matched Sellers View */}
+      {viewMode === 'ai-matched' && searchCriteria?.userLocation && (
+        <MatchedSellers
+          buyerLatitude={searchCriteria.userLocation.latitude}
+          buyerLongitude={searchCriteria.userLocation.longitude}
+          budgetMin={budgetRange.min}
+          budgetMax={budgetRange.max}
+          preferredCategory={filters.category === 'all' ? 'electronics' : filters.category}
+          preferredCondition="good"
+          maxDistance={filters.maxDistance}
+          sellers={items}
+        />
+      )}
+
+      {/* Standard Items Grid */}
+      {viewMode === 'standard' && (
+        <div className="card">
+          <div className="card-header">
+            <h6 className="card-title mb-0">Available Items ({pagination.count})</h6>
+          </div>
+          <div className="card-body">
           {items.length === 0 ? (
             <div className="text-center py-5">
               <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted mb-3">
@@ -551,11 +676,12 @@ export default function BuyerMarketplace() {
               ))}
             </div>
           )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Pagination */}
-      {pagination.total > 1 && (
+      {viewMode === 'standard' && pagination.total > 1 && (
         <div className="d-flex justify-content-center mt-4">
           <nav>
             <ul className="pagination">

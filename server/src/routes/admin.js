@@ -181,6 +181,12 @@ router.get("/users", requireAdmin, async (req, res) => {
       { $group: { _id: "$buyerId", count: { $sum: 1 } } }
     ]);
     
+    // Get marketplace listings count for goal setters
+    const listingsCounts = await Marketplace.aggregate([
+      { $match: { userId: { $in: userIds } } },
+      { $group: { _id: "$userId", count: { $sum: 1 } } }
+    ]);
+    
     // Create a map of userId to goals count
     const goalsCountMap = {};
     goalsCounts.forEach(item => {
@@ -193,45 +199,70 @@ router.get("/users", requireAdmin, async (req, res) => {
       purchaseCountMap[item._id.toString()] = item.count;
     });
     
+    // Create a map of userId to listings count
+    const listingsCountMap = {};
+    listingsCounts.forEach(item => {
+      listingsCountMap[item._id.toString()] = item.count;
+    });
+    
     // Format the data
     const formattedUsers = users.map(user => {
       const userId = user._id.toString();
       const goalsCount = goalsCountMap[userId] || 0;
       const purchasesCount = purchaseCountMap[userId] || 0;
+      const listingsCount = listingsCountMap[userId] || 0;
       
       // Get user roles array
       const userRoles = user.roles || [user.role || "goal_setter"];
       const primaryRole = user.role || userRoles[0] || "goal_setter";
       
-      // Determine user status based on activity and verification
-      // For goal setters: active if they have goals OR recently updated
-      // For buyers: active if they have purchases OR recently updated
-      // For admins: always active
-      let isActive = user.isVerified;
+      // Determine ACTIVE roles based on actual usage
+      // Only show roles that the user is actively using
+      const activeRoles = [];
       
+      // Always include admin role if user has it
       if (userRoles.includes('admin')) {
-        isActive = true; // Admins are always considered active
-      } else if (userRoles.includes('goal_setter')) {
-        const hasGoals = goalsCount > 0;
-        const recentlyActive = (Date.now() - user.updatedAt.getTime()) < (30 * 24 * 60 * 60 * 1000); // 30 days
-        isActive = user.isVerified && (hasGoals || recentlyActive);
-      } else if (userRoles.includes('buyer')) {
-        const hasPurchases = purchasesCount > 0;
-        const recentlyActive = (Date.now() - user.updatedAt.getTime()) < (30 * 24 * 60 * 60 * 1000); // 30 days
-        isActive = user.isVerified && (hasPurchases || recentlyActive);
+        activeRoles.push('admin');
       }
+      
+      // Include goal_setter role if user has listings or goals
+      if (userRoles.includes('goal_setter')) {
+        const hasActivity = listingsCount > 0 || goalsCount > 0;
+        if (hasActivity) {
+          activeRoles.push('goal_setter');
+        }
+      }
+      
+      // Include buyer role if user has purchases
+      if (userRoles.includes('buyer')) {
+        const hasPurchases = purchasesCount > 0;
+        if (hasPurchases) {
+          activeRoles.push('buyer');
+        }
+      }
+      
+      // If no active roles found but user has roles, use the first role
+      // This handles newly registered users who haven't made any activity yet
+      if (activeRoles.length === 0 && userRoles.length > 0) {
+        activeRoles.push(userRoles[0]);
+      }
+      
+      // Determine overall user status
+      let isActive = user.isVerified && activeRoles.length > 0;
       
       return {
         id: user._id,
         name: user.name,
         email: user.email,
         role: primaryRole,
-        roles: userRoles,
+        roles: userRoles, // All assigned roles
+        activeRoles: activeRoles, // Only roles user is actually using
         provider: user.provider,
         status: isActive ? 'active' : 'inactive',
         isVerified: user.isVerified,
         goalsCount: goalsCount,
         purchasesCount: purchasesCount,
+        listingsCount: listingsCount,
         joinedAt: user.createdAt,
         lastLogin: user.updatedAt
       };
@@ -468,7 +499,13 @@ router.get("/goals", requireAdmin, async (req, res) => {
     // Build query
     let query = {};
     if (status && status !== "all") {
-      query.status = status;
+      if (status === "overdue") {
+        // Special handling for overdue filter
+        query.dueDate = { $lt: new Date() };
+        query.status = { $ne: 'completed' };
+      } else {
+        query.status = status;
+      }
     }
     if (search) {
       query.$or = [
@@ -486,43 +523,75 @@ router.get("/goals", requireAdmin, async (req, res) => {
       .populate('userId', 'name email role roles')
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Use lean for better performance
     
     const total = await Goal.countDocuments(query);
     
+    // Log query details
+    console.log('📋 Admin Goals Query:', {
+      filters: { status, search, sortBy, sortOrder },
+      totalFound: goals.length,
+      withValidUsers: goals.filter(g => g.userId).length,
+      page,
+      limit
+    });
+
+    // Log individual goals for debugging
+    console.log('📝 Goals found:', goals
+      .filter(g => g.userId)
+      .map(g => ({
+        title: g.title,
+        user: g.userId?.name || 'No User',
+        status: g.status,
+        createdAt: g.createdAt
+      }))
+    );
+
     // Format goals with additional calculated fields
-    const formattedGoals = goals.map(goal => {
-      const progressPercentage = goal.targetAmount && goal.targetAmount > 0 
-        ? Math.round((goal.currentAmount / goal.targetAmount) * 100)
-        : 0;
-      
-      const isOverdue = goal.dueDate && new Date(goal.dueDate) < new Date() && goal.status !== 'completed';
-      const daysUntilDue = goal.dueDate 
-        ? Math.ceil((new Date(goal.dueDate) - new Date()) / (1000 * 60 * 60 * 24))
-        : null;
-      
-      return {
-        id: goal._id,
-        title: goal.title,
-        description: goal.description,
-        targetAmount: goal.targetAmount,
-        currentAmount: goal.currentAmount,
-        progressPercentage: Math.min(progressPercentage, 100),
-        dueDate: goal.dueDate,
-        status: goal.status,
-        isOverdue: isOverdue,
-        daysUntilDue: daysUntilDue,
-        createdAt: goal.createdAt,
-        updatedAt: goal.updatedAt,
-        user: {
+    const formattedGoals = goals
+      .filter(goal => goal.userId) // Filter out goals with deleted users
+      .map(goal => {
+        const progressPercentage = goal.targetAmount && goal.targetAmount > 0 
+          ? Math.round((goal.currentAmount / goal.targetAmount) * 100)
+          : 0;
+        
+        const isOverdue = goal.dueDate && new Date(goal.dueDate) < new Date() && goal.status !== 'completed';
+        const daysUntilDue = goal.dueDate 
+          ? Math.ceil((new Date(goal.dueDate) - new Date()) / (1000 * 60 * 60 * 24))
+          : null;
+        
+        // Handle cases where userId might be null or not populated
+        const user = goal.userId ? {
           id: goal.userId._id,
-          name: goal.userId.name,
-          email: goal.userId.email,
+          name: goal.userId.name || 'Unknown User',
+          email: goal.userId.email || 'unknown@email.com',
           role: goal.userId.role || (goal.userId.roles && goal.userId.roles[0]) || "goal_setter",
           roles: goal.userId.roles || [goal.userId.role || "goal_setter"]
-        }
-      };
-    });
+        } : {
+          id: 'unknown',
+          name: 'Deleted User',
+          email: 'deleted@user.com',
+          role: 'goal_setter',
+          roles: ['goal_setter']
+        };
+        
+        return {
+          id: goal._id,
+          title: goal.title,
+          description: goal.description,
+          targetAmount: goal.targetAmount,
+          currentAmount: goal.currentAmount,
+          progressPercentage: Math.min(progressPercentage, 100),
+          dueDate: goal.dueDate,
+          status: goal.status,
+          isOverdue: isOverdue,
+          daysUntilDue: daysUntilDue,
+          createdAt: goal.createdAt,
+          updatedAt: goal.updatedAt,
+          user: user
+        };
+      });
     
     res.json({
       goals: formattedGoals,
@@ -546,12 +615,123 @@ router.get("/goals", requireAdmin, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Admin goals error:", error);
-    res.status(500).json({ message: "Failed to fetch goals" });
+    console.error("❌ Admin goals error:", error);
+    console.error("Error details:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    res.status(500).json({ 
+      message: "Failed to fetch goals",
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
-// Delete overdue goals (admin only)
+// Get goal statistics for admin dashboard (MUST come before :id routes)
+router.get("/goals/stats", requireAdmin, async (req, res) => {
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    // Get all goals with user data to filter out orphaned ones
+    const allGoalsWithUsers = await Goal.find({})
+      .populate('userId', '_id')
+      .lean();
+    
+    // Filter out goals with deleted users
+    const validGoals = allGoalsWithUsers.filter(goal => goal.userId);
+    const validGoalIds = validGoals.map(g => g._id);
+    
+    // Basic counts (only valid goals)
+    const totalGoals = validGoals.length;
+    const activeGoals = validGoals.filter(g => 
+      g.status === 'planned' || g.status === 'in_progress'
+    ).length;
+    const completedGoals = validGoals.filter(g => g.status === 'completed').length;
+    const overdueGoals = validGoals.filter(g => 
+      g.dueDate && new Date(g.dueDate) < now && g.status !== 'completed'
+    ).length;
+    
+    // Recent activity (only valid goals)
+    const goalsCreatedThisWeek = validGoals.filter(g => 
+      new Date(g.createdAt) >= sevenDaysAgo
+    ).length;
+    const goalsCompletedThisWeek = validGoals.filter(g => 
+      g.status === 'completed' && new Date(g.updatedAt) >= sevenDaysAgo
+    ).length;
+    
+    // Progress analytics (only valid goals)
+    const goalsWithAmounts = validGoals.filter(g => 
+      g.targetAmount && g.targetAmount > 0 && 
+      (g.status === 'planned' || g.status === 'in_progress')
+    );
+    
+    const totalTargetAmount = goalsWithAmounts.reduce((sum, goal) => sum + (goal.targetAmount || 0), 0);
+    const totalCurrentAmount = goalsWithAmounts.reduce((sum, goal) => sum + (goal.currentAmount || 0), 0);
+    const averageProgress = totalTargetAmount > 0 ? (totalCurrentAmount / totalTargetAmount) * 100 : 0;
+    
+    // User engagement (only valid goals)
+    const usersWithGoals = [...new Set(validGoals.map(g => g.userId._id.toString()))].length;
+    const activeUsersWithGoals = [...new Set(
+      validGoals
+        .filter(g => new Date(g.updatedAt) >= thirtyDaysAgo)
+        .map(g => g.userId._id.toString())
+    )].length;
+    
+    // Log real-time stats for debugging
+    console.log('📊 Real-time Goal Stats:', {
+      totalGoalsInDB: allGoalsWithUsers.length,
+      goalsWithValidUsers: validGoals.length,
+      orphanedGoals: allGoalsWithUsers.length - validGoals.length,
+      breakdown: {
+        planned: validGoals.filter(g => g.status === 'planned').length,
+        in_progress: validGoals.filter(g => g.status === 'in_progress').length,
+        completed: completedGoals,
+        archived: validGoals.filter(g => g.status === 'archived').length,
+        overdue: overdueGoals
+      }
+    });
+
+    res.json({
+      overview: {
+        total: totalGoals,
+        active: activeGoals,
+        completed: completedGoals,
+        overdue: overdueGoals
+      },
+      recentActivity: {
+        createdThisWeek: goalsCreatedThisWeek,
+        completedThisWeek: goalsCompletedThisWeek
+      },
+      progress: {
+        totalTargetAmount: totalTargetAmount,
+        totalCurrentAmount: totalCurrentAmount,
+        averageProgress: Math.round(averageProgress * 100) / 100
+      },
+      engagement: {
+        usersWithGoals: usersWithGoals,
+        activeUsersWithGoals: activeUsersWithGoals
+      },
+      // Add detailed breakdown for admin
+      breakdown: {
+        planned: validGoals.filter(g => g.status === 'planned').length,
+        in_progress: validGoals.filter(g => g.status === 'in_progress').length,
+        completed: completedGoals,
+        archived: validGoals.filter(g => g.status === 'archived').length,
+        overdue: overdueGoals,
+        orphaned: allGoalsWithUsers.length - validGoals.length
+      }
+    });
+  } catch (error) {
+    console.error("❌ Admin goals stats error:", error);
+    res.status(500).json({ message: "Failed to fetch goal statistics" });
+  }
+});
+
+// Delete overdue goals (admin only) - MUST come before :id route
 router.delete("/goals/overdue", requireAdmin, async (req, res) => {
   try {
     const now = new Date();
@@ -631,74 +811,6 @@ router.delete("/goals/:id", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Delete goal error:", error);
     res.status(500).json({ message: "Failed to delete goal" });
-  }
-});
-
-// Get goal statistics for admin dashboard
-router.get("/goals/stats", requireAdmin, async (req, res) => {
-  try {
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    
-    // Basic counts
-    const totalGoals = await Goal.countDocuments();
-    const activeGoals = await Goal.countDocuments({ status: { $in: ['planned', 'in_progress'] } });
-    const completedGoals = await Goal.countDocuments({ status: 'completed' });
-    const overdueGoals = await Goal.countDocuments({ 
-      dueDate: { $lt: now }, 
-      status: { $ne: 'completed' } 
-    });
-    
-    // Recent activity
-    const goalsCreatedThisWeek = await Goal.countDocuments({ 
-      createdAt: { $gte: sevenDaysAgo } 
-    });
-    const goalsCompletedThisWeek = await Goal.countDocuments({ 
-      status: 'completed',
-      updatedAt: { $gte: sevenDaysAgo }
-    });
-    
-    // Progress analytics
-    const goalsWithAmounts = await Goal.find({ 
-      targetAmount: { $gt: 0 },
-      status: { $in: ['planned', 'in_progress'] }
-    });
-    
-    const totalTargetAmount = goalsWithAmounts.reduce((sum, goal) => sum + (goal.targetAmount || 0), 0);
-    const totalCurrentAmount = goalsWithAmounts.reduce((sum, goal) => sum + (goal.currentAmount || 0), 0);
-    const averageProgress = totalTargetAmount > 0 ? (totalCurrentAmount / totalTargetAmount) * 100 : 0;
-    
-    // User engagement
-    const usersWithGoals = await Goal.distinct('userId');
-    const activeUsersWithGoals = await Goal.distinct('userId', {
-      updatedAt: { $gte: thirtyDaysAgo }
-    });
-    
-    res.json({
-      overview: {
-        total: totalGoals,
-        active: activeGoals,
-        completed: completedGoals,
-        overdue: overdueGoals
-      },
-      recentActivity: {
-        createdThisWeek: goalsCreatedThisWeek,
-        completedThisWeek: goalsCompletedThisWeek
-      },
-      progress: {
-        totalTargetAmount: totalTargetAmount,
-        totalCurrentAmount: totalCurrentAmount,
-        averageProgress: Math.round(averageProgress * 100) / 100
-      },
-      engagement: {
-        usersWithGoals: usersWithGoals.length,
-        activeUsersWithGoals: activeUsersWithGoals.length
-      }
-    });
-  } catch (error) {
-    console.error("Admin goals stats error:", error);
-    res.status(500).json({ message: "Failed to fetch goal statistics" });
   }
 });
 
@@ -1758,6 +1870,367 @@ router.get("/analytics/metrics", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("System metrics error:", error);
     res.status(500).json({ message: "Failed to fetch system metrics" });
+  }
+});
+
+// =====================================================
+// IMPORTANT: Specific routes must come before :userId routes!
+// Order: /users -> /users/export -> /users/bulk -> /users/:userId
+// =====================================================
+
+// Create new user
+router.post("/users", requireAdmin, async (req, res) => {
+  try {
+    const { name, email, password, role, roles, phone, address } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password) {
+      return res.status(400).json({ 
+        message: 'Name, email, and password are required' 
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(409).json({ message: 'User with this email already exists' });
+    }
+
+    // Determine user roles
+    let userRoles = roles && Array.isArray(roles) && roles.length > 0 
+      ? roles 
+      : (role ? [role] : ['goal_setter']);
+
+    // Validate roles
+    const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+    const invalidRoles = userRoles.filter(r => !allowedRoles.includes(r));
+    if (invalidRoles.length > 0) {
+      return res.status(400).json({ 
+        message: `Invalid roles: ${invalidRoles.join(', ')}` 
+      });
+    }
+
+    // Hash password
+    const bcrypt = await import('bcrypt');
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      passwordHash,
+      role: userRoles[0],
+      roles: [...new Set(userRoles)], // Remove duplicates
+      phone,
+      address,
+      provider: 'local',
+      isVerified: true
+    });
+
+    await user.save();
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        roles: user.roles
+      }
+    });
+  } catch (error) {
+    console.error('Create user error:', error);
+    
+    if (error.code === 11000) {
+      return res.status(409).json({ message: 'Email already exists' });
+    }
+    
+    res.status(500).json({ message: 'Failed to create user' });
+  }
+});
+
+// Export users to CSV (MUST come before :userId routes)
+router.get("/users/export", requireAdmin, async (req, res) => {
+  try {
+    const role = req.query.role;
+    const search = req.query.search;
+    
+    // Build query
+    let query = {};
+    if (role && role !== "all") {
+      query.roles = role;
+    }
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } }
+      ];
+    }
+    
+    const users = await User.find(query).select('name email role roles provider isVerified createdAt').sort({ createdAt: -1 });
+    
+    // Create CSV
+    const csvHeaders = 'Name,Email,Role,Roles,Provider,Status,Joined\n';
+    const csvRows = users.map(user => {
+      const userRoles = user.roles || [user.role || 'goal_setter'];
+      return `"${user.name}","${user.email}","${user.role || userRoles[0]}","${userRoles.join(', ')}","${user.provider}","${user.isVerified ? 'Active' : 'Inactive'}","${user.createdAt.toISOString()}"`;
+    }).join('\n');
+    
+    const csv = csvHeaders + csvRows;
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=users-export-${new Date().toISOString().split('T')[0]}.csv`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Export users error:', error);
+    res.status(500).json({ message: 'Failed to export users' });
+  }
+});
+
+// Bulk delete users (MUST come before :userId routes)
+router.delete("/users/bulk", requireAdmin, async (req, res) => {
+  try {
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'userIds must be a non-empty array' });
+    }
+
+    // Prevent deleting yourself
+    if (userIds.includes(req.user.id)) {
+      return res.status(400).json({ message: 'You cannot delete your own account' });
+    }
+
+    // Delete users
+    const result = await User.deleteMany({ _id: { $in: userIds } });
+
+    res.json({
+      message: `${result.deletedCount} user(s) deleted successfully`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Bulk delete users error:', error);
+    res.status(500).json({ message: 'Failed to delete users' });
+  }
+});
+
+// Bulk update user status (MUST come before :userId routes)
+router.patch("/users/bulk", requireAdmin, async (req, res) => {
+  try {
+    const { userIds, status } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'userIds must be a non-empty array' });
+    }
+
+    if (!['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ message: 'status must be either "active" or "inactive"' });
+    }
+
+    // Update users
+    const isVerified = status === 'active';
+    const result = await User.updateMany(
+      { _id: { $in: userIds } },
+      { $set: { isVerified } }
+    );
+
+    res.json({
+      message: `${result.modifiedCount} user(s) updated successfully`,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('Bulk update users error:', error);
+    res.status(500).json({ message: 'Failed to update users' });
+  }
+});
+
+// Update user (full update)
+router.put("/users/:userId", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, email, role, roles, status, phone, address } = req.body;
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update basic fields
+    if (name) user.name = name;
+    if (email) user.email = email.toLowerCase();
+    if (phone !== undefined) user.phone = phone;
+    if (address !== undefined) user.address = address;
+
+    // Update roles if provided
+    if (roles && Array.isArray(roles) && roles.length > 0) {
+      const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+      const invalidRoles = roles.filter(r => !allowedRoles.includes(r));
+      
+      if (invalidRoles.length > 0) {
+        return res.status(400).json({ 
+          message: `Invalid roles: ${invalidRoles.join(', ')}` 
+        });
+      }
+      
+      user.roles = [...new Set(roles)]; // Remove duplicates
+      user.role = user.roles[0]; // Set primary role
+    } else if (role) {
+      // Handle single role update for backward compatibility
+      const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+      if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ message: 'Invalid role' });
+      }
+      user.role = role;
+      user.roles = [role];
+    }
+
+    // Update status/verification
+    if (status === 'active') {
+      user.isVerified = true;
+    } else if (status === 'inactive') {
+      user.isVerified = false;
+    }
+
+    await user.save();
+
+    res.json({
+      message: 'User updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        roles: user.roles,
+        phone: user.phone,
+        address: user.address,
+        status: user.isVerified ? 'active' : 'inactive'
+      }
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    
+    if (error.code === 11000) {
+      return res.status(409).json({ message: 'Email already exists' });
+    }
+    
+    res.status(500).json({ message: 'Failed to update user' });
+  }
+});
+
+// Toggle user status (activate/deactivate)
+router.patch("/users/:userId/status", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+
+    if (!['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ message: 'status must be either "active" or "inactive"' });
+    }
+
+    // Find and update user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update status
+    user.isVerified = status === 'active';
+    await user.save();
+
+    res.json({
+      message: `User ${status === 'active' ? 'activated' : 'deactivated'} successfully`,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        status: user.isVerified ? 'active' : 'inactive'
+      }
+    });
+  } catch (error) {
+    console.error('Toggle user status error:', error);
+    res.status(500).json({ message: 'Failed to update user status' });
+  }
+});
+
+// Delete user
+router.delete("/users/:userId", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent deleting yourself
+    if (req.user.id === userId) {
+      return res.status(400).json({ message: 'You cannot delete your own account' });
+    }
+
+    // Delete user
+    await User.findByIdAndDelete(userId);
+
+    res.json({
+      message: 'User deleted successfully',
+      deletedUser: {
+        id: user._id,
+        name: user.name,
+        email: user.email
+      }
+    });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ message: 'Failed to delete user' });
+  }
+});
+
+// Update user roles (add/remove roles)
+router.patch("/users/:userId/roles", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { roles } = req.body;
+
+    // Validate roles
+    const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+    if (!Array.isArray(roles) || roles.length === 0) {
+      return res.status(400).json({ message: 'Roles must be a non-empty array' });
+    }
+
+    const invalidRoles = roles.filter(r => !allowedRoles.includes(r));
+    if (invalidRoles.length > 0) {
+      return res.status(400).json({ 
+        message: `Invalid roles: ${invalidRoles.join(', ')}. Allowed roles: ${allowedRoles.join(', ')}` 
+      });
+    }
+
+    // Find and update user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update roles
+    user.roles = [...new Set(roles)]; // Remove duplicates
+    user.role = user.roles[0]; // Set primary role to first role
+
+    await user.save();
+
+    res.json({
+      message: 'User roles updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        roles: user.roles,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Update user roles error:', error);
+    res.status(500).json({ message: 'Failed to update user roles' });
   }
 });
 
