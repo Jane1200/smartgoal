@@ -7,18 +7,26 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import knn_pricing
 import buyer_seller_matching
+import phishing_nb
 import os
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Initialize model on startup
+# Initialize models on startup
 print("🚀 Initializing KNN pricing model...")
 init_result = knn_pricing.initialize_model()
 if init_result['success']:
     print(f"✅ Model initialized: {init_result['message']}")
 else:
     print(f"⚠️  Model initialization: {init_result['message']}")
+
+print("🛡️  Initializing Phishing NB model...")
+phish_init = phishing_nb.initialize_model()
+if phish_init['success']:
+    print(f"✅ Phishing model: {phish_init['message']}")
+else:
+    print(f"⚠️  Phishing model: {phish_init['message']}")
 
 
 @app.route('/', methods=['GET'])
@@ -29,7 +37,8 @@ def home():
         'status': 'running',
         'version': '1.0.0',
         'model_trained': knn_pricing.knn_model.is_trained,
-        'training_samples': len(knn_pricing.knn_model.training_data)
+        'training_samples': len(knn_pricing.knn_model.training_data),
+        'phishing_model_trained': phishing_nb.phishing_model.is_trained
     })
 
 
@@ -38,7 +47,8 @@ def health():
     """Health check"""
     return jsonify({
         'status': 'healthy',
-        'model_status': 'trained' if knn_pricing.knn_model.is_trained else 'not_trained'
+        'model_status': 'trained' if knn_pricing.knn_model.is_trained else 'not_trained',
+        'phishing_status': 'trained' if phishing_nb.phishing_model.is_trained else 'not_trained'
     })
 
 
@@ -167,7 +177,8 @@ def get_stats():
         'training_samples': len(knn_pricing.knn_model.training_data),
         'k_neighbors': knn_pricing.knn_model.k,
         'categories': list(set([item.get('category', 'N/A') for item in knn_pricing.knn_model.training_data])),
-        'locations': list(set([item.get('location', 'N/A') for item in knn_pricing.knn_model.training_data]))
+        'locations': list(set([item.get('location', 'N/A') for item in knn_pricing.knn_model.training_data])),
+        'phishing_model_trained': phishing_nb.phishing_model.is_trained
     })
 
 
@@ -245,6 +256,52 @@ def match_sellers():
         }), 500
 
 
+# Phishing detection endpoints
+@app.route('/phishing/train', methods=['POST'])
+def phishing_train():
+    """
+    Train the Naïve Bayes phishing detector.
+    Body: { samples: [{ url: string, label: 'phish'|'legit'|1|0 }] }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        samples = data.get('samples')
+        result = phishing_nb.phishing_model.train(samples)
+        code = 200 if result.get('success') else 400
+        return jsonify(result), code
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/phishing/predict', methods=['POST'])
+def phishing_predict():
+    """
+    Predict if a URL is phishing.
+    Body: { url: string }
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        url = data.get('url', '')
+        result = phishing_nb.phishing_model.predict(url)
+        code = 200 if result.get('success') else 400
+        return jsonify(result), code
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/phishing/evaluate', methods=['POST'])
+def phishing_evaluate():
+    """Evaluate the phishing model on labeled samples."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        samples = data.get('samples')
+        result = phishing_nb.phishing_model.evaluate(samples)
+        code = 200 if result.get('success') else 400
+        return jsonify(result), code
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     debug = os.environ.get('DEBUG', 'False') == 'True'
@@ -259,7 +316,9 @@ if __name__ == '__main__':
     print(f"   POST /predict       - Get price prediction")
     print(f"   POST /train         - Add training data")
     print(f"   GET  /stats         - Model statistics")
-    print(f"   POST /match/sellers - Match buyers with sellers\n")
+    print(f"   POST /match/sellers - Match buyers with sellers")
+    print(f"   POST /phishing/train   - Train phishing URL detector")
+    print(f"   POST /phishing/predict - Predict phishing URL\n")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
 

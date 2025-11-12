@@ -17,6 +17,7 @@ import orderRoutes from "./routes/orders.js";
 import autoTransferRoutes from "./routes/autoTransfer.js";
 import notificationRoutes from "./routes/notifications.js";
 import mlPricingRoutes from './routes/ml-pricing.js';
+import mlPhishingRoutes from './routes/ml-phishing.js';
 
 const app = express();
 app.use(express.json());
@@ -43,6 +44,7 @@ app.use("/api/auto-transfer", autoTransferRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 app.use('/api/ml-pricing', mlPricingRoutes);
+app.use('/api/ml-phishing', mlPhishingRoutes);
 
 const port = process.env.PORT || 5000;
 connectDB(process.env.MONGO_URI).then(() => {

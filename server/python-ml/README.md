@@ -305,9 +305,54 @@ See `server/src/routes/ml-pricing.js` for Node.js integration.
 
 ---
 
+## 🛡️ Phishing/Fake Link Detection (Naïve Bayes)
+
+This service now includes a Naïve Bayes classifier for detecting suspicious or phishing URLs.
+
+### Endpoints
+
+```bash
+POST /phishing/train     # Train with labeled samples
+POST /phishing/predict   # Predict for a single URL
+POST /phishing/evaluate  # Evaluate on labeled samples
+```
+
+#### Train
+```json
+{
+  "samples": [
+    { "url": "http://paypal.com.security-check-login.xyz", "label": "phish" },
+    { "url": "https://accounts.google.com", "label": "legit" }
+  ]
+}
+```
+
+#### Predict
+```json
+{ "url": "http://secure-update.bank-example.com-login.ru" }
+```
+
+#### Response
+```json
+{
+  "success": true,
+  "label": "phish",
+  "probabilities": { "legit": 0.12, "phish": 0.88 },
+  "suspicionScore": 0.88,
+  "normalizedUrl": "secure-update.bank-example.com-login.ru"
+}
+```
+
+Node integration available at `server/src/routes/ml-phishing.js` mounted under `/api/ml-phishing`.
+
+---
+
 **Ready to use!** 🎉
 
 Start the service and test it with your SmartGoal app!
+
+
+
 
 
 
