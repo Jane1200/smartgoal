@@ -72,9 +72,9 @@ export default function Marketplace() {
     category: "electronics", // Always electronics for resale items
     subCategory: "",
     condition: "",
-    images: []
-  });
-  const [uploading, setUploading] = useState(false);
+    images: [],
+    useAutoPricing: false // New field for computer vision pricing
+  });  const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [pricingSuggestion, setPricingSuggestion] = useState(null);
@@ -94,15 +94,14 @@ export default function Marketplace() {
       category: "electronics", // Always electronics for resale items
       subCategory: "",
       condition: "",
-      images: []
+      images: [],
+      useAutoPricing: false
     });
     setFormErrors({});
     setPricingSuggestion(null);
     setIsEditMode(false);
     setEditingItemId(null);
-  };
-
-  const handleEditListing = (item) => {
+  };  const handleEditListing = (item) => {
     setListingForm({
       title: item.title || "",
       description: item.description || "",
@@ -112,16 +111,15 @@ export default function Marketplace() {
       category: "electronics", // Always electronics for resale items
       subCategory: item.subCategory || "",
       condition: item.condition || "",
-      images: item.images || []
+      images: item.images || [],
+      useAutoPricing: false
     });
     setIsEditMode(true);
     setEditingItemId(item._id || item.id);
     setFormErrors({});
     setPricingSuggestion(null);
     setShowListingForm(true);
-  };
-
-  // Calculate and update pricing suggestion
+  };  // Calculate and update pricing suggestion
   const updatePricingSuggestion = (formData) => {
     if (!formData.originalPrice || !formData.condition || !formData.category) {
       setPricingSuggestion(null);
@@ -170,6 +168,15 @@ export default function Marketplace() {
         }
         return newErrors;
       });
+    }
+
+    // Trigger CV price estimation when subCategory changes (if image exists)
+    if (fieldName === 'subCategory' && listingForm.images.length > 0 && value) {
+      console.log('🤖 Device type selected, triggering CV price estimation...');
+      setTimeout(() => {
+        // Pass the updated form with new subCategory value
+        estimatePriceFromCV(listingForm.images[0], value);
+      }, 500);
     }
 
     // Update pricing suggestion if pricing-related fields changed
@@ -240,6 +247,15 @@ export default function Marketplace() {
       }));
 
       toast.success(`${imageUrls.length} image(s) uploaded successfully`);
+      
+      // AUTOMATIC CV PRICE ESTIMATION after first image upload
+      const newImages = [...listingForm.images, ...imageUrls];
+      if (newImages.length > 0 && listingForm.subCategory) {
+        console.log('🤖 Triggering CV price estimation...');
+        await estimatePriceFromCV(newImages[0]);
+      } else if (newImages.length > 0 && !listingForm.subCategory) {
+        toast.info('📱 Please select device type to enable automatic price estimation', { autoClose: 4000 });
+      }
     } catch (error) {
       console.error("Image upload failed:", error);
       console.error("Error details:", error.response?.data);
@@ -256,11 +272,117 @@ export default function Marketplace() {
     }
   };
 
+  // NEW FUNCTION: Automatic CV Price Estimation
+  const estimatePriceFromCV = async (imageUrl, overrideSubCategory = null) => {
+    try {
+      console.log('🤖 Requesting automatic CV price estimation...');
+      console.log('   Image URL:', imageUrl);
+      
+      const subCat = overrideSubCategory || listingForm.subCategory;
+      console.log('   SubCategory:', subCat);
+      console.log('   Title:', listingForm.title);
+      
+      if (!subCat) {
+        console.warn('⚠️ No subcategory provided, cannot estimate price');
+        toast.warn('Please select device type first');
+        return;
+      }
+      
+      const filename = imageUrl.split('/').pop();
+      const imagePath = `uploads/marketplace/${filename}`;
+      
+      console.log('   Sending request to backend with path:', imagePath);
+      
+      // Get CV analysis and automatic price estimation
+      const response = await api.post('/marketplace/estimate-price-cv', {
+        imagePath,
+        category: listingForm.category || 'electronics',
+        subCategory: subCat,
+        brand: extractBrand(listingForm.title) || 'generic',
+        title: listingForm.title || `${subCat} item`
+      });
+
+      console.log('📊 Backend response:', response.data);
+
+      if (response.data.success) {
+        const estimatedPrice = response.data.predicted_price;
+        const aiScore = response.data.ai_score;
+        const condition = response.data.condition_detected || 'good';
+        const confidence = response.data.confidence || 70;
+        
+        console.log(`✅ Price estimated: ₹${estimatedPrice}, Condition: ${condition}, AI Score: ${aiScore}`);
+        
+        // Auto-populate price and condition
+        setListingForm(prev => ({
+          ...prev,
+          price: estimatedPrice.toString(),
+          condition: condition,
+          aiScore: aiScore,
+          useAutoPricing: true
+        }));
+        
+        toast.success(
+          `🤖 AI Estimated Price: ₹${estimatedPrice.toLocaleString()} | Condition: ${condition} (${confidence.toFixed(0)}% confidence) | AI Score: ${aiScore}/100`,
+          { autoClose: 6000 }
+        );
+        
+        console.log('✅ CV price estimation successful:', response.data);
+      } else {
+        console.warn('⚠️ Backend returned success: false');
+        toast.warn('Could not estimate price automatically. Please ensure image is clear.');
+      }
+    } catch (error) {
+      console.error('❌ CV price estimation failed:', error);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      toast.error(`Failed to estimate price: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const handleRemoveImage = (index) => {
     setListingForm(prev => ({
       ...prev,
       images: prev.images.filter((_, i) => i !== index)
     }));
+  };
+
+  const handleDetectCondition = async () => {
+    if (listingForm.images.length === 0) {
+      toast.error("Please upload at least one image first");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Create form data with the first image
+      const formData = new FormData();
+      // Since the image is already uploaded, we'll send a direct request
+      // to our new endpoint that accepts an image URL
+      const firstImageUrl = listingForm.images[0];
+      
+      // For now, we'll upload the image again for condition detection
+      // In a production environment, you might want to optimize this
+      const response = await api.post('/marketplace/detect-condition', {
+        imageUrl: firstImageUrl
+      });
+
+      if (response.data.success) {
+        // Update form with detected condition
+        setListingForm(prev => ({
+          ...prev,
+          condition: response.data.condition
+        }));
+        
+        toast.success(`Condition detected: ${response.data.condition} (${response.data.confidence}% confidence)`);
+      } else {
+        toast.error(`Failed to detect condition: ${response.data.error}`);
+      }
+    } catch (error) {
+      console.error("Condition detection failed:", error);
+      toast.error("Failed to detect condition. Please try again.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleDrag = (e) => {
@@ -271,9 +393,7 @@ export default function Marketplace() {
     } else if (e.type === "dragleave") {
       setDragActive(false);
     }
-  };
-
-  const handleDrop = (e) => {
+  };  const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
@@ -318,10 +438,29 @@ export default function Marketplace() {
 
     try {
       setUploading(true);
-      await api.post("/marketplace/list-item", {
+      const response = await api.post("/marketplace/list-item", {
         ...listingForm,
-        price: parseFloat(listingForm.price)
+        price: parseFloat(listingForm.price),
+        useAutoPricing: listingForm.useAutoPricing,
+        originalPrice: parseFloat(listingForm.originalPrice) || parseFloat(listingForm.price)
       });
+
+      // Show condition analysis if available
+      if (response.data.autoPriced && response.data.aiScore) {
+        const aiScore = response.data.aiScore;
+        const condition = response.data.conditionAnalysis?.condition || response.data.listing.condition;
+        const confidence = response.data.conditionAnalysis?.confidence || 85;
+        
+        toast.success(
+          `🤖 AI Analysis Complete! AI Score: ${aiScore}/100 | Condition: ${condition} (${confidence.toFixed(1)}% confidence) | Estimated Price: ₹${response.data.estimatedPrice.toLocaleString()}`,
+          { autoClose: 6000 }
+        );
+      } else if (response.data.autoPriced && response.data.conditionAnalysis) {
+        const conditionData = response.data.conditionAnalysis;
+        toast.success(
+          `✅ Auto-pricing applied! Detected condition: ${conditionData.condition} (${conditionData.confidence}% confidence)`
+        );
+      }
 
       toast.success("Item listed successfully!");
       resetForm();
@@ -333,9 +472,7 @@ export default function Marketplace() {
     } finally {
       setUploading(false);
     }
-  };
-
-  const handleUpdateListing = async () => {
+  };  const handleUpdateListing = async () => {
     // Validate only editable fields during update
     const editValidation = validateForm(listingForm, {
       title: validationRules.marketplace.title,
@@ -561,11 +698,37 @@ export default function Marketplace() {
                                   </div>
                                 ))}
                               </div>
+                              
+                              {/* Auto-pricing toggle */}
+                              {!isEditMode && (
+                                <div className="mt-3">
+                                  <div className="form-check form-switch">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      id="autoPricingSwitch"
+                                      checked={listingForm.useAutoPricing}
+                                      onChange={(e) => handleFieldChange('useAutoPricing', e.target.checked)}
+                                    />
+                                    <label className="form-check-label" htmlFor="autoPricingSwitch">
+                                      <strong>🤖 Auto-Pricing & Condition Detection</strong>
+                                    </label>
+                                    <small className="d-block text-muted mt-1">
+                                      Use AI to analyze your item's condition from images and suggest optimal pricing
+                                    </small>
+                                  </div>
+                                  
+                                  {listingForm.useAutoPricing && (
+                                    <div className="alert alert-info mt-2 p-2 small">
+                                      <strong>AI Analysis Enabled:</strong> Your item's condition will be automatically detected from images and pricing will be optimized based on market data.
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                         )}
-
                         {/* 1. Item Title */}
                         <div className="col-12">
                           <label htmlFor="title" className="form-label fw-medium">Item Title *</label>
@@ -581,61 +744,7 @@ export default function Marketplace() {
                           <FormError error={formErrors.title} />
                         </div>
 
-                        {/* 2 & 3. Original Price and Purchase Date - Only during creation */}
-                        {!isEditMode && (
-                        <>
-                        <div className="col-md-6">
-                          <label htmlFor="originalPrice" className="form-label fw-medium">Original Price (₹) *</label>
-                          <input
-                            type="number"
-                            id="originalPrice"
-                            className={`form-control ${formErrors.originalPrice ? 'is-invalid' : ''}`}
-                            value={listingForm.originalPrice}
-                            onChange={(e) => handleFieldChange('originalPrice', e.target.value)}
-                            placeholder="e.g., 90000"
-                            min="100"
-                            max="100000"
-                            step="1"
-                            required
-                          />
-                          <small className="text-muted d-block mt-1">How much did you pay originally?</small>
-                          <FormError error={formErrors.originalPrice} />
-                        </div>
-
-                        <div className="col-md-6">
-                          <label htmlFor="purchaseDate" className="form-label fw-medium">Purchase Month & Year *</label>
-                          <input
-                            type="month"
-                            id="purchaseDate"
-                            className={`form-control ${formErrors.purchaseDate ? 'is-invalid' : ''}`}
-                            value={listingForm.purchaseDate ? listingForm.purchaseDate.substring(0, 7) : ''}
-                            onChange={(e) => {
-                              // Convert YYYY-MM to YYYY-MM-01 for storage
-                              const monthValue = e.target.value;
-                              handleFieldChange('purchaseDate', monthValue ? `${monthValue}-01` : '');
-                            }}
-                            min={(() => {
-                              const date = new Date();
-                              date.setFullYear(date.getFullYear() - 10);
-                              const year = date.getFullYear();
-                              const month = String(date.getMonth() + 1).padStart(2, '0');
-                              return `${year}-${month}`;
-                            })()}
-                            max={(() => {
-                              const date = new Date();
-                              const year = date.getFullYear();
-                              const month = String(date.getMonth() + 1).padStart(2, '0');
-                              return `${year}-${month}`;
-                            })()}
-                            required
-                          />
-                          <small className="text-muted d-block mt-1">When did you buy this?</small>
-                          <FormError error={formErrors.purchaseDate} />
-                        </div>
-                        </>
-                        )}
-
-                        {/* 4. Device Type */}
+                        {/* 2. Device Type */}
                         <div className="col-md-6">
                           <label htmlFor="subCategory" className="form-label fw-medium">Device Type *</label>
                           <select
@@ -664,87 +773,69 @@ export default function Marketplace() {
                           </div>
                         )}
 
-                        {/* 5.5. Smart Pricing Suggestion - Shows after condition is selected */}
-                        {!isEditMode && pricingSuggestion && (
+                        {/* 6. AI-Estimated Price Display - Shows after image upload */}
+                        {!isEditMode && listingForm.price && (
                           <div className="col-12">
-                            <div className="alert alert-success border-0 rounded-3 shadow-sm" role="alert">
+                            <div className="alert alert-info border-0 rounded-3 shadow-sm" role="alert">
                               <div className="d-flex align-items-start">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-3 mt-1 flex-shrink-0 text-success">
-                                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                                  <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-3 mt-1 flex-shrink-0 text-info">
+                                  <circle cx="12" cy="12" r="10"/>
+                                  <path d="M12 8v4m0 4h.01"/>
                                 </svg>
                                 <div className="flex-grow-1">
-                                  <strong className="d-block mb-2 fs-5">💰 Smart Pricing Recommendation</strong>
+                                  <strong className="d-block mb-2 fs-5">🤖 AI Computer Vision Analysis</strong>
                                   <div className="row g-3">
-                                    <div className="col-md-4">
-                                      <div className="text-muted small">Suggested Price</div>
-                                      <div className="h4 mb-0 text-success fw-bold">₹{pricingSuggestion.suggested.toLocaleString('en-IN')}</div>
+                                    <div className="col-md-6">
+                                      <div className="text-muted small">Estimated Resale Value</div>
+                                      <div className="h4 mb-0 text-primary fw-bold">₹{parseInt(listingForm.price).toLocaleString('en-IN')}</div>
                                     </div>
-                                    <div className="col-md-4">
-                                      <div className="text-muted small">Value Retained</div>
-                                      <div className="h4 mb-0 fw-bold">{pricingSuggestion.percentOfOriginal}%</div>
-                                    </div>
-                                    <div className="col-md-4">
-                                      <div className="text-muted small">Confidence Score</div>
-                                      <div className="h4 mb-0 fw-bold">{pricingSuggestion.confidence}%</div>
-                                    </div>
-                                    <div className="col-12 mt-2 pt-2 border-top">
-                                      <div className="text-muted small mb-1">Recommended Price Range</div>
-                                      <div className="fw-semibold">₹{pricingSuggestion.recommendedRange.min.toLocaleString('en-IN')} - ₹{pricingSuggestion.recommendedRange.max.toLocaleString('en-IN')}</div>
-                                    </div>
-                                    {pricingSuggestion.breakdown.age?.months !== undefined && (
-                                      <div className="col-12">
-                                        <div className="small text-muted">
-                                          📅 Age: <strong>{pricingSuggestion.breakdown.age.months} months</strong> • 
-                                          🏷️ Condition: <strong>{pricingSuggestion.breakdown.condition.factor}</strong> • 
-                                          {pricingSuggestion.breakdown.brand.isPremium && 
-                                            <span> ⭐ <strong>Premium Brand</strong> • </span>
-                                          }
-                                          💎 Value: <strong>{pricingSuggestion.percentOfOriginal}% retained</strong>
-                                        </div>
+                                    {listingForm.aiScore && (
+                                      <div className="col-md-6">
+                                        <div className="text-muted small">AI Quality Score</div>
+                                        <div className="h4 mb-0 fw-bold">{listingForm.aiScore}/100</div>
                                       </div>
                                     )}
+                                    <div className="col-12 mt-2 pt-2 border-top">
+                                      <div className="small text-muted">
+                                        💡 This price is automatically estimated based on your product images using computer vision AI. No manual pricing needed!
+                                      </div>
+                                    </div>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    className="btn btn-success mt-3"
-                                    onClick={() => handleFieldChange('price', pricingSuggestion.suggested.toString())}
-                                  >
-                                    ✓ Use Recommended Price (₹{pricingSuggestion.suggested.toLocaleString('en-IN')})
-                                  </button>
                                 </div>
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {/* 7. Resale Price - Auto-filled from suggestion but editable */}
+                        {/* 7. Resale Price - Auto-filled from CV analysis, READ-ONLY */}
                         <div className="col-md-6">
                           <label htmlFor="price" className="form-label fw-medium">
-                            Resale Price (₹) *
-                            {pricingSuggestion && (
-                              <span className="badge bg-success ms-2">AI Suggested</span>
+                            AI Estimated Price (₹) *
+                            {listingForm.price && (
+                              <span className="badge bg-primary ms-2">🤖 CV Auto-Priced</span>
                             )}
                           </label>
                           <input
                             type="number"
                             id="price"
-                            className={`form-control ${formErrors.price ? 'is-invalid' : ''}`}
+                            className={`form-control bg-light ${formErrors.price ? 'is-invalid' : ''}`}
                             value={listingForm.price}
-                            onChange={(e) => handleFieldChange('price', e.target.value)}
-                            placeholder={pricingSuggestion ? `Suggested: ₹${pricingSuggestion.suggested}` : "Your selling price"}
+                            placeholder="Upload image + select device type for automatic pricing"
                             min="100"
                             step="1"
+                            readOnly
                             disabled={isEditMode}
                             required
+                            style={{ cursor: 'not-allowed' }}
                           />
                           <small className="text-muted d-block mt-1">
-                            {pricingSuggestion ? 
-                              `You can adjust the AI-suggested price` : 
-                              `Fill details above for smart pricing`
+                            {listingForm.price ? 
+                              `🤖 Price automatically estimated: ₹${parseInt(listingForm.price).toLocaleString()} from CV image analysis` : 
+                              `📸 Upload image + select device type to get automatic price`
                             }
                           </small>
                           {isEditMode && <small className="text-warning d-block mt-1">⚠️ Price cannot be changed after listing</small>}
+                          {!listingForm.price && <small className="text-info d-block mt-1">💡 Price is estimated automatically - no manual entry needed!</small>}
                           <FormError error={formErrors.price} />
                         </div>
 

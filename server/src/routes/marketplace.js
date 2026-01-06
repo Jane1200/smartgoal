@@ -9,7 +9,8 @@ import User from "../models/User.js";
 import MarketplaceIncome from "../models/MarketplaceIncome.js";
 import Order from "../models/Order.js";
 import MarketplaceFeedback from "../models/MarketplaceFeedback.js";
-
+import { detectConditionFromFile, getEnhancedPricePrediction } from "../utils/conditionDetection.js";
+import { detectFraud, analyzeSellerBehavior, generateFraudReport } from "../utils/fraudDetection.js";
 const router = Router();
 
 // Configure multer for image uploads
@@ -85,6 +86,87 @@ router.post('/upload-images', requireAuth, upload.array('images', 10), (req, res
   }
 });
 
+// NEW ENDPOINT: Estimate price from CV analysis (called after image upload)
+router.post('/estimate-price-cv', requireAuth, async (req, res) => {
+  try {
+    const { imagePath, category, subCategory, brand, title } = req.body;
+
+    if (!imagePath) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Image path is required' 
+      });
+    }
+
+    // Get full path to uploaded image
+    const fullImagePath = path.join(process.cwd(), imagePath);
+    
+    console.log(`\n🤖 CV PRICE ESTIMATION REQUEST:`);
+    console.log(`   📸 Image: ${imagePath}`);
+    console.log(`   📦 Category: ${category}, SubCategory: ${subCategory}`);
+    console.log(`   🏷️ Brand: ${brand}`);
+
+    // Get enhanced price prediction with condition detection
+    const pricingData = {
+      title: title || `${brand} ${subCategory}`,
+      category: category || 'electronics',
+      subCategory: subCategory || 'other',
+      brand: brand || 'generic',
+      location: req.user.profile?.location || 'India'
+    };
+
+    const predictionResult = await getEnhancedPricePrediction(pricingData, fullImagePath);
+
+    if (predictionResult.success) {
+      console.log(`✅ CV estimation successful: ₹${predictionResult.predicted_price}`);
+      
+      res.json({
+        success: true,
+        predicted_price: predictionResult.predicted_price,
+        ai_score: predictionResult.ai_score,
+        condition_detected: predictionResult.cv_insights?.condition || 'good',
+        confidence: predictionResult.cv_insights?.confidence || 70,
+        cv_insights: predictionResult.cv_insights,
+        pricing_breakdown: predictionResult.pricing_breakdown
+      });
+    } else {
+      throw new Error(predictionResult.message || 'CV pricing failed');
+    }
+  } catch (error) {
+    console.error('❌ CV price estimation error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to estimate price from image',
+      error: error.message 
+    });
+  }
+});
+
+// Detect condition from uploaded image
+router.post('/detect-condition', requireAuth, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+
+    // Get full path to uploaded image
+    const imagePath = path.join(process.cwd(), 'uploads/marketplace', req.file.filename);
+    
+    // Detect condition using computer vision
+    const conditionResult = await detectConditionFromFile(imagePath);
+    
+    res.json({
+      message: 'Condition detected successfully',
+      ...conditionResult
+    });
+  } catch (error) {
+    console.error('Condition detection error:', error);
+    res.status(500).json({ 
+      message: 'Failed to detect condition',
+      error: error.message 
+    });
+  }
+});
 // Get featured marketplace items (public but filters out user's own items if authenticated)
 router.get('/featured', async (req, res) => {
   try {
@@ -138,12 +220,13 @@ router.post('/list-item', requireAuth, async (req, res) => {
   try {
     // Convert JWT string ID to MongoDB ObjectId
     const userId = new mongoose.Types.ObjectId(req.user.id);
-    const { title, description, price, category, condition, images } = req.body;
+    const { title, description, price, category, condition, images, subCategory, brand } = req.body;
 
     // Validate required fields
-    if (!title || !price || !images || images.length === 0) {
+    // Title is now optional - we can auto-generate it
+    if (!images || images.length === 0) {
       return res.status(400).json({ 
-        message: 'Title, price, and at least one image are required' 
+        message: 'At least one image is required for automatic CV pricing' 
       });
     }
 
@@ -154,23 +237,131 @@ router.post('/list-item', requireAuth, async (req, res) => {
       });
     }
 
-    // Validate price is a number
-    const numPrice = parseFloat(price);
-    if (isNaN(numPrice) || numPrice <= 0) {
-      return res.status(400).json({ 
-        message: 'Price must be a valid positive number' 
+    let finalPrice = null;
+    let conditionAnalysis = null;
+    let aiScore = null;
+    let autoPriced = true;
+    
+    // ALWAYS use computer vision for AUTOMATIC price estimation - NO MANUAL PRICING
+    try {
+      // Get the first image for condition analysis
+      const firstImageUrl = images[0];
+      const filename = typeof firstImageUrl === 'string' ? firstImageUrl.split('/').pop() : 'image';
+      const imagePath = path.join(process.cwd(), 'uploads/marketplace', filename);
+      
+      // Automatically generate title if not provided
+      const autoTitle = title || `${brand || 'Resale'} ${subCategory || 'Item'} ${Date.now()}`;
+      
+      // Get enhanced CV price prediction - NO originalPrice or purchaseDate needed
+      const pricingData = {
+        title: autoTitle,
+        category: category || 'electronics',
+        subCategory: subCategory || 'other',
+        brand: brand || 'generic',
+        location: req.user.profile?.location || 'India'
+        // NO originalPrice or purchaseDate - CV estimates directly from condition
+      };
+      
+      console.log(`\n🤖 AUTOMATIC CV PRICING INITIATED for: ${autoTitle}`);
+      console.log(`   📦 Category: ${pricingData.category}, SubCategory: ${pricingData.subCategory}`);
+      console.log(`   🏷️ Brand: ${pricingData.brand}, Location: ${pricingData.location}`);
+      
+      console.log(`\n🤖 AUTOMATIC CV PRICING INITIATED for: ${autoTitle}`);
+      console.log(`   📦 Category: ${pricingData.category}, SubCategory: ${pricingData.subCategory}`);
+      console.log(`   🏷️ Brand: ${pricingData.brand}, Location: ${pricingData.location}`);
+      
+      const predictionResult = await getEnhancedPricePrediction(pricingData, imagePath);
+      
+      if (predictionResult.success) {
+        finalPrice = predictionResult.predicted_price;
+        aiScore = predictionResult.ai_score;
+        
+        // Extract condition analysis from cv_insights or condition_result
+        conditionAnalysis = predictionResult.cv_insights || predictionResult.condition_result || {};
+        
+        // Log comprehensive pricing breakdown
+        console.log(`\n✅ AUTOMATIC CV PRICING SUCCESSFUL:`);
+        console.log(`   💰 Estimated Price: ₹${finalPrice}`);
+        console.log(`   📊 AI Score: ${aiScore || 'N/A'}/100`);
+        console.log(`   🔍 Detected Condition: ${conditionAnalysis.condition || 'unknown'}`);
+        console.log(`   ✅ Confidence: ${conditionAnalysis.confidence ? conditionAnalysis.confidence.toFixed(1) + '%' : 'N/A'}`);
+        
+        if (conditionAnalysis.features) {
+          console.log(`   📸 Image Quality Metrics:`);
+          console.log(`      - Sharpness: ${conditionAnalysis.features.sharpness || 'N/A'}`);
+          console.log(`      - Contrast: ${conditionAnalysis.features.contrast || 'N/A'}`);
+          console.log(`      - Brightness: ${conditionAnalysis.features.brightness || 'N/A'}`);
+          console.log(`      - Edge Density: ${conditionAnalysis.features.edge_density || 'N/A'}`);
+        }
+        
+        if (predictionResult.pricing_breakdown) {
+          console.log(`   💡 Price Breakdown:`);
+          console.log(`      - Base Market Price: ₹${predictionResult.pricing_breakdown.base_market_price || 'N/A'}`);
+          console.log(`      - Brand Adjusted: ₹${predictionResult.pricing_breakdown.brand_adjusted || 'N/A'}`);
+          console.log(`      - Location Adjusted: ₹${predictionResult.pricing_breakdown.location_adjusted || 'N/A'}`);
+          console.log(`      - Final (Condition Applied): ₹${predictionResult.pricing_breakdown.condition_adjusted || finalPrice}`);
+        }
+        
+        // Add tampered image warning if detected
+        if (conditionAnalysis.tampered) {
+          console.warn(`   🚨 WARNING: Tampered/edited image detected - pricing may be less accurate`);
+        }
+      } else {
+        throw new Error(predictionResult.message || 'CV pricing failed');
+      }
+    } catch (pricingError) {
+      console.error('❌ Automatic CV pricing failed:', pricingError.message);
+      console.error('   Stack:', pricingError.stack);
+      
+      // If automatic pricing completely fails, reject the listing
+      // We don't want fallback pricing - CV is required
+      return res.status(500).json({
+        message: 'Failed to estimate price from image. Please try uploading a clearer image.',
+        error: pricingError.message,
+        suggestion: 'Ensure image is well-lit, in focus, and shows the product clearly'
       });
     }
 
-    // Create new marketplace listing
+    // Validate we got a valid price from CV
+    const numPrice = parseFloat(finalPrice);
+    if (isNaN(numPrice) || numPrice <= 0) {
+      return res.status(500).json({ 
+        message: 'Failed to generate valid price estimate. Please try a different image.',
+        details: 'Computer vision could not accurately assess the product condition'
+      });
+    }
+
+    // Use CV-detected condition, fallback to provided or default
+    const finalCondition = (conditionAnalysis?.condition) || condition || 'good';
+
+    // Create new marketplace listing with CV-estimated price
     const newListing = new Marketplace({
       userId,
-      title: title.trim(),
-      description: (description || '').trim(),
+      title: (title || `${brand || 'Resale'} ${subCategory || 'Item'}`).trim(),
+      description: (description || 'Quality resale item with AI-verified condition').trim(),
       price: numPrice,
-      category: category || 'other',
-      condition: condition || 'good',
+      originalPrice: undefined, // Not needed for CV-only pricing
+      purchaseDate: undefined,  // Not needed for CV-only pricing
+      category: category || 'electronics',
+      subCategory: subCategory || 'other',
+      brand: brand || 'generic',
+      condition: finalCondition,
       status: 'active',
+      aiScore: aiScore,
+      conditionAnalysis: conditionAnalysis ? {
+        condition: conditionAnalysis.condition,
+        confidence: conditionAnalysis.confidence,
+        tampered: conditionAnalysis.tampered || false,
+        features: conditionAnalysis.features || {}
+      } : undefined,
+      autoPriced: true, // Always true - CV automatic pricing
+      priceBreakdown: predictionResult?.pricing_breakdown ? {
+        basePrice: predictionResult.pricing_breakdown.base_market_price || numPrice,
+        brandAdjusted: predictionResult.pricing_breakdown.brand_adjusted || numPrice,
+        locationAdjusted: predictionResult.pricing_breakdown.location_adjusted || numPrice,
+        conditionAdjusted: predictionResult.pricing_breakdown.condition_adjusted || numPrice,
+        finalPrice: numPrice
+      } : undefined,
       images: images.map(url => {
         const filename = typeof url === 'string' ? url.split('/').pop() : 'image';
         return {
@@ -184,12 +375,65 @@ router.post('/list-item', requireAuth, async (req, res) => {
     // Save to database
     const savedListing = await newListing.save();
 
+    // Run fraud detection analysis
+    console.log("\n🔍 Running fraud detection...");
+    const fraudAnalysis = detectFraud({
+      ...savedListing.toObject(),
+      seller: { createdAt: req.user.createdAt }
+    });
+
+    // Check seller behavior if listing is suspicious
+    if (fraudAnalysis.suspicionScore >= 20) {
+      const sellerListings = await Marketplace.find({ userId: savedListing.userId });
+      const sellerAnalysis = analyzeSellerBehavior(req.user, sellerListings);
+      const fraudReport = generateFraudReport(savedListing, sellerAnalysis);
+
+      console.log(`⚠️  FRAUD ALERT - Suspicion Score: ${fraudAnalysis.suspicionScore}/100`);
+      console.log(`   Risk Level: ${fraudAnalysis.riskLevel}`);
+      console.log(`   Flags: ${fraudAnalysis.flags.map(f => f.type).join(", ")}`);
+
+      // If high risk, mark listing for review or block
+      if (fraudAnalysis.shouldBlock) {
+        savedListing.status = "blocked";
+        savedListing.fraudReport = fraudReport;
+        await savedListing.save();
+
+        return res.status(403).json({
+          success: false,
+          message: "Listing blocked due to fraud detection",
+          fraudAnalysis: {
+            riskLevel: fraudAnalysis.riskLevel,
+            suspicionScore: fraudAnalysis.suspicionScore,
+            recommendation: fraudAnalysis.recommendation
+          }
+        });
+      } else if (fraudAnalysis.requiresReview) {
+        savedListing.status = "pending_review";
+        savedListing.fraudReport = fraudReport;
+        await savedListing.save();
+      }
+    }
+
     // Populate user data for response
     await savedListing.populate('userId', 'name email');
 
+    console.log(`\n✅ LISTING CREATED SUCCESSFULLY:`);
+    console.log(`   📝 Title: ${savedListing.title}`);
+    console.log(`   💰 Auto-Estimated Price: ₹${savedListing.price}`);
+    console.log(`   📊 AI Score: ${savedListing.aiScore}/100`);
+    console.log(`   🔍 Condition: ${savedListing.condition}`);
+
     res.json({
-      message: 'Item listed successfully',
-      listing: savedListing
+      message: 'Item listed successfully with automatic CV price estimation',
+      listing: savedListing,
+      conditionAnalysis,
+      autoPriced: true,
+      aiScore: savedListing.aiScore,
+      estimatedPrice: finalPrice,
+      priceConfidence: predictionResult?.confidence || conditionAnalysis?.confidence || 70,
+      priceBreakdown: predictionResult?.pricing_breakdown || null,
+      pricingMethod: 'cv_automatic',
+      message_detail: `Price automatically estimated at ₹${finalPrice} based on ${finalCondition} condition detected from image analysis`
     });
   } catch (error) {
     console.error('List item error:', error.message);
@@ -201,7 +445,6 @@ router.post('/list-item', requireAuth, async (req, res) => {
     });
   }
 });
-
 // Update listing (allows editing title, description, and category only)
 router.put('/listings/:id', requireAuth, async (req, res) => {
   try {
@@ -304,10 +547,14 @@ router.get("/browse", requireAuth, async (req, res) => {
       limit = 12
     } = req.query;
 
-    // Build query - exclude current user's listings
+    // Build query - exclude current user's listings and blocked/pending review items
     const query = { 
       status: "active",
-      userId: { $ne: userId }  // Exclude items listed by current user
+      userId: { $ne: userId },  // Exclude items listed by current user
+      $or: [
+        { "fraudReport.riskLevel": { $in: ["low", null] } },
+        { fraudReport: { $exists: false } }
+      ]
     };
 
     if (search) {
@@ -809,6 +1056,88 @@ router.get('/seller-profile/:sellerId', async (req, res) => {
   } catch (error) {
     console.error('Get seller profile error:', error);
     res.status(500).json({ message: 'Failed to fetch seller profile' });
+  }
+});
+
+// Admin endpoint: Get flagged listings for review
+router.get('/admin/flagged-listings', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    const { riskLevel, status = "pending_review" } = req.query;
+
+    const query = {
+      $or: [
+        { status: "pending_review" },
+        { status: "blocked" },
+        { "fraudReport.riskLevel": { $in: ["medium", "high", "critical"] } }
+      ]
+    };
+
+    if (riskLevel) {
+      query["fraudReport.riskLevel"] = riskLevel;
+    }
+
+    const flaggedListings = await Marketplace.find(query)
+      .populate('userId', 'name email createdAt')
+      .sort({ 'fraudReport.suspicionScore': -1 })
+      .limit(50);
+
+    res.json({
+      success: true,
+      count: flaggedListings.length,
+      listings: flaggedListings
+    });
+  } catch (error) {
+    console.error('Get flagged listings error:', error);
+    res.status(500).json({ message: 'Failed to fetch flagged listings' });
+  }
+});
+
+// Admin endpoint: Approve or reject flagged listing
+router.patch('/admin/review-listing/:id', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    const { id } = req.params;
+    const { action, reason } = req.body; // action: "approve" or "block"
+
+    const listing = await Marketplace.findById(id);
+
+    if (!listing) {
+      return res.status(404).json({ message: "Listing not found" });
+    }
+
+    if (action === "approve") {
+      listing.status = "active";
+      listing.fraudReport.riskLevel = "low";
+      listing.fraudReport.suspicionScore = 0;
+    } else if (action === "block") {
+      listing.status = "blocked";
+      if (reason) {
+        listing.fraudReport.recommendation = {
+          ...listing.fraudReport.recommendation,
+          adminReason: reason
+        };
+      }
+    }
+
+    await listing.save();
+
+    res.json({
+      success: true,
+      message: `Listing ${action === "approve" ? "approved" : "blocked"} successfully`,
+      listing
+    });
+  } catch (error) {
+    console.error('Review listing error:', error);
+    res.status(500).json({ message: 'Failed to review listing' });
   }
 });
 

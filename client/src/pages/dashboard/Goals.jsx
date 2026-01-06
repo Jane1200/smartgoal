@@ -1,4 +1,5 @@
 import GoalsManager from "@/sections/GoalsManager.jsx";
+import WishlistManager from "@/sections/WishlistManager.jsx";
 import FinanceDataView from "@/components/FinanceDataView.jsx";
 import { useAuth } from "@/context/AuthContext.jsx";
 import { Navigate, useNavigate } from "react-router-dom";
@@ -18,6 +19,9 @@ export default function GoalsPage() {
   const authContext = useAuth();
   const user = authContext?.user;
   const navigate = useNavigate();
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState('goals'); // 'goals' or 'wishlist'
 
   // Redirect if not authenticated
   if (!user?.token) {
@@ -396,21 +400,46 @@ export default function GoalsPage() {
     <div className="container-xxl py-4">
       <div className="d-flex align-items-center justify-content-between mb-4">
         <div>
-          <h1 className="h3 mb-1">My Goals</h1>
-          <p className="text-muted mb-0">Track and manage your personal goals</p>
+          <h1 className="h3 mb-1">My Goals & Wishlist</h1>
+          <p className="text-muted mb-0">Track and manage your personal goals and wishlist items</p>
         </div>
       </div>
       
-      {/* Finance Data View Section */}
-      <FinanceDataView 
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        financeData={financeData}
-        setFinanceData={setFinanceData}
-        isGoalCreationEnabled={isGoalCreationEnabled}
-        refreshFinanceData={refreshFinanceData}
-        financeLoading={financeLoading}
-      />
+      {/* Tabs Navigation */}
+      <ul className="nav nav-tabs mb-4">
+        <li className="nav-item">
+          <button 
+            className={`nav-link ${activeTab === 'goals' ? 'active' : ''}`}
+            onClick={() => setActiveTab('goals')}
+            style={{ cursor: 'pointer', border: 'none', background: 'transparent' }}
+          >
+            🎯 Goals
+          </button>
+        </li>
+        <li className="nav-item">
+          <button 
+            className={`nav-link ${activeTab === 'wishlist' ? 'active' : ''}`}
+            onClick={() => setActiveTab('wishlist')}
+            style={{ cursor: 'pointer', border: 'none', background: 'transparent' }}
+          >
+            ❤️ Wishlist
+          </button>
+        </li>
+      </ul>
+
+      {/* Goals Tab Content */}
+      {activeTab === 'goals' && (
+        <>
+          {/* Finance Data View Section */}
+          <FinanceDataView 
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            financeData={financeData}
+            setFinanceData={setFinanceData}
+            isGoalCreationEnabled={isGoalCreationEnabled}
+            refreshFinanceData={refreshFinanceData}
+            financeLoading={financeLoading}
+          />
       
       {/* Priority Goals Section */}
       {!goalsLoading && goals.length > 0 && getPriorityGoals(goals).length > 0 && (
@@ -899,6 +928,13 @@ export default function GoalsPage() {
         isGoalCreationEnabled={isGoalCreationEnabled}
         refreshFinanceData={refreshFinanceData}
       />
+        </>
+      )}
+
+      {/* Wishlist Tab Content */}
+      {activeTab === 'wishlist' && (
+        <WishlistManager />
+      )}
 
       {/* Add/Edit Auto-Transfer Modal */}
       {(showAddModal || editingTransfer) && (

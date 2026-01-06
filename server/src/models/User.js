@@ -80,7 +80,12 @@ const userSchema = new mongoose.Schema(
 
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
-    emailVerificationToken: { type: String }
+    emailVerificationToken: { type: String },
+    
+    // OTP for login verification
+    loginOTP: { type: String },
+    loginOTPExpires: { type: Date },
+    loginOTPAttempts: { type: Number, default: 0 }
   },
   { timestamps: true }
 );

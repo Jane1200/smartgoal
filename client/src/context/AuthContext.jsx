@@ -26,6 +26,18 @@ export function AuthProvider({ children }) {
       // Normal user login
       console.log("Attempting login with:", { email, passwordLength: password?.length });
       const { data } = await api.post("/auth/login", { email, password });
+      
+      // Check if OTP is required
+      if (data.requiresOTP) {
+        return { 
+          ok: false, 
+          requiresOTP: true, 
+          email: data.email,
+          message: data.message,
+          previewUrl: data.previewUrl 
+        };
+      }
+      
       // Ensure any lingering Firebase client session is cleared to avoid verify-email gating
       try { await signOut(firebaseAuth); } catch {}
       const newUser = { token: data.token, profile: data.user };
@@ -58,6 +70,7 @@ export function AuthProvider({ children }) {
       const result = await signInWithPopup(firebaseAuth, googleProvider);
       const idToken = await result.user.getIdToken();
       const { data } = await api.post("/auth/google", { idToken });
+      
       const newUser = { token: data.token, profile: data.user };
       setUser(newUser);
       toast.success("Signed in with Google");

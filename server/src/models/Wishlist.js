@@ -14,6 +14,11 @@ const wishlistSchema = new mongoose.Schema(
     status: { type: String, enum: ["wishlist", "purchased", "removed"], default: "wishlist" },
     notes: { type: String, trim: true, maxlength: 1000 },
     dueDate: { type: Date }, // When user wants to purchase this item by
+    // Phishing detection fields
+    phishingWarning: { type: Boolean, default: false },
+    phishingRiskMessage: { type: String },
+    phishingDetails: { type: mongoose.Schema.Types.Mixed },
+    phishingLastChecked: { type: Date }
   },
   { timestamps: true }
 );

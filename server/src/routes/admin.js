@@ -59,6 +59,28 @@ router.get("/stats", requireAdmin, async (req, res) => {
     // Calculate system health (basic metrics)
     const systemHealth = activeUsers > 0 ? "Good" : "Warning";
     
+    // Get geographic distribution
+    const geoByCountry = await User.aggregate([
+      { $match: { 'location.country': { $exists: true, $ne: null } } },
+      { $group: { _id: '$location.country', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+    
+    const geoByState = await User.aggregate([
+      { $match: { 'location.state': { $exists: true, $ne: null } } },
+      { $group: { _id: '$location.state', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+    
+    const geoByCity = await User.aggregate([
+      { $match: { 'location.city': { $exists: true, $ne: null } } },
+      { $group: { _id: '$location.city', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+    
     res.json({
       users: {
         total: totalUsers,
@@ -83,6 +105,11 @@ router.get("/stats", requireAdmin, async (req, res) => {
       system: {
         health: systemHealth,
         uptime: "99.9%"
+      },
+      geo: {
+        byCountry: geoByCountry,
+        byState: geoByState,
+        byCity: geoByCity
       }
     });
   } catch (error) {

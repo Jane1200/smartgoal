@@ -35,11 +35,20 @@ export default function Analytics() {
 
   useEffect(() => {
     fetchAnalyticsData();
+    
+    // Auto-refresh analytics every 30 seconds to catch new data
+    const interval = setInterval(() => {
+      fetchAnalyticsData();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const fetchAnalyticsData = async () => {
     try {
       setLoading(true);
+      console.log('🔍 Starting to fetch analytics data...');
+      
       const [financialHealthResponse, goalProgressResponse, spendingResponse, connectionsResponse, goalsResponse, financesResponse, marketplaceListingsResponse] = await Promise.allSettled([
         api.get("/analytics/financial-health"),
         api.get("/analytics/goal-progress"),
@@ -49,6 +58,16 @@ export default function Analytics() {
         api.get("/finance/summary"),
         api.get("/marketplace/my-listings")
       ]);
+
+      console.log('📦 API Responses:', {
+        financialHealth: financialHealthResponse.status,
+        goalProgress: goalProgressResponse.status,
+        spending: spendingResponse.status,
+        connections: connectionsResponse.status,
+        goals: goalsResponse.status,
+        finances: financesResponse.status,
+        marketplace: marketplaceListingsResponse.status
+      });
 
       if (financialHealthResponse.status === 'fulfilled') {
         setAnalytics(prev => ({ ...prev, financialHealth: { ...prev.financialHealth, ...financialHealthResponse.value.data, metrics: { ...prev.financialHealth.metrics, ...financialHealthResponse.value.data.metrics } } }));
@@ -93,16 +112,38 @@ export default function Analytics() {
         api.get("/finance/expenses")
       ]);
 
+      console.log('💵 Finance API Responses:', {
+        income: incomeResponse.status,
+        expense: expenseResponse.status,
+        incomeData: incomeResponse.status === 'fulfilled' ? incomeResponse.value.data?.length : 'failed',
+        expenseData: expenseResponse.status === 'fulfilled' ? expenseResponse.value.data?.length : 'failed'
+      });
+
       let incomeEntries = [];
       let expenseEntries = [];
 
       if (incomeResponse.status === 'fulfilled') {
         incomeEntries = incomeResponse.value.data || [];
+        console.log('✅ Income entries loaded:', incomeEntries.length, 'entries');
+      } else {
+        console.error('❌ Income fetch failed:', incomeResponse.reason);
       }
 
       if (expenseResponse.status === 'fulfilled') {
         expenseEntries = expenseResponse.value.data || [];
+        console.log('✅ Expense entries loaded:', expenseEntries.length, 'entries');
+      } else {
+        console.error('❌ Expense fetch failed:', expenseResponse.reason);
       }
+
+      console.log('📊 Analytics Data Fetched:', {
+        incomeCount: incomeEntries.length,
+        expenseCount: expenseEntries.length,
+        totalIncomeAmount: incomeEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0),
+        totalExpenseAmount: expenseEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0),
+        sampleIncome: incomeEntries[0],
+        sampleExpense: expenseEntries[0]
+      });
 
       const financialAnalysis = calculateComprehensiveFinancialAnalysis(incomeEntries, expenseEntries, marketplaceListings, goals);
       const healthScore = calculateFinancialHealthScore(financialAnalysis);
@@ -152,6 +193,19 @@ export default function Analytics() {
 
     const expenseAnalysis = analyzeExpensePatterns(expenseEntries);
     const incomeAnalysis = analyzeIncomePatterns(incomeEntries);
+
+    console.log('💰 Financial Analysis Calculated:', {
+      totalIncome,
+      monthlyIncome,
+      totalExpenses,
+      monthlyExpenses,
+      monthlySavings,
+      savingsRate: savingsRate.toFixed(2) + '%',
+      currentMonth,
+      currentYear,
+      incomeEntriesCount: incomeEntries.length,
+      expenseEntriesCount: expenseEntries.length
+    });
 
     return {
       metrics: { monthlyIncome, monthlyExpense: monthlyExpenses, monthlySavings, totalIncome, totalExpenses, totalSavings, savingsRate: Math.round(savingsRate * 100) / 100, marketplaceIncome, monthlyMarketplaceIncome, itemsSold: marketplaceListings.filter(listing => listing.status === 'sold').length, activeListings: marketplaceListings.filter(listing => listing.status === 'active').length, activeGoals: activeGoals.length, incomeSources, expenseCategories, expenseAnalysis, incomeAnalysis },
@@ -296,7 +350,44 @@ export default function Analytics() {
 
   return (
     <div className="container-fluid my-4">
-      <h2 className="mb-4">📊 Financial Analytics</h2>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2 className="mb-0">📊 Financial Analytics</h2>
+        <div className="d-flex gap-2">
+          <button 
+            className="btn btn-outline-primary"
+            onClick={() => {
+              setLoading(true);
+              fetchAnalyticsData();
+            }}
+            disabled={loading}
+          >
+            🔄 Refresh Data
+          </button>
+          <button 
+          className="btn btn-primary"
+          onClick={async () => {
+            try {
+              const response = await api.get('/analytics/generate-monthly-report', { responseType: 'blob' });
+              const blob = new Blob([response.data], { type: 'application/pdf' });
+              const url = window.URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `SmartGoal_Financial_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              window.URL.revokeObjectURL(url);
+              toast.success('Report downloaded successfully!');
+            } catch (error) {
+              console.error('Failed to download report:', error);
+              toast.error('Failed to download report');
+            }
+          }}
+        >
+          📄 Download Monthly Report
+        </button>
+        </div>
+      </div>
 
       {/* Key Metrics Cards */}
       <div className="row g-3 mb-4">
@@ -305,15 +396,15 @@ export default function Analytics() {
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-start mb-2">
                 <div>
-                  <p className="text-muted mb-2" style={{ fontSize: "12px" }}>Monthly Income</p>
-                  <h4 className="mb-0">₹{analytics.financialHealth.metrics?.monthlyIncome?.toLocaleString() || 0}</h4>
+                  <p className="text-muted mb-2" style={{ fontSize: "12px" }}>Total Income (All Time)</p>
+                  <h4 className="mb-0">₹{analytics.financialHealth.metrics?.totalIncome?.toLocaleString() || 0}</h4>
                 </div>
                 <span style={{ fontSize: "24px" }}>📈</span>
               </div>
               <div className="progress" style={{ height: "6px" }}>
                 <div className="progress-bar bg-success" style={{ width: "100%" }}></div>
               </div>
-              <small className="text-muted">100% - Incoming</small>
+              <small className="text-muted">Monthly: ₹{analytics.financialHealth.metrics?.monthlyIncome?.toLocaleString() || 0}</small>
             </div>
           </div>
         </div>
@@ -322,15 +413,15 @@ export default function Analytics() {
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-start mb-2">
                 <div>
-                  <p className="text-muted mb-2" style={{ fontSize: "12px" }}>Monthly Expenses</p>
-                  <h4 className="mb-0">₹{analytics.financialHealth.metrics?.monthlyExpense?.toLocaleString() || 0}</h4>
+                  <p className="text-muted mb-2" style={{ fontSize: "12px" }}>Total Expenses (All Time)</p>
+                  <h4 className="mb-0">₹{analytics.financialHealth.metrics?.totalExpenses?.toLocaleString() || 0}</h4>
                 </div>
                 <span style={{ fontSize: "24px" }}>💸</span>
               </div>
               <div className="progress" style={{ height: "6px" }}>
-                <div className="progress-bar bg-warning" style={{ width: `${Math.min((analytics.financialHealth.metrics?.monthlyExpense / (analytics.financialHealth.metrics?.monthlyIncome || 1)) * 100, 100)}%` }}></div>
+                <div className="progress-bar bg-warning" style={{ width: `${Math.min((analytics.financialHealth.metrics?.totalExpenses / (analytics.financialHealth.metrics?.totalIncome || 1)) * 100, 100)}%` }}></div>
               </div>
-              <small className="text-muted">{Math.min(((analytics.financialHealth.metrics?.monthlyExpense / (analytics.financialHealth.metrics?.monthlyIncome || 1)) * 100).toFixed(1), 100)}% of Income</small>
+              <small className="text-muted">{Math.min(((analytics.financialHealth.metrics?.totalExpenses / (analytics.financialHealth.metrics?.totalIncome || 1)) * 100).toFixed(1), 100)}% of Income</small>
             </div>
           </div>
         </div>
@@ -339,15 +430,15 @@ export default function Analytics() {
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-start mb-2">
                 <div>
-                  <p className="text-muted mb-2" style={{ fontSize: "12px" }}>Monthly Savings</p>
-                  <h4 className="mb-0 text-success">₹{analytics.financialHealth.metrics?.monthlySavings?.toLocaleString() || 0}</h4>
+                  <p className="text-muted mb-2" style={{ fontSize: "12px" }}>Total Savings (All Time)</p>
+                  <h4 className="mb-0 text-success">₹{analytics.financialHealth.metrics?.totalSavings?.toLocaleString() || 0}</h4>
                 </div>
                 <span style={{ fontSize: "24px" }}>💰</span>
               </div>
               <div className="progress" style={{ height: "6px" }}>
-                <div className="progress-bar bg-success" style={{ width: `${Math.min((analytics.financialHealth.metrics?.monthlySavings / (analytics.financialHealth.metrics?.monthlyIncome || 1)) * 100, 100)}%` }}></div>
+                <div className="progress-bar bg-success" style={{ width: `${Math.min((analytics.financialHealth.metrics?.totalSavings / (analytics.financialHealth.metrics?.totalIncome || 1)) * 100, 100)}%` }}></div>
               </div>
-              <small className="text-muted">{Math.min(((analytics.financialHealth.metrics?.monthlySavings / (analytics.financialHealth.metrics?.monthlyIncome || 1)) * 100).toFixed(1), 100)}% of Income</small>
+              <small className="text-muted">{Math.min(((analytics.financialHealth.metrics?.totalSavings / (analytics.financialHealth.metrics?.totalIncome || 1)) * 100).toFixed(1), 100)}% of Income</small>
             </div>
           </div>
         </div>

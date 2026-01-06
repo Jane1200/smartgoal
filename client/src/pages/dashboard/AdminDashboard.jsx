@@ -18,6 +18,11 @@ export default function AdminDashboard() {
     system: {
       health: "Good",
       uptime: "99.9%"
+    },
+    geo: {
+      byCountry: [],
+      byState: [],
+      byCity: []
     }
   });
   const [loading, setLoading] = useState(true);
@@ -49,6 +54,11 @@ export default function AdminDashboard() {
         system: {
           health: "Good",
           uptime: "99.9%"
+        },
+        geo: {
+          byCountry: [],
+          byState: [],
+          byCity: []
         }
       });
     } finally {
@@ -272,6 +282,172 @@ export default function AdminDashboard() {
                 <div className="col-6">
                   <div className="small text-muted">System Uptime</div>
                   <div className="h5 mb-0 text-info">{stats.system.uptime}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Geographic Analytics Section */}
+      <div className="row g-4 mt-4">
+        <div className="col-12">
+          <div className="card">
+            <div className="card-header d-flex justify-content-between align-items-center">
+              <h5 className="card-title mb-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="2" y1="12" x2="22" y2="12"/>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                Geographic User Distribution
+              </h5>
+              <span className="badge bg-primary">Live Data</span>
+            </div>
+            <div className="card-body">
+              <div className="row g-4">
+                {/* By Country */}
+                <div className="col-md-4">
+                  <h6 className="text-muted mb-3">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <path d="M3 3h18v18H3z"/>
+                    </svg>
+                    By Country
+                  </h6>
+                  <div className="list-group list-group-flush">
+                    {stats.geo.byCountry && stats.geo.byCountry.length > 0 ? (
+                      stats.geo.byCountry.slice(0, 5).map((item, index) => (
+                        <div key={index} className="list-group-item px-0 d-flex justify-content-between align-items-center">
+                          <div className="d-flex align-items-center">
+                            <span className="badge bg-primary rounded-circle me-2" style={{ width: '24px', height: '24px', fontSize: '10px' }}>
+                              {index + 1}
+                            </span>
+                            <span className="fw-medium">{item._id || 'Unknown'}</span>
+                          </div>
+                          <div className="text-end">
+                            <span className="badge bg-success">{item.count}</span>
+                            <small className="text-muted ms-2">
+                              {stats.users.total > 0 ? ((item.count / stats.users.total) * 100).toFixed(1) : 0}%
+                            </small>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-3 text-muted">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-2 opacity-50">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="M12 16v-4M12 8h.01"/>
+                        </svg>
+                        <p className="mb-0 small">No country data available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* By State */}
+                <div className="col-md-4">
+                  <h6 className="text-muted mb-3">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                      <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    By State/Region
+                  </h6>
+                  <div className="list-group list-group-flush">
+                    {stats.geo.byState && stats.geo.byState.length > 0 ? (
+                      stats.geo.byState.slice(0, 5).map((item, index) => (
+                        <div key={index} className="list-group-item px-0 d-flex justify-content-between align-items-center">
+                          <div className="d-flex align-items-center">
+                            <span className="badge bg-info rounded-circle me-2" style={{ width: '24px', height: '24px', fontSize: '10px' }}>
+                              {index + 1}
+                            </span>
+                            <span className="fw-medium">{item._id || 'Unknown'}</span>
+                          </div>
+                          <div className="text-end">
+                            <span className="badge bg-success">{item.count}</span>
+                            <small className="text-muted ms-2">
+                              {stats.users.total > 0 ? ((item.count / stats.users.total) * 100).toFixed(1) : 0}%
+                            </small>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-3 text-muted">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-2 opacity-50">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="M12 16v-4M12 8h.01"/>
+                        </svg>
+                        <p className="mb-0 small">No state data available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* By City */}
+                <div className="col-md-4">
+                  <h6 className="text-muted mb-3">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                      <polyline points="9 22 9 12 15 12 15 22"/>
+                    </svg>
+                    By City
+                  </h6>
+                  <div className="list-group list-group-flush">
+                    {stats.geo.byCity && stats.geo.byCity.length > 0 ? (
+                      stats.geo.byCity.slice(0, 5).map((item, index) => (
+                        <div key={index} className="list-group-item px-0 d-flex justify-content-between align-items-center">
+                          <div className="d-flex align-items-center">
+                            <span className="badge bg-warning rounded-circle me-2" style={{ width: '24px', height: '24px', fontSize: '10px' }}>
+                              {index + 1}
+                            </span>
+                            <span className="fw-medium">{item._id || 'Unknown'}</span>
+                          </div>
+                          <div className="text-end">
+                            <span className="badge bg-success">{item.count}</span>
+                            <small className="text-muted ms-2">
+                              {stats.users.total > 0 ? ((item.count / stats.users.total) * 100).toFixed(1) : 0}%
+                            </small>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-3 text-muted">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-2 opacity-50">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="M12 16v-4M12 8h.01"/>
+                        </svg>
+                        <p className="mb-0 small">No city data available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="row mt-4 pt-4 border-top">
+                <div className="col-md-3 text-center">
+                  <div className="text-muted small mb-1">Total Countries</div>
+                  <div className="h4 mb-0 text-primary">
+                    {stats.geo.byCountry ? stats.geo.byCountry.length : 0}
+                  </div>
+                </div>
+                <div className="col-md-3 text-center">
+                  <div className="text-muted small mb-1">Total States</div>
+                  <div className="h4 mb-0 text-info">
+                    {stats.geo.byState ? stats.geo.byState.length : 0}
+                  </div>
+                </div>
+                <div className="col-md-3 text-center">
+                  <div className="text-muted small mb-1">Total Cities</div>
+                  <div className="h4 mb-0 text-warning">
+                    {stats.geo.byCity ? stats.geo.byCity.length : 0}
+                  </div>
+                </div>
+                <div className="col-md-3 text-center">
+                  <div className="text-muted small mb-1">Coverage</div>
+                  <div className="h4 mb-0 text-success">
+                    {stats.geo.byCountry && stats.geo.byCountry.length > 0 ? 'Global' : 'Local'}
+                  </div>
                 </div>
               </div>
             </div>

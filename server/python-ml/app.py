@@ -5,11 +5,11 @@ Microservice for ML pricing suggestions
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import knn_pricing
+import cv_pricing as knn_pricing  # Using CV pricing instead of KNN
 import buyer_seller_matching
 import phishing_nb
+import condition_detection
 import os
-
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
@@ -27,6 +27,67 @@ if phish_init['success']:
     print(f"✅ Phishing model: {phish_init['message']}")
 else:
     print(f"⚠️  Phishing model: {phish_init['message']}")
+
+print("👁️  Initializing Condition Detection model...")
+condition_init = condition_detection.initialize_model()
+if condition_init['success']:
+    print(f"✅ Condition detection model: {condition_init['message']}")
+else:
+    print(f"⚠️  Condition detection model: {condition_init['message']}")
+
+
+def calculate_ai_score(cv_analysis, condition):
+    """
+    Calculate AI score (0-100) based on condition analysis and image quality
+    
+    Args:
+        cv_analysis: Computer vision analysis data
+        condition: Product condition (new, excellent, good, fair, poor)
+    
+    Returns:
+        int: AI score between 0-100
+    """
+    # Base score from condition confidence
+    confidence = cv_analysis.get('confidence', 50)
+    base_score = confidence
+    
+    # Condition multipliers
+    condition_scores = {
+        'new': 1.0,
+        'like-new': 0.95,
+        'excellent': 0.85,
+        'good': 0.70,
+        'fair': 0.55,
+        'poor': 0.30
+    }
+    
+    condition_multiplier = condition_scores.get(condition, 0.70)
+    
+    # Image quality adjustments
+    features = cv_analysis.get('features', {})
+    sharpness = features.get('sharpness', 500)
+    contrast = features.get('contrast', 40)
+    
+    # Quality bonus (up to 10 points)
+    quality_bonus = 0
+    if sharpness > 1000:
+        quality_bonus += 5
+    elif sharpness > 500:
+        quality_bonus += 3
+    
+    if contrast > 50:
+        quality_bonus += 5
+    elif contrast > 30:
+        quality_bonus += 2
+    
+    # Tampered penalty
+    tampered_penalty = 20 if cv_analysis.get('tampered', False) else 0
+    
+    # Calculate final score
+    final_score = (base_score * condition_multiplier) + quality_bonus - tampered_penalty
+    
+    # Clamp between 0-100
+    return max(0, min(100, int(final_score)))
 
 
 @app.route('/', methods=['GET'])
@@ -55,69 +116,89 @@ def health():
 @app.route('/predict', methods=['POST'])
 def predict_price():
     """
-    Predict optimal price for a product
+    Predict optimal price for a product using AUTOMATIC computer vision analysis
+    NO ORIGINAL PRICE NEEDED - estimates directly from CV-detected condition
     
     Request body:
     {
         "title": "iPhone 12 64GB",
         "category": "electronics",
-        "condition": "excellent",
+        "subCategory": "phone",
+        "brand": "Apple",
         "location": "Mumbai",
-        "originalPrice": 65000,
-        "ageMonths": 24,
-        "brand": "Apple"
+        "cvAnalysis": {  // Required for automatic CV pricing
+            "condition": "good",
+            "confidence": 85.5,
+            "tampered": false,
+            "features": {
+                "sharpness": 120.5,
+                "brightness": 150.2,
+                "contrast": 45.8,
+                "edge_density": 0.35
+            }
+        }
     }
     
     Response:
     {
         "success": true,
         "predicted_price": 32000,
-        "average_price": 31500,
-        "median_price": 32000,
-        "price_range": {
-            "min": 28000,
-            "max": 35000
-        },
-        "similar_products": [...],
-        "confidence": 85
+        "condition_detected": "good",
+        "confidence": 85.5,
+        "cv_insights": {...},
+        "ai_score": 92,
+        "pricing_breakdown": {...},
+        "automatic_pricing": true,
+        "message": "Price estimated from CV analysis - good condition detected"
     }
     """
     try:
         data = request.get_json()
         
-        # Validate required fields
-        required_fields = ['category', 'condition', 'originalPrice']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    'success': False,
-                    'error': f'Missing required field: {field}'
-                }), 400
+        # Validate required fields for CV-only pricing
+        if 'category' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: category'
+            }), 400
         
         # Set defaults
         if 'location' not in data:
             data['location'] = 'India'
-        if 'ageMonths' not in data:
-            data['ageMonths'] = 0
         if 'brand' not in data:
             data['brand'] = 'generic'
+        if 'subCategory' not in data:
+            data['subCategory'] = 'other'
         
-        # Get prediction
-        result = knn_pricing.get_price_prediction(data)
+        # Extract CV analysis (highly recommended for accurate pricing)
+        cv_analysis = data.get('cvAnalysis', None)
+        
+        # Get prediction using AUTOMATIC computer vision pricing
+        result = knn_pricing.get_price_prediction(data, cv_analysis)
+        
+        # Calculate AI score if CV analysis is available
+        if cv_analysis and 'confidence' in cv_analysis:
+            ai_score = calculate_ai_score(cv_analysis, result.get('condition_detected', 'good'))
+            result['ai_score'] = ai_score
+            print(f"✅ AI Score calculated: {ai_score}/100")
         
         return jsonify(result)
     
     except Exception as e:
+        print(f"❌ Prediction error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'message': 'Failed to estimate price from CV analysis'
         }), 500
 
 
 @app.route('/train', methods=['POST'])
 def add_training_data():
     """
-    Add sold product to training data and retrain model
+    Add sold product to training data for computer vision pricing model
     
     Request body:
     {
@@ -172,12 +253,14 @@ def retrain_model():
 @app.route('/stats', methods=['GET'])
 def get_stats():
     """Get model statistics"""
+    categories = list(set([item.get('category', 'N/A') for item in knn_pricing.cv_model.training_data]))
+    locations = list(set([item.get('location', 'N/A') for item in knn_pricing.cv_model.training_data]))
+    
     return jsonify({
-        'model_trained': knn_pricing.knn_model.is_trained,
-        'training_samples': len(knn_pricing.knn_model.training_data),
-        'k_neighbors': knn_pricing.knn_model.k,
-        'categories': list(set([item.get('category', 'N/A') for item in knn_pricing.knn_model.training_data])),
-        'locations': list(set([item.get('location', 'N/A') for item in knn_pricing.knn_model.training_data])),
+        'model_trained': knn_pricing.cv_model.is_trained,
+        'training_samples': len(knn_pricing.cv_model.training_data),
+        'categories': categories,
+        'locations': locations,
         'phishing_model_trained': phishing_nb.phishing_model.is_trained
     })
 
@@ -302,13 +385,115 @@ def phishing_evaluate():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# Condition detection endpoints
+@app.route('/condition/detect', methods=['POST'])
+def detect_condition():
+    """
+    Detect product condition from uploaded image
+    
+    Request body:
+    {
+        "imagePath": "/path/to/uploaded/image.jpg"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "condition": "good",
+        "confidence": 85.5,
+        "tampered": false,
+        "features": {
+            "sharpness": 850.2,
+            "color_variance": 120.5,
+            "edge_density": 0.15,
+            "brightness": 128.0,
+            "contrast": 65.3
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if 'imagePath' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: imagePath'
+            }), 400
+        
+        image_path = data['imagePath']
+        
+        # Check if file exists
+        if not os.path.exists(image_path):
+            return jsonify({
+                'success': False,
+                'error': 'Image file not found'
+            }), 404
+        
+        # Detect condition
+        result = condition_detection.detect_condition_from_image(image_path)
+        
+        return jsonify({
+            'success': True,
+            **result
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/condition/train', methods=['POST'])
+def train_condition_model():
+    """
+    Train the condition detection model
+    
+    Request body:
+    {
+        "trainingData": [
+            {"imagePath": "/path/image1.jpg", "label": 4},
+            {"imagePath": "/path/image2.jpg", "label": 3},
+            ...
+        ]
+    }
+    
+    Labels: 0=poor, 1=fair, 2=good, 3=excellent, 4=new
+    """
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if 'trainingData' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: trainingData'
+            }), 400
+        
+        training_data = []
+        for item in data['trainingData']:
+            if 'imagePath' in item and 'label' in item:
+                training_data.append((item['imagePath'], item['label']))
+        
+        # Train model
+        result = condition_detection.train_condition_model(training_data)
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     debug = os.environ.get('DEBUG', 'False') == 'True'
     
-    print(f"\n🎯 Starting KNN Pricing Service on port {port}")
-    print(f"📊 Training samples: {len(knn_pricing.knn_model.training_data)}")
-    print(f"🔍 K neighbors: {knn_pricing.knn_model.k}")
+    print(f"\n🎯 Starting Computer Vision Pricing Service on port {port}")
+    print(f"📊 Training samples: {len(knn_pricing.cv_model.training_data)}")
     print(f"\n🌐 Access the service at: http://localhost:{port}")
     print(f"📖 API Documentation:")
     print(f"   GET  /              - Service info")
@@ -318,7 +503,9 @@ if __name__ == '__main__':
     print(f"   GET  /stats         - Model statistics")
     print(f"   POST /match/sellers - Match buyers with sellers")
     print(f"   POST /phishing/train   - Train phishing URL detector")
-    print(f"   POST /phishing/predict - Predict phishing URL\n")
+    print(f"   POST /phishing/predict - Predict phishing URL")
+    print(f"   POST /condition/detect - Detect product condition from image")
+    print(f"   POST /condition/train  - Train condition detection model\n")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
 

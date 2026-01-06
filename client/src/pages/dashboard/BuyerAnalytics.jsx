@@ -39,6 +39,13 @@ export default function BuyerAnalytics() {
 
   useEffect(() => {
     fetchBuyerAnalytics();
+    
+    // Auto-refresh analytics every 30 seconds to catch new data
+    const interval = setInterval(() => {
+      fetchBuyerAnalytics();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const fetchBuyerAnalytics = async () => {
@@ -66,6 +73,13 @@ export default function BuyerAnalytics() {
       if (statsRes.status === 'fulfilled') {
         stats = statsRes.value.data;
       }
+
+      console.log('📊 Buyer Analytics Data Fetched:', {
+        ordersCount: orders.length,
+        totalSpent: stats.totalSpent,
+        totalOrders: stats.totalOrders,
+        financeData
+      });
 
       // Calculate analytics from orders
       const categoryBreakdown = calculateCategoryBreakdown(orders);
@@ -179,7 +193,44 @@ export default function BuyerAnalytics() {
 
   return (
     <div className="container-fluid my-4">
-      <h2 className="mb-4">📊 Buyer Analytics & Spending Insights</h2>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2 className="mb-0">📊 Buyer Analytics & Spending Insights</h2>
+        <div className="d-flex gap-2">
+          <button 
+            className="btn btn-outline-primary"
+            onClick={() => {
+              setLoading(true);
+              fetchBuyerAnalytics();
+            }}
+            disabled={loading}
+          >
+            🔄 Refresh Data
+          </button>
+          <button 
+          className="btn btn-primary"
+          onClick={async () => {
+            try {
+              const response = await api.get('/orders/generate-buyer-report', { responseType: 'blob' });
+              const blob = new Blob([response.data], { type: 'application/pdf' });
+              const url = window.URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `SmartGoal_Buyer_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              window.URL.revokeObjectURL(url);
+              toast.success('Report downloaded successfully!');
+            } catch (error) {
+              console.error('Failed to download report:', error);
+              toast.error('Failed to download report');
+            }
+          }}
+        >
+          📄 Download Monthly Report
+        </button>
+        </div>
+      </div>
 
       {/* Key Metrics Cards */}
       <div className="row g-3 mb-4">

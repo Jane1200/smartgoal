@@ -41,7 +41,7 @@ const marketplaceSchema = new mongoose.Schema(
     },
     status: { 
       type: String, 
-      enum: ["active", "sold", "pending", "archived"], 
+      enum: ["active", "sold", "pending", "archived", "blocked", "pending_review"], 
       default: "active" 
     },
     images: [{
@@ -52,6 +52,22 @@ const marketplaceSchema = new mongoose.Schema(
     views: { type: Number, default: 0 },
     likes: { type: Number, default: 0 },
     featured: { type: Boolean, default: false },
+    // Fraud detection
+    fraudReport: {
+      suspicionScore: { type: Number, default: 0 },
+      riskLevel: { type: String, enum: ["low", "medium", "high", "critical"], default: "low" },
+      flags: [{
+        type: String,
+        severity: String,
+        message: String
+      }],
+      analyzedAt: { type: Date, default: Date.now },
+      recommendation: {
+        action: String,
+        message: String,
+        userWarning: String
+      }
+    },
     location: {
       city: String,
       state: String,
@@ -64,7 +80,34 @@ const marketplaceSchema = new mongoose.Schema(
     },
     tags: [String],
     soldAt: Date,
-    buyerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
+    buyerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    // AI-powered condition analysis
+    aiScore: { 
+      type: Number, 
+      min: 0, 
+      max: 100,
+      default: null 
+    },
+    conditionAnalysis: {
+      condition: String,
+      confidence: Number,
+      tampered: Boolean,
+      features: {
+        sharpness: Number,
+        color_variance: Number,
+        edge_density: Number,
+        brightness: Number,
+        contrast: Number
+      }
+    },
+    autoPriced: { type: Boolean, default: false },
+    originalPrice: { type: Number, min: 0 },
+    priceBreakdown: {
+      basePrice: Number,
+      conditionAdjustment: Number,
+      locationFactor: Number,
+      finalPrice: Number
+    }
   },
   { 
     timestamps: true,

@@ -214,9 +214,25 @@
   z-index: 1030;
   transition: all 0.3s ease;
 
+  [data-theme="dark"] & {
+    background: rgba(26, 31, 46, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
   &.is-scrolled {
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+
+    [data-theme="dark"] & {
+      background: rgba(26, 31, 46, 0.98);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    }
+  }
+}
+
+.theme-toggle {
+  &:hover {
+    background: var(--hover-bg) !important;
   }
 }
 
@@ -254,7 +270,7 @@
   .brand-text {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--text-color);
     transition: color 0.3s ease;
   }
 
@@ -312,7 +328,7 @@
   h2 {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #1e293b;
+    color: var(--text-color);
     margin: 0;
     letter-spacing: -0.5px;
   }
@@ -401,7 +417,7 @@
   .dropdown-item {
     display: block;
     padding: 0.75rem 1rem;
-    color: #475569;
+    color: var(--text-color);
     text-decoration: none;
     transition: all 0.3s ease;
     border: none;
@@ -411,7 +427,7 @@
     font-size: 0.875rem;
 
     &:hover {
-      background: #f8fafc;
+      background: var(--hover-bg);
       color: #161da3;
     }
 
@@ -442,8 +458,8 @@
 
 .mobile-nav {
   display: none;
-  background: white;
-  border-top: 1px solid #e2e8f0;
+  background: var(--card-bg);
+  border-top: 1px solid var(--border-color);
   padding: 1rem 0;
   transform: translateY(-100%);
   opacity: 0;
@@ -1560,12 +1576,16 @@
   margin-top: 80px; /* Account for global header */
   position: relative;
   z-index: 1;
-  background: #f8fafc;
+  background: var(--bg-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #e2e8f0;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
   
   .btn {
     border-radius: 12px;
@@ -1611,8 +1631,10 @@
 }
 
 .content {
-  background: #f8fafc;
+  background: var(--bg-color);
   padding: 2rem;
+  color: var(--text-color);
+  transition: background-color 0.3s ease;
 }
 
 .quick-actions .btn { 

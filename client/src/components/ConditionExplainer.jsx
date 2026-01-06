@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const conditionData = {
   'like-new': {
@@ -101,8 +101,15 @@ const conditionData = {
   }
 };
 
-export default function ConditionExplainer({ selectedCondition, onSelectCondition, deviceType = 'phone' }) {
+export default function ConditionExplainer({ selectedCondition, onSelectCondition, deviceType = 'phone', aiDetectedCondition, conditionConfidence }) {
   const [expandedCard, setExpandedCard] = useState(null);
+
+  // Auto-select AI detected condition
+  useEffect(() => {
+    if (aiDetectedCondition && !selectedCondition && onSelectCondition) {
+      onSelectCondition(aiDetectedCondition);
+    }
+  }, [aiDetectedCondition, selectedCondition, onSelectCondition]);
 
   // Only show for electronics
   const shouldShow = ['phone', 'smartwatch', 'earphones', 'electronics'].includes(deviceType?.toLowerCase());
@@ -132,6 +139,50 @@ export default function ConditionExplainer({ selectedCondition, onSelectConditio
           padding: 2rem;
           border-radius: 16px;
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .ai-detection-banner {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 1rem 1.5rem;
+          border-radius: 12px;
+          margin-bottom: 1.5rem;
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .ai-icon {
+          font-size: 2rem;
+          animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+
+        .ai-detection-content h4 {
+          margin: 0 0 0.25rem 0;
+          font-size: 1.1rem;
+          font-weight: 600;
+        }
+
+        .ai-detection-content p {
+          margin: 0;
+          font-size: 0.9rem;
+          opacity: 0.95;
+        }
+
+        .confidence-badge {
+          background: rgba(255, 255, 255, 0.2);
+          padding: 0.25rem 0.75rem;
+          border-radius: 20px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          margin-left: auto;
+          backdrop-filter: blur(10px);
         }
 
         .condition-explainer-title {
@@ -198,6 +249,24 @@ export default function ConditionExplainer({ selectedCondition, onSelectConditio
         .condition-card.selected::before {
           opacity: 1;
           height: 8px;
+        }
+
+        .condition-card.ai-detected {
+          background: linear-gradient(135deg, #f0f4ff 0%, #e6edff 100%);
+          border-color: #667eea;
+        }
+
+        .ai-badge {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 0.25rem 0.5rem;
+          border-radius: 12px;
+          font-size: 0.7rem;
+          font-weight: 600;
+          position: absolute;
+          top: 0.5rem;
+          right: 0.5rem;
+          box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
         }
 
         .condition-card-header {
@@ -268,63 +337,42 @@ export default function ConditionExplainer({ selectedCondition, onSelectConditio
         .condition-description li {
           padding: 0.4rem 0;
           padding-left: 1.5rem;
-          position: relative;
-        }
-
-        .condition-description li::before {
-          content: '•';
-          position: absolute;
-          left: 0.5rem;
-          color: var(--card-color);
-          font-weight: bold;
-        }
-
-        .condition-badge {
-          display: inline-block;
-          padding: 0.25rem 0.75rem;
-          border-radius: 20px;
-          font-size: 0.75rem;
-          font-weight: 600;
-          color: white;
-          background: var(--card-color);
-          margin-top: 0.5rem;
-        }
-
-        @media (max-width: 768px) {
-          .condition-cards-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .condition-explainer-container {
-            padding: 1rem;
-          }
-
-          .condition-icon-container {
-            min-height: 100px;
-          }
-
-          .device-icon {
-            transform: scale(0.8);
-          }
-        }
-
-        @media (max-width: 480px) {
-          .condition-cards-grid {
-            grid-template-columns: 1fr;
-          }
         }
       `}</style>
 
-      <h3 className="condition-explainer-title">Conditions Explained</h3>
+      {/* AI Detection Banner */}
+      {aiDetectedCondition && (
+        <div className="ai-detection-banner">
+          <div className="ai-icon">🤖</div>
+          <div className="ai-detection-content">
+            <h4>AI Detected Condition</h4>
+            <p>
+              Our AI analyzed your image and detected the condition as <strong>{conditionData[aiDetectedCondition]?.label}</strong>
+            </p>
+          </div>
+          {conditionConfidence && (
+            <div className="confidence-badge">
+              {conditionConfidence}% Confidence
+            </div>
+          )}
+        </div>
+      )}
+
+      <h2 className="condition-explainer-title">
+        {aiDetectedCondition ? 'AI Detected Condition' : 'Conditions Explained'}
+      </h2>
       <p className="condition-explainer-subtitle">
-        Select the condition that best describes your {getDeviceTypeLabel().toLowerCase()}
+        {aiDetectedCondition 
+          ? `AI has automatically detected your ${getDeviceTypeLabel().toLowerCase()}'s condition based on image analysis`
+          : `Select the condition that best describes your ${getDeviceTypeLabel().toLowerCase()}`
+        }
       </p>
 
       <div className="condition-cards-grid">
         {Object.entries(conditionData).map(([value, data]) => (
           <div
             key={value}
-            className={`condition-card ${selectedCondition === value ? 'selected' : ''}`}
+            className={`condition-card ${selectedCondition === value ? 'selected' : ''} ${aiDetectedCondition === value ? 'ai-detected' : ''}`}
             style={{ '--card-color': data.color }}
             onClick={() => onSelectCondition(value)}
             role="button"
@@ -337,6 +385,11 @@ export default function ConditionExplainer({ selectedCondition, onSelectConditio
           >
             <div className="condition-card-header">
               <span className="condition-emoji">{data.emoji}</span>
+              {aiDetectedCondition === value && (
+                <div className="ai-badge">
+                  🤖 AI Detected
+                </div>
+              )}
               <div className="condition-check">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
                   <polyline points="20 6 9 17 4 12"/>
@@ -367,6 +420,8 @@ export default function ConditionExplainer({ selectedCondition, onSelectConditio
     </div>
   );
 }
+
+
 
 
 

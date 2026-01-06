@@ -1,12 +1,20 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { toast } from "react-toastify";
 import { auth } from "@/lib/firebase"; // firebase client auth (if available)
+import api from "@/utils/api.js";
 
 export default function Login() {
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [otpEmail, setOTPEmail] = useState("");
+  const [otp, setOTP] = useState("");
+  const [otpLoading, setOTPLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  
   const {
     register,
     handleSubmit,
@@ -31,9 +39,31 @@ export default function Login() {
     try {
       const res = await login(values.email, values.password);
       if (!res || res.ok === false) {
-        // login returns { ok: false, error } on failure
+        // Check if OTP is required
+        if (res?.requiresOTP) {
+          setOTPEmail(values.email);
+          setShowOTPModal(true);
+          setCountdown(600); // 10 minutes
+          
+          // Start countdown
+          const interval = setInterval(() => {
+            setCountdown(prev => {
+              if (prev <= 1) {
+                clearInterval(interval);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+          
+          toast.success("OTP sent to your email");
+          if (res.previewUrl) {
+            console.log("📧 Email preview:", res.previewUrl);
+          }
+          return;
+        }
+        
         const msg = res?.error || "Login failed. Check credentials and try again.";
-        // note: AuthContext already toasts errors, but safe to show here too
         toast.error(msg);
         return;
       }
@@ -42,6 +72,44 @@ export default function Login() {
       console.error("login error", err);
       toast.error(err?.message || "Login failed. Check credentials and try again.");
     }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otp || otp.length !== 6) {
+      toast.error("Please enter a valid 6-digit OTP");
+      return;
+    }
+
+    setOTPLoading(true);
+    try {
+      const { data } = await api.post("/auth/verify-otp", { email: otpEmail, otp });
+      
+      if (data.token && data.user) {
+        localStorage.setItem("sg_auth", JSON.stringify({ token: data.token, profile: data.user }));
+        toast.success("Login successful!");
+        window.location.href = "/dashboard-redirect";
+      } else {
+        toast.error("Login failed. Please try again.");
+      }
+    } catch (err) {
+      console.error("Verify OTP error:", err);
+      const errorMsg = err.response?.data?.message || "Invalid OTP. Please try again.";
+      toast.error(errorMsg);
+      
+      if (errorMsg.includes("expired") || errorMsg.includes("Too many")) {
+        setShowOTPModal(false);
+        setOTP("");
+        setCountdown(0);
+      }
+    } finally {
+      setOTPLoading(false);
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -131,6 +199,10 @@ export default function Login() {
             </button>
 
             <div className="d-flex justify-content-center gap-3 small mt-2">
+              <Link to="/login-otp" className="link">
+                Login with OTP
+              </Link>
+              <span className="text-muted">•</span>
               <Link to="/reset" className="link">
                 Reset Password
               </Link>
@@ -142,6 +214,56 @@ export default function Login() {
           </div>
         </div>
       </main>
+
+      {/* OTP Verification Modal */}
+      {showOTPModal && (
+        <div className="modal fade show" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => setShowOTPModal(false)}>
+          <div className="modal-dialog modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header border-0">
+                <h5 className="modal-title">Verify OTP</h5>
+                <button type="button" className="btn-close" onClick={() => setShowOTPModal(false)}></button>
+              </div>
+              <div className="modal-body">
+                <p className="text-muted mb-3">Enter the 6-digit code sent to <strong>{otpEmail}</strong></p>
+                
+                <input
+                  type="text"
+                  className="form-control form-control-lg text-center mb-3"
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setOTP(value);
+                  }}
+                  maxLength="6"
+                  style={{ letterSpacing: '0.5em', fontSize: '1.5rem' }}
+                  autoFocus
+                />
+
+                {countdown > 0 && (
+                  <div className="text-center small text-muted mb-3">
+                    ⏱️ OTP expires in: <strong className="text-primary">{formatTime(countdown)}</strong>
+                  </div>
+                )}
+
+                <button
+                  className="btn btn-primary btn-lg w-100 rounded-pill"
+                  onClick={handleVerifyOTP}
+                  disabled={otpLoading || otp.length !== 6}
+                >
+                  {otpLoading ? (
+                    <span>
+                      <span className="spinner-border spinner-border-sm me-2" />
+                      Verifying...
+                    </span>
+                  ) : "Verify & Login"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

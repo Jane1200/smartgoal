@@ -9,17 +9,25 @@ import PaymentPlan from "../models/PaymentPlan.js";
 import PurchaseExpense from "../models/PurchaseExpense.js";
 import Finance from "../models/Finance.js";
 import Notification from "../models/Notification.js";
+import User from "../models/User.js";
 import { checkSufficientSavings, calculateProjectedSavingsWithEMI } from "../utils/financeUtils.js";
+import { generateBuyerReport } from "../utils/pdfGenerator.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 
 const router = Router();
 
-// Initialize Razorpay
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+// Initialize Razorpay only if credentials are provided
+let razorpay = null;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+  });
+  console.log('✅ Razorpay initialized');
+} else {
+  console.warn('⚠️ Razorpay not configured - payment features will be disabled');
+}
 
 // Create order from cart (checkout)
 router.post("/checkout", requireAuth, async (req, res) => {
@@ -1381,6 +1389,105 @@ router.post("/sync-marketplace-income", requireAuth, async (req, res) => {
       error: error.message,
       details: error.stack
     });
+  }
+});
+
+// Generate Monthly PDF Report for Buyers
+router.get("/generate-buyer-report", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get user data
+    const user = await User.findById(userId).select('name email profile');
+    
+    // Get all orders
+    const orders = await Order.find({ buyerId: userId })
+      .populate('items.listingId')
+      .sort({ createdAt: -1 });
+    
+    // Get finance summary
+    const currentDate = new Date();
+    const financeSummary = await Finance.getUserFinanceSummary(userId, {
+      month: currentDate.getMonth() + 1,
+      year: currentDate.getFullYear()
+    });
+    
+    let monthlyIncome = 0;
+    let monthlyExpense = 0;
+    financeSummary.forEach(item => {
+      if (item._id === 'income') monthlyIncome = item.total;
+      if (item._id === 'expense') monthlyExpense = item.total;
+    });
+    
+    const monthlySavings = monthlyIncome - monthlyExpense;
+    
+    // Calculate total spent and order count
+    const totalSpent = orders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
+    const totalOrders = orders.length;
+    const avgOrderValue = totalOrders > 0 ? Math.round(totalSpent / totalOrders) : 0;
+    
+    // Calculate current month spending
+    const currentMonth = currentDate.getMonth();
+    const monthlySpending = orders.filter(order => {
+      const orderDate = new Date(order.createdAt);
+      return orderDate.getMonth() === currentMonth;
+    }).reduce((sum, order) => sum + (order.totalAmount || 0), 0);
+    
+    // Calculate category breakdown
+    const categoryBreakdown = {};
+    orders.forEach(order => {
+      order.items?.forEach(item => {
+        const category = item.category || 'Uncategorized';
+        categoryBreakdown[category] = (categoryBreakdown[category] || 0) + (item.price || 0);
+      });
+    });
+    
+    const categoryBreakdownArray = Object.entries(categoryBreakdown)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+    
+    // Get top purchases
+    const topPurchases = orders
+      .slice(0, 5)
+      .map(order => ({
+        title: order.items?.[0]?.title || 'Unknown Item',
+        price: order.totalAmount,
+        date: order.createdAt,
+        category: order.items?.[0]?.category
+      }));
+    
+    // Prepare buyer analytics data for PDF
+    const buyerAnalytics = {
+      overview: {
+        totalSpent,
+        totalOrders,
+        avgOrderValue,
+        monthlySpending,
+        availableSavings: monthlySavings
+      },
+      categoryBreakdown: categoryBreakdownArray,
+      topPurchases
+    };
+    
+    const userData = {
+      name: user.name || user.profile?.name,
+      email: user.email
+    };
+    
+    // Generate PDF
+    const pdfBuffer = await generateBuyerReport(userData, buyerAnalytics);
+    
+    // Set response headers for PDF download
+    const filename = `SmartGoal_Buyer_Report_${currentDate.toISOString().split('T')[0]}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    res.send(pdfBuffer);
+    
+  } catch (error) {
+    console.error('Generate buyer report error:', error);
+    res.status(500).json({ message: 'Failed to generate buyer report' });
   }
 });
 

@@ -10,6 +10,7 @@ import UserLayout from "@/layouts/UserLayout.jsx";
 import BuyerLayout from "@/layouts/BuyerLayout.jsx";
 
 import Login from "@/pages/auth/Login.jsx";
+import LoginOTP from "@/pages/auth/LoginOTP.jsx";
 import Register from "@/pages/auth/Register.jsx";
 import ResetPassword from "@/pages/auth/ResetPassword.jsx";
 import VerifyEmail from "@/pages/auth/VerifyEmail.jsx";
@@ -23,18 +24,20 @@ import AllGoals from "@/pages/admin/AllGoals.jsx";
 import MarketplaceControl from "@/pages/admin/MarketplaceControl.jsx";
 import FinancialOverview from "@/pages/admin/FinancialOverview.jsx";
 import SystemAnalytics from "@/pages/admin/SystemAnalytics.jsx";
+import CronJobsManager from "@/pages/admin/CronJobsManager.jsx";
 import BuyerMarketplace from "@/pages/dashboard/BuyerMarketplace.jsx";
 import Cart from "@/pages/dashboard/Cart.jsx";
 import Checkout from "@/pages/dashboard/Checkout.jsx";
 import Orders from "@/pages/dashboard/Orders.jsx";
 import ConnectionsPage from "@/pages/dashboard/Connections.jsx";
 import GoalsPage from "@/pages/dashboard/Goals.jsx";
-import WishlistPage from "@/pages/dashboard/Wishlist.jsx";
 import MarketplacePage from "@/pages/dashboard/Marketplace.jsx";
+import ResellItems from "@/pages/dashboard/ResellItems.jsx";
 import FinancesPage from "@/pages/dashboard/Finances.jsx";
 import AnalyticsPage from "@/pages/dashboard/Analytics.jsx";
 import BuyerAnalyticsPage from "@/pages/dashboard/BuyerAnalytics.jsx";
 import ProfilePage from "@/pages/dashboard/Profile.jsx";
+import BankStatementAnalysis from "@/pages/dashboard/BankStatementAnalysis.jsx";
 
 import Home from "@/pages/public/Home.jsx";
 import About from "@/pages/public/About.jsx";
@@ -58,7 +61,14 @@ export default function App() {
 
   useEffect(() => {
     // Paths we consider "public"
-    const PUBLIC_PATHS = new Set(["/", "/about", "/login", "/register", "/reset"]);
+    const PUBLIC_PATHS = new Set([
+      "/",
+      "/about",
+      "/login",
+      "/login-otp",
+      "/register",
+      "/reset",
+    ]);
 
     // If the app already has a backend-authenticated user (JWT),
     // skip Firebase verification gating entirely.
@@ -106,6 +116,7 @@ export default function App() {
         {/* Auth Pages */}
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<Login />} />
+          <Route path="/login-otp" element={<LoginOTP />} />
           <Route path="/register" element={<Register />} />
           <Route path="/reset" element={<ResetPassword />} />
         </Route>
@@ -126,9 +137,10 @@ export default function App() {
           <Route path="/admin/marketplace" element={<MarketplaceControl />} />
           <Route path="/admin/finance" element={<FinancialOverview />} />
           <Route path="/admin/analytics" element={<SystemAnalytics />} />
+          <Route path="/admin/cron-jobs" element={<CronJobsManager />} />
         </Route>
 
-{/* User Routes */}
+        {/* User Routes */}
         <Route
           element={
             <RequireAuth>
@@ -140,10 +152,11 @@ export default function App() {
         >
           <Route path="/dashboard" element={<UserDashboard />} />
           <Route path="/goals" element={<GoalsPage />} />
-          <Route path="/wishlist" element={<WishlistPage />} />
           <Route path="/marketplace" element={<MarketplacePage />} />
+          <Route path="/resell-items" element={<ResellItems />} />
           <Route path="/finances" element={<FinancesPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/bank-analysis" element={<BankStatementAnalysis />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
         </Route>
@@ -162,6 +175,7 @@ export default function App() {
           <Route path="/buyer-profile" element={<BuyerProfile />} />
           <Route path="/buyer-finances" element={<FinancesPage />} />
           <Route path="/buyer-analytics" element={<BuyerAnalyticsPage />} />
+          <Route path="/buyer-bank-analysis" element={<BankStatementAnalysis />} />
           <Route path="/buyer-marketplace" element={<BuyerMarketplace />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />

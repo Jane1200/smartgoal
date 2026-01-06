@@ -76,13 +76,15 @@ export default function AdminLayout() {
               </svg>
               System Analytics
             </NavLink>
-            <button className="btn btn-outline-secondary text-start d-flex align-items-center gap-2">
+            <NavLink to="/admin-dashboard" className={({ isActive }) => 
+              `btn ${isActive ? 'btn-dark' : 'btn-outline-secondary'} text-start d-flex align-items-center gap-2`
+            }>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
                 <circle cx="12" cy="10" r="3"/>
               </svg>
               Geo Analytics
-            </button>
+            </NavLink>
             <button className="btn btn-outline-secondary text-start d-flex align-items-center gap-2">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>

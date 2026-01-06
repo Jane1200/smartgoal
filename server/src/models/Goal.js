@@ -8,10 +8,10 @@ const goalSchema = new mongoose.Schema(
     targetAmount: { type: Number, min: 0 },
     currentAmount: { type: Number, min: 0, default: 0 },
     dueDate: { type: Date },
-    status: { type: String, enum: ["planned", "in_progress", "completed", "archived", "achieved"], default: "planned" },
+    status: { type: String, enum: ["planned", "in_progress", "completed", "archived", "achieved", "wishlist", "purchased"], default: "planned" },
     category: { 
       type: String, 
-      enum: ["emergency_fund", "debt_repayment", "essential_purchase", "education", "investment", "discretionary", "other"], 
+      enum: ["emergency_fund", "debt_repayment", "essential_purchase", "education", "investment", "discretionary", "wishlist", "other"], 
       default: "other" 
     },
     priority: { type: Number, min: 1, max: 5, default: 3 }, // 1=Critical, 2=High, 3=Medium, 4=Low, 5=Very Low
@@ -26,7 +26,14 @@ const goalSchema = new mongoose.Schema(
       min: 0,
       default: 0
     }, // NEW: Percentage of wants income to allocate to this goal (0-100)
-    sourceWishlistId: { type: mongoose.Schema.Types.ObjectId, ref: "Wishlist", default: null } // Link to source wishlist item if created from wishlist
+    sourceWishlistId: { type: mongoose.Schema.Types.ObjectId, ref: "Wishlist", default: null }, // Link to source wishlist item if created from wishlist
+    
+    // Wishlist-specific fields (when category is 'wishlist')
+    isWishlistItem: { type: Boolean, default: false },
+    url: { type: String, trim: true, maxlength: 2048 },
+    imageUrl: { type: String, trim: true, maxlength: 2048 },
+    currency: { type: String, default: "INR", enum: ["INR", "USD", "EUR"] },
+    notes: { type: String, trim: true, maxlength: 1000 }
   },
   { timestamps: true }
 );

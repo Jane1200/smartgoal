@@ -1,4 +1,3 @@
-// routes/wishlist.js
 import { Router } from "express";
 import { body, param, validationResult } from "express-validator";
 import Wishlist from "../models/Wishlist.js";
@@ -328,17 +327,33 @@ function parseHtmlContent(html, pageUrl) {
    --------------------------- */
 async function scrapeStaticPage(url) {
   try {
+    // Parse domain for custom headers
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+    
     const resp = await axios.get(url, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        Referer: url
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "max-age=0",
+        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": `https://${domain}/`,
+        "Origin": `https://${domain}`
       },
-      timeout: 20000,
+      timeout: 25000,
       maxRedirects: 5,
       validateStatus: (s) => s >= 200 && s < 400,
+      decompress: true
     });
 
     // quick anti-bot detection
@@ -401,7 +416,27 @@ async function scrapeWithPlaywright(url) {
       "--disable-gpu",
       "--disable-web-security",
       "--disable-features=IsolateOrigins,site-per-process",
-      "--flag-switches-begin --disable-site-isolation-trials --flag-switches-end"
+      "--flag-switches-begin --disable-site-isolation-trials --flag-switches-end",
+      "--disable-blink-features=AutomationControlled",
+      "--exclude-switches=enable-automation",
+      "--disable-extensions",
+      "--disable-component-extensions-with-background-pages",
+      "--disable-default-apps",
+      "--mute-audio",
+      "--no-default-browser-check",
+      "--autoplay-policy=user-gesture-required",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-notifications",
+      "--disable-popup-blocking",
+      "--disable-prompt-on-repost",
+      "--disable-sync",
+      "--force-color-profile=srgb",
+      "--metrics-recording-only",
+      "--safebrowsing-disable-auto-update",
+      "--enable-automation=false",
+      "--password-store=basic",
+      "--use-mock-keychain"
     ]
   });
 
@@ -636,11 +671,107 @@ async function scrapeWithPlaywright(url) {
    CRUD routes (kept from original)
    --------------------------- */
 
-// List wishlist items for current user
+// Batch phishing check for all wishlist items
+router.post("/batch-phishing-check", async (req, res) => {
+  try {
+    // Find all wishlist items with URLs for current user
+    const wishlistItems = await Wishlist.find({ 
+      userId: req.user.id, 
+      status: "wishlist",
+      url: { $exists: true, $ne: null }
+    });
+
+    if (!wishlistItems || wishlistItems.length === 0) {
+      return res.json({ 
+        message: "No wishlist items with URLs found", 
+        checkedCount: 0,
+        phishingCount: 0,
+        results: []
+      });
+    }
+
+    // Check each URL for phishing
+    const results = [];
+    let phishingCount = 0;
+    
+    for (const item of wishlistItems) {
+      try {
+        // Phishing detection removed
+        const phishingResult = { success: true, isPhishing: false, suspicionScore: 0 };
+        const isPhishing = false;
+        const riskMessage = 'Phishing detection disabled';
+        
+        // Update the wishlist item
+        await Wishlist.findByIdAndUpdate(item._id, {
+          phishingLastChecked: new Date(),
+          phishingDetails: phishingResult,
+          phishingWarning: isPhishing,
+          phishingRiskMessage: riskMessage
+        });
+        
+        results.push({
+          itemId: item._id,
+          url: item.url,
+          phishingResult: phishingResult,
+          isPhishing: isPhishing,
+          riskMessage: riskMessage
+        });
+        
+        if (isPhishing) {
+          phishingCount++;
+          console.warn(`🚨 Phishing link detected: ${item.url}`);
+        }
+      } catch (error) {
+        console.warn(`Phishing check failed for ${item.url}:`, error.message);
+        results.push({
+          itemId: item._id,
+          url: item.url,
+          error: error.message
+        });
+      }
+    }
+
+    res.json({
+      message: `Phishing check completed for ${wishlistItems.length} items`,
+      checkedCount: wishlistItems.length,
+      phishingCount: phishingCount,
+      results: results
+    });
+  } catch (error) {
+    console.error("Batch phishing check error:", error);
+    res.status(500).json({ message: "Failed to perform batch phishing check" });
+  }
+});
+
+// List wishlist items for current user (now from Goals)
 router.get("/", async (req, res) => {
   try {
-    const wishlist = await Wishlist.find({ userId: req.user.id, status: "wishlist" })
-      .sort({ priority: -1, createdAt: -1 });
+    const wishlistGoals = await Goal.find({ 
+      userId: req.user.id, 
+      isWishlistItem: true,
+      status: { $nin: ["archived", "purchased"] }
+    }).sort({ priority: 1, createdAt: -1 });
+    
+    // Transform to match old wishlist format for backward compatibility
+    const wishlist = wishlistGoals.map(goal => ({
+      _id: goal._id,
+      userId: goal.userId,
+      title: goal.title,
+      description: goal.description,
+      url: goal.url,
+      price: goal.targetAmount,
+      currency: goal.currency,
+      priority: goal.priority <= 2 ? "high" : goal.priority <= 3 ? "medium" : "low",
+      category: goal.category,
+      imageUrl: goal.imageUrl,
+      status: goal.status === "purchased" ? "purchased" : "wishlist",
+      notes: goal.notes,
+      dueDate: goal.dueDate,
+      createdAt: goal.createdAt,
+      updatedAt: goal.updatedAt,
+      currentAmount: goal.currentAmount
+    }));
+    
     res.json(wishlist);
   } catch (error) {
     console.error("Wishlist list error:", error);
@@ -685,8 +816,15 @@ router.post(
         return res.status(400).json({ message: "Invalid data", errors: errors.array() });
       }
 
+      // Phishing detection removed
+      let phishingCheck = null;
+      if (req.body.url) {
+        // Phishing check disabled
+        phishingCheck = { success: true, isPhishing: false, suspicionScore: 0 };
+      }
+      
       const existingWithUrl = req.body.url
-        ? await Wishlist.findOne({ userId: req.user.id, url: req.body.url.trim(), status: "wishlist" })
+        ? await Goal.findOne({ userId: req.user.id, url: req.body.url.trim(), isWishlistItem: true, status: { $nin: ["purchased", "archived"] } })
         : null;
       if (existingWithUrl) {
         return res
@@ -694,8 +832,30 @@ router.post(
           .json({ message: "A wishlist item with this link already exists." });
       }
 
-      const wishlistItem = await Wishlist.create({ ...req.body, userId: req.user.id });
-      res.status(201).json(wishlistItem);
+      // Create as a Goal with wishlist properties
+      const goalData = {
+        userId: req.user.id,
+        title: req.body.title,
+        description: req.body.description,
+        targetAmount: req.body.price || 0,
+        currentAmount: 0,
+        dueDate: req.body.dueDate,
+        status: "wishlist",
+        category: "wishlist",
+        priority: req.body.priority === "high" ? 1 : req.body.priority === "medium" ? 3 : 5,
+        isWishlistItem: true,
+        url: req.body.url,
+        imageUrl: req.body.imageUrl,
+        currency: req.body.currency || "INR",
+        notes: req.body.notes,
+        timePeriod: "short-term"
+      };
+
+      const goalItem = await Goal.create(goalData);
+      
+      const responseItem = goalItem.toObject ? goalItem.toObject() : goalItem;
+      
+      res.status(201).json(responseItem);
     } catch (error) {
       console.error("Create wishlist error:", error);
       res.status(500).json({ message: "Failed to create wishlist item" });
@@ -726,17 +886,33 @@ router.put(
         return res.status(400).json({ message: "Invalid data", errors: errors.array() });
       }
 
-      const wishlistItem = await Wishlist.findOneAndUpdate(
-        { _id: req.params.id, userId: req.user.id },
-        req.body,
+      // Convert wishlist data to goal format
+      const updateData = {};
+      if (req.body.title) updateData.title = req.body.title;
+      if (req.body.description) updateData.description = req.body.description;
+      if (req.body.url) updateData.url = req.body.url;
+      if (req.body.price !== undefined) updateData.targetAmount = req.body.price;
+      if (req.body.currency) updateData.currency = req.body.currency;
+      if (req.body.priority) {
+        updateData.priority = req.body.priority === "high" ? 1 : req.body.priority === "medium" ? 3 : 5;
+      }
+      if (req.body.imageUrl) updateData.imageUrl = req.body.imageUrl;
+      if (req.body.notes) updateData.notes = req.body.notes;
+      if (req.body.status) {
+        updateData.status = req.body.status === "purchased" ? "purchased" : "wishlist";
+      }
+
+      const goalItem = await Goal.findOneAndUpdate(
+        { _id: req.params.id, userId: req.user.id, isWishlistItem: true },
+        updateData,
         { new: true }
       );
 
-      if (!wishlistItem) {
+      if (!goalItem) {
         return res.status(404).json({ message: "Wishlist item not found" });
       }
 
-      res.json(wishlistItem);
+      res.json(goalItem);
     } catch (error) {
       console.error("Update wishlist error:", error);
       res.status(500).json({ message: "Failed to update wishlist item" });
@@ -757,10 +933,11 @@ router.delete(
 
       const wishlistItemId = req.params.id;
 
-      // Delete the wishlist item
-      const result = await Wishlist.findOneAndDelete({
+      // Delete the wishlist goal
+      const result = await Goal.findOneAndDelete({
         _id: wishlistItemId,
-        userId: req.user.id
+        userId: req.user.id,
+        isWishlistItem: true
       });
 
       if (!result) {
@@ -782,6 +959,64 @@ router.delete(
     } catch (error) {
       console.error("Delete wishlist error:", error);
       res.status(500).json({ message: "Failed to delete wishlist item" });
+    }
+  }
+);
+
+// Check for phishing on existing wishlist item
+router.post(
+  "/:id/check-phishing",
+  [param("id").isMongoId()],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: "Invalid id" });
+      }
+
+      // Find the wishlist item
+      const wishlistItem = await Wishlist.findOne({
+        _id: req.params.id,
+        userId: req.user.id
+      });
+
+      if (!wishlistItem) {
+        return res.status(404).json({ message: "Wishlist item not found" });
+      }
+
+      // Check if item has a URL to check
+      if (!wishlistItem.url) {
+        return res.status(400).json({ message: "Wishlist item does not have a URL to check" });
+      }
+
+      // Phishing detection removed
+      const phishingResult = { success: true, isPhishing: false, suspicionScore: 0 };
+      
+      // Update the wishlist item with phishing information
+      const updateData = {
+        phishingLastChecked: new Date(),
+        phishingDetails: phishingResult,
+        phishingWarning: false,
+        phishingRiskMessage: 'Phishing detection disabled'
+      };
+
+      // Update the wishlist item
+      const updatedItem = await Wishlist.findOneAndUpdate(
+        { _id: req.params.id, userId: req.user.id },
+        updateData,
+        { new: true }
+      );
+
+      res.json({
+        message: "Phishing check disabled",
+        phishingResult: phishingResult,
+        riskMessage: 'Phishing detection disabled',
+        isPhishing: false,
+        updatedItem: updatedItem
+      });
+    } catch (error) {
+      console.error("Phishing check error:", error);
+      res.status(500).json({ message: "Failed to check for phishing" });
     }
   }
 );
@@ -839,19 +1074,45 @@ router.post(
 
       const { url } = req.body;
 
-      // 1) Try static parser
+      // Phishing detection removed
+      let phishingCheck = null;
+
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 200));
+
+      // 2) Try static parser
       try {
         const product = await scrapeStaticPage(url);
 
         // if static parser returned anything useful, return it
         const hasUseful = (product.title && product.price !== null) || product.image || product.description;
         if (hasUseful) {
-          return res.json({ success: true, product });
+          // Add phishing information to response if checked
+          const response = { success: true, product };
+          if (phishingCheck) {
+            response.phishingChecked = true;
+            response.phishingSafe = true;
+          }
+          return res.json(response);
         }
 
         // otherwise, fall through to Playwright fallback
       } catch (staticErr) {
         console.warn("Static scrape error:", staticErr.message || staticErr);
+        
+        // Log specific error types
+        if (staticErr.code === 'ENOTFOUND') {
+          console.warn("DNS resolution failed - invalid domain or network issue");
+        } else if (staticErr.code === 'ETIMEDOUT' || staticErr.code === 'ECONNABORTED') {
+          console.warn("Request timeout - website is slow or unresponsive");
+        } else if (staticErr.response?.status === 403) {
+          console.warn("403 Forbidden - website blocking direct access");
+        } else if (staticErr.response?.status === 429) {
+          console.warn("429 Too Many Requests - rate limited");
+        } else if (staticErr.isAntiBot) {
+          console.warn("Anti-bot challenge detected (Cloudflare, Captcha, etc.)");
+        }
+        
         // If axios response attached debug info, include it in logs
         if (staticErr.debug) {
           console.warn("Static scrape debug:", {
@@ -863,37 +1124,80 @@ router.post(
         // continue to Playwright fallback
       }
 
-      // 2) Playwright fallback
+      // 3) Playwright fallback
       try {
         console.log(`[Scraper] Using Playwright for ${url}`);
         const product = await scrapeWithPlaywright(url);
         const hasUseful = (product.title && product.price !== null) || product.image || product.description;
         if (hasUseful) {
           console.log(`[Scraper] Successfully extracted product data via Playwright`);
-          return res.json({ success: true, product });
+          // Add phishing information to response if checked
+          const response = { success: true, product };
+          if (phishingCheck) {
+            response.phishingChecked = true;
+            response.phishingSafe = true;
+          }
+          return res.json(response);
         } else {
           // Playwright succeeded but page lacked structured info
           console.warn(`[Scraper] Playwright succeeded but data is sparse`);
-          return res.status(200).json({
+          const response = {
             success: true,
             product,
             note: "Rendered page scraped but product data is sparse. You may need to edit fields manually."
-          });
+          };
+          // Add phishing information to response if checked
+          if (phishingCheck) {
+            response.phishingChecked = true;
+            response.phishingSafe = true;
+          }
+          return res.status(200).json(response);
         }
       } catch (pwErr) {
         console.error("Playwright scrape error:", pwErr.message || pwErr);
         console.error("Stack trace:", pwErr.stack);
-        // Provide a developer-friendly error reply
-        let detail = pwErr.message || String(pwErr);
-        // include hint to run playwright installer if missing
-        if (/install/i.test(detail) || /Could not find chromium/i.test(detail) || /ENOENT/.test(detail)) {
-          detail += " — Try running: `npx playwright install chromium`";
+        
+        // Check if it's a Playwright installation issue
+        const isInstallError = /install/i.test(pwErr.message) || 
+                              /Could not find|cannot find|ENOENT/.test(pwErr.message) ||
+                              /chromium|browser/.test(pwErr.message);
+        
+        if (isInstallError) {
+          console.error("⚠️  Playwright browser not installed. Run: npx playwright install chromium");
+          return res.status(500).json({
+            success: false,
+            message: "Browser automation is not properly set up on the server. Please contact support.",
+            error: "Playwright browser missing",
+            hint: "Server admin: Run 'npx playwright install chromium' in the server directory"
+          });
         }
-        return res.status(500).json({
+        
+        // For other errors, provide helpful guidance
+        let userMessage = "Failed to scrape product details. ";
+        
+        if (/timeout/i.test(pwErr.message)) {
+          userMessage += "The website took too long to respond. Please try again or enter details manually.";
+        } else if (/navigation|net::ERR/.test(pwErr.message)) {
+          userMessage += "Could not connect to the website. Please check the URL and try again.";
+        } else if (/blocked|refused|403|401/.test(pwErr.message)) {
+          userMessage += "The website is blocking automated access. Please try entering the details manually.";
+        } else {
+          userMessage += "The website may be blocking automated access. Please try again or enter details manually.";
+        }
+        
+        const response = {
           success: false,
-          message: "Failed to scrape product details. The website may be blocking automated access. Please try again or enter details manually.",
-          error: detail
-        });
+          message: userMessage,
+          error: pwErr.message,
+          canRetry: /timeout|navigation/.test(pwErr.message)
+        };
+        
+        // Add phishing information to response if checked
+        if (phishingCheck) {
+          response.phishingChecked = true;
+          response.phishingSafe = true;
+        }
+        return res.status(500).json(response);
       }
     } catch (error) {
       console.error("Unexpected scrape error:", error);

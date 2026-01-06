@@ -99,7 +99,8 @@ router.post(
 /**
  * POST /auth/login
  * - Basic credential check
- * - Returns isVerified in response so client can act accordingly
+ * - For admin: Returns token immediately
+ * - For non-admin: Sends OTP and requires verification
  */
 router.post(
   "/login",
@@ -123,9 +124,6 @@ router.post(
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return res.status(400).json({ message: "Invalid credentials" });
 
-    // Skip verification check for local users - they're auto-verified after password reset
-    // Firebase users (Google sign-in) handle verification on the client side
-
     // Validate role match only if a role was explicitly provided by client
     if (role) {
       const userRoles = user.roles || [user.role];
@@ -139,11 +137,61 @@ router.post(
 
     await ensureUserRoleArray(user);
 
-    const authPayload = buildAuthPayload(user);
-    const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
-    const responseUser = buildUserResponse(user);
+    // Check if user is admin - admins skip OTP verification
+    const userRoles = user.roles || [user.role];
+    const isAdmin = userRoles.includes('admin');
 
-    res.json({ token, user: responseUser });
+    if (isAdmin) {
+      // Admin users get immediate access without OTP
+      const authPayload = buildAuthPayload(user);
+      const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
+      const responseUser = buildUserResponse(user);
+      return res.json({ token, user: responseUser });
+    }
+
+    // Non-admin users: Generate and send OTP
+    try {
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      user.loginOTP = otp;
+      user.loginOTPExpires = otpExpires;
+      user.loginOTPAttempts = 0;
+      await user.save();
+
+      const result = await sendMail({
+        to: user.email,
+        subject: "Your SmartGoal Login OTP",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0d6efd;">SmartGoal Login Verification</h2>
+            <p>Hello ${user.name},</p>
+            <p>Your One-Time Password (OTP) for login is:</p>
+            <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+              <h1 style="color: #0d6efd; font-size: 36px; letter-spacing: 8px; margin: 0;">${otp}</h1>
+            </div>
+            <p><strong>This OTP will expire in 10 minutes.</strong></p>
+            <p>If you didn't request this login, please ignore this email and ensure your account is secure.</p>
+            <hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
+            <p style="color: #6c757d; font-size: 12px;">This is an automated message from SmartGoal. Please do not reply to this email.</p>
+          </div>
+        `,
+      });
+
+      if (!result.ok) {
+        console.warn("Login OTP email not sent:", result.reason);
+      }
+
+      return res.json({
+        requiresOTP: true,
+        message: "OTP has been sent to your email. Please verify to continue.",
+        email: user.email,
+        previewUrl: result.previewUrl // For development
+      });
+    } catch (e) {
+      console.error("Login OTP generation error:", e);
+      return res.status(500).json({ message: "Failed to send OTP. Please try again." });
+    }
   }
 );
 
@@ -284,7 +332,7 @@ router.post(
  * POST /auth/google
  * - Verifies Google idToken with Firebase Admin
  * - Creates or finds local user record
- * - Returns app JWT + user (includes isVerified)
+ * - Returns app JWT + user (no OTP required)
  */
 router.post("/google", async (req, res) => {
   try {
@@ -325,13 +373,11 @@ router.post("/google", async (req, res) => {
 
     await ensureUserRoleArray(user);
 
+    // Google sign-in: Direct login for all users (no OTP)
     const authPayload = buildAuthPayload(user);
     const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
     const responseUser = buildUserResponse(user);
-    return res.json({
-      token,
-      user: responseUser,
-    });
+    return res.json({ token, user: responseUser });
   } catch (e) {
     console.error("/auth/google error", e);
     return res.status(400).json({ message: e?.message || "Google auth failed" });
@@ -339,6 +385,183 @@ router.post("/google", async (req, res) => {
 });
 
 export default router;
+
+// --- OTP Login Flow ---
+/**
+ * POST /auth/login-otp
+ * - Request OTP for email login
+ * - Sends 6-digit OTP to user's email
+ * - OTP valid for 10 minutes
+ */
+router.post(
+  "/login-otp",
+  [body("email").isEmail()],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: "Invalid email" });
+    }
+
+    const { email } = req.body;
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    // Always respond with success to prevent email enumeration
+    if (!user) {
+      return res.json({ 
+        message: "If the email exists, an OTP has been sent to your email",
+        ok: true 
+      });
+    }
+
+    try {
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Save OTP to user record
+      user.loginOTP = otp;
+      user.loginOTPExpires = otpExpires;
+      user.loginOTPAttempts = 0; // Reset attempts
+      await user.save();
+
+      // Send OTP via email
+      const result = await sendMail({
+        to: user.email,
+        subject: "Your SmartGoal Login OTP",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0d6efd;">SmartGoal Login Verification</h2>
+            <p>Hello ${user.name},</p>
+            <p>Your One-Time Password (OTP) for login is:</p>
+            <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+              <h1 style="color: #0d6efd; font-size: 36px; letter-spacing: 8px; margin: 0;">${otp}</h1>
+            </div>
+            <p><strong>This OTP will expire in 10 minutes.</strong></p>
+            <p>If you didn't request this OTP, please ignore this email and ensure your account is secure.</p>
+            <hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
+            <p style="color: #6c757d; font-size: 12px;">This is an automated message from SmartGoal. Please do not reply to this email.</p>
+          </div>
+        `,
+      });
+
+      if (!result.ok) {
+        console.warn("OTP email not sent:", result.reason);
+        return res.status(500).json({ 
+          message: "Failed to send OTP. Please try again.",
+          ok: false 
+        });
+      }
+
+      return res.json({ 
+        message: "OTP has been sent to your email",
+        ok: true,
+        previewUrl: result.previewUrl // For development/testing
+      });
+    } catch (e) {
+      console.error("login-otp error:", e);
+      return res.status(500).json({ 
+        message: "Failed to send OTP. Please try again.",
+        ok: false 
+      });
+    }
+  }
+);
+
+/**
+ * POST /auth/verify-otp
+ * - Verify OTP and complete login
+ * - Returns JWT token and user data
+ */
+router.post(
+  "/verify-otp",
+  [
+    body("email").isEmail(),
+    body("otp").isString().isLength({ min: 6, max: 6 })
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: "Invalid email or OTP format",
+        errors: errors.array() 
+      });
+    }
+
+    const { email, otp } = req.body;
+    
+    try {
+      const user = await User.findOne({ email: email.toLowerCase() });
+      
+      if (!user) {
+        return res.status(400).json({ message: "Invalid credentials" });
+      }
+
+      // Check if OTP exists
+      if (!user.loginOTP || !user.loginOTPExpires) {
+        return res.status(400).json({ 
+          message: "No OTP found. Please request a new OTP." 
+        });
+      }
+
+      // Check if OTP has expired
+      if (new Date() > user.loginOTPExpires) {
+        user.loginOTP = undefined;
+        user.loginOTPExpires = undefined;
+        user.loginOTPAttempts = 0;
+        await user.save();
+        return res.status(400).json({ 
+          message: "OTP has expired. Please request a new OTP." 
+        });
+      }
+
+      // Check attempt limit (max 5 attempts)
+      if (user.loginOTPAttempts >= 5) {
+        user.loginOTP = undefined;
+        user.loginOTPExpires = undefined;
+        user.loginOTPAttempts = 0;
+        await user.save();
+        return res.status(429).json({ 
+          message: "Too many failed attempts. Please request a new OTP." 
+        });
+      }
+
+      // Verify OTP
+      if (user.loginOTP !== otp) {
+        user.loginOTPAttempts += 1;
+        await user.save();
+        return res.status(400).json({ 
+          message: `Invalid OTP. ${5 - user.loginOTPAttempts} attempts remaining.` 
+        });
+      }
+
+      // OTP is valid - clear OTP data and log user in
+      user.loginOTP = undefined;
+      user.loginOTPExpires = undefined;
+      user.loginOTPAttempts = 0;
+      user.isVerified = true; // Mark as verified since they accessed their email
+      await user.save();
+
+      // Ensure user has roles array
+      await ensureUserRoleArray(user);
+
+      // Generate JWT token
+      const authPayload = buildAuthPayload(user);
+      const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
+      const responseUser = buildUserResponse(user);
+
+      return res.json({ 
+        message: "Login successful",
+        token, 
+        user: responseUser 
+      });
+    } catch (e) {
+      console.error("verify-otp error:", e);
+      return res.status(500).json({ 
+        message: "Failed to verify OTP. Please try again." 
+      });
+    }
+  }
+);
 
 // --- Password Reset Flow ---
 // Request reset link

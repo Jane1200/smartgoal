@@ -4,6 +4,8 @@ import { requireAuth } from "../middleware/auth.js";
 import Finance from "../models/Finance.js";
 import Goal from "../models/Goal.js";
 import Marketplace from "../models/Marketplace.js";
+import User from "../models/User.js";
+import { generateGoalSetterReport } from "../utils/pdfGenerator.js";
 
 const router = Router();
 
@@ -710,6 +712,323 @@ router.get("/spending-patterns", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Spending patterns analysis error:", error);
     res.status(500).json({ message: "Failed to analyze spending patterns" });
+  }
+});
+
+// Get today's activity feed for dashboard
+router.get("/today-activity", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get start and end of today
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    
+    const activities = [];
+    
+    // Get today's goals activities (created or updated)
+    const goalsUpdatedToday = await Goal.find({
+      userId,
+      $or: [
+        { createdAt: { $gte: startOfToday, $lte: endOfToday } },
+        { updatedAt: { $gte: startOfToday, $lte: endOfToday } }
+      ]
+    }).sort({ updatedAt: -1 }).limit(10);
+    
+    goalsUpdatedToday.forEach(goal => {
+      const isNew = new Date(goal.createdAt) >= startOfToday;
+      const progress = goal.targetAmount > 0 ? Math.round((goal.currentAmount / goal.targetAmount) * 100) : 0;
+      
+      activities.push({
+        type: 'goal',
+        action: isNew ? 'created' : 'updated',
+        title: goal.title,
+        description: isNew 
+          ? `Created new goal with target of ₹${goal.targetAmount.toLocaleString()}`
+          : `Updated goal progress to ${progress}% (₹${goal.currentAmount.toLocaleString()} of ₹${goal.targetAmount.toLocaleString()})`,
+        timestamp: goal.updatedAt,
+        metadata: {
+          goalId: goal._id,
+          progress,
+          status: goal.status,
+          amount: goal.currentAmount
+        },
+        icon: isNew ? '🎯' : '📈'
+      });
+    });
+    
+    // Get today's finance records
+    const financeRecordsToday = await Finance.find({
+      userId,
+      createdAt: { $gte: startOfToday, $lte: endOfToday }
+    }).sort({ createdAt: -1 }).limit(10);
+    
+    financeRecordsToday.forEach(record => {
+      activities.push({
+        type: 'finance',
+        action: record.type,
+        title: record.type === 'income' ? 'Income Added' : 'Expense Recorded',
+        description: `${record.category || record.source || 'General'}: ₹${record.amount.toLocaleString()}${record.description ? ` - ${record.description}` : ''}`,
+        timestamp: record.createdAt,
+        metadata: {
+          financeId: record._id,
+          type: record.type,
+          amount: record.amount,
+          category: record.category || record.source
+        },
+        icon: record.type === 'income' ? '💰' : '💸'
+      });
+    });
+    
+    // Get today's marketplace activities
+    const marketplaceActivitiesToday = await Marketplace.find({
+      userId,
+      $or: [
+        { createdAt: { $gte: startOfToday, $lte: endOfToday } },
+        { updatedAt: { $gte: startOfToday, $lte: endOfToday } },
+        { soldAt: { $gte: startOfToday, $lte: endOfToday } }
+      ]
+    }).sort({ updatedAt: -1 }).limit(10);
+    
+    marketplaceActivitiesToday.forEach(item => {
+      const isNew = new Date(item.createdAt) >= startOfToday;
+      const isSold = item.status === 'sold' && item.soldAt && new Date(item.soldAt) >= startOfToday;
+      
+      let action, description, icon;
+      
+      if (isSold) {
+        action = 'sold';
+        description = `Sold "${item.title}" for ₹${item.price.toLocaleString()}`;
+        icon = '✅';
+      } else if (isNew) {
+        action = 'listed';
+        description = `Listed "${item.title}" for ₹${item.price.toLocaleString()}`;
+        icon = '🏷️';
+      } else {
+        action = 'updated';
+        description = `Updated listing "${item.title}"`;
+        icon = '🔄';
+      }
+      
+      activities.push({
+        type: 'marketplace',
+        action,
+        title: action === 'sold' ? 'Item Sold' : (action === 'listed' ? 'New Listing' : 'Listing Updated'),
+        description,
+        timestamp: isSold ? item.soldAt : item.updatedAt,
+        metadata: {
+          itemId: item._id,
+          status: item.status,
+          price: item.price
+        },
+        icon
+      });
+    });
+    
+    // Sort all activities by timestamp (most recent first)
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    // Limit to 20 most recent activities
+    const recentActivities = activities.slice(0, 20);
+    
+    res.json({
+      activities: recentActivities,
+      count: recentActivities.length,
+      date: new Date().toISOString().split('T')[0]
+    });
+  } catch (error) {
+    console.error("Today's activity feed error:", error);
+    res.status(500).json({ message: "Failed to fetch today's activities" });
+  }
+});
+
+// Generate Monthly PDF Report for Goal Setters
+router.get("/generate-monthly-report", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get user data
+    const user = await User.findById(userId).select('name email profile');
+    
+    // Get financial health data
+    const currentDate = new Date();
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+    
+    const financeSummary = await Finance.getUserFinanceSummary(userId, {
+      month: currentDate.getMonth() + 1,
+      year: currentDate.getFullYear()
+    });
+    
+    let monthlyIncome = 0;
+    let monthlyExpense = 0;
+    financeSummary.forEach(item => {
+      if (item._id === 'income') monthlyIncome = item.total;
+      if (item._id === 'expense') monthlyExpense = item.total;
+    });
+    
+    const monthlySavings = monthlyIncome - monthlyExpense;
+    const savingsRate = monthlyIncome > 0 ? ((monthlySavings / monthlyIncome) * 100).toFixed(1) : 0;
+    
+    // Get marketplace data
+    const marketplaceEarnings = await Marketplace.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          status: 'sold',
+          soldAt: { $gte: startOfMonth, $lte: endOfMonth }
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$price' }, count: { $sum: 1 } } }
+    ]);
+    
+    const marketplaceIncome = marketplaceEarnings.length ? marketplaceEarnings[0].total : 0;
+    const itemsSold = marketplaceEarnings.length ? marketplaceEarnings[0].count : 0;
+    const activeListings = await Marketplace.countDocuments({ userId, status: 'active' });
+    
+    // Get goals data
+    const goals = await Goal.find({ userId, status: { $ne: 'archived' } });
+    const activeGoals = goals.filter(g => g.status === 'active');
+    
+    // Calculate financial health score
+    let score = 0;
+    
+    // Savings rate scoring (40%)
+    if (savingsRate >= 30) score += 40;
+    else if (savingsRate >= 20) score += 30;
+    else if (savingsRate >= 10) score += 20;
+    else if (savingsRate >= 5) score += 10;
+    
+    // Income stability (20%)
+    if (monthlyIncome > 0) score += 15;
+    if (marketplaceIncome > 0) score += 5;
+    
+    // Expense management (15%)
+    if (monthlyExpense < monthlyIncome) score += 15;
+    else if (monthlyExpense <= monthlyIncome * 1.1) score += 10;
+    
+    // Goal progress (15%)
+    if (activeGoals.length > 0) {
+      const avgProgress = activeGoals.reduce((sum, g) => {
+        const progress = g.targetAmount > 0 ? (g.currentAmount / g.targetAmount) * 100 : 0;
+        return sum + progress;
+      }, 0) / activeGoals.length;
+      score += Math.min(15, (avgProgress / 100) * 15);
+    }
+    
+    // Marketplace activity (10%)
+    if (itemsSold > 0) score += 10;
+    else if (activeListings > 0) score += 5;
+    
+    score = Math.round(score);
+    
+    // Determine status
+    let status = 'Poor';
+    if (score >= 80) status = 'Excellent';
+    else if (score >= 65) status = 'Good';
+    else if (score >= 50) status = 'Fair';
+    
+    // Generate insights
+    const insights = [];
+    if (savingsRate >= 20) {
+      insights.push(`Excellent savings rate of ${savingsRate}%. You're building wealth effectively.`);
+    } else if (savingsRate >= 10) {
+      insights.push(`Good savings rate of ${savingsRate}%. Consider increasing it to 20%+.`);
+    } else {
+      insights.push(`Low savings rate of ${savingsRate}%. Try to reduce expenses or increase income.`);
+    }
+    
+    if (marketplaceIncome > 0) {
+      insights.push(`Great marketplace activity! You earned ₹${marketplaceIncome.toLocaleString()} from ${itemsSold} sale${itemsSold !== 1 ? 's' : ''}.`);
+    } else if (activeListings > 0) {
+      insights.push(`You have ${activeListings} active listing${activeListings !== 1 ? 's' : ''}. Consider optimizing to boost sales.`);
+    }
+    
+    if (activeGoals.length > 0) {
+      insights.push(`You have ${activeGoals.length} active goal${activeGoals.length !== 1 ? 's' : ''} in progress.`);
+    }
+    
+    if (monthlyExpense < monthlyIncome) {
+      insights.push('Your monthly expenses are within budget. Great financial discipline!');
+    } else {
+      insights.push('Monthly expenses exceed income. Review and optimize spending.');
+    }
+    
+    // Generate recommendations
+    const recommendations = [];
+    if (savingsRate < 20) {
+      recommendations.push({
+        title: 'Increase Savings Rate',
+        description: 'Target a 20%+ savings rate by reducing discretionary spending or finding additional income sources.'
+      });
+    }
+    
+    if (marketplaceIncome === 0 && activeListings === 0) {
+      recommendations.push({
+        title: 'Start Selling Unused Items',
+        description: 'List unused items on the marketplace to generate extra income and accelerate goal progress.'
+      });
+    }
+    
+    if (activeGoals.length === 0) {
+      recommendations.push({
+        title: 'Set Financial Goals',
+        description: 'Create specific savings goals to give your financial planning clear direction and motivation.'
+      });
+    }
+    
+    if (monthlyExpense > monthlyIncome) {
+      recommendations.push({
+        title: 'Balance Your Budget',
+        description: 'Immediately review and cut non-essential expenses to balance your monthly budget.'
+      });
+    }
+    
+    // Prepare analytics data for PDF
+    const analyticsData = {
+      score,
+      status,
+      insights,
+      recommendations,
+      metrics: {
+        monthlyIncome,
+        monthlyExpense,
+        monthlySavings,
+        savingsRate: parseFloat(savingsRate),
+        marketplaceIncome,
+        itemsSold,
+        activeGoals: activeGoals.length,
+        activeListings
+      },
+      goals: activeGoals.map(g => ({
+        title: g.title,
+        targetAmount: g.targetAmount,
+        currentAmount: g.currentAmount,
+        progress: g.targetAmount > 0 ? (g.currentAmount / g.targetAmount) * 100 : 0
+      }))
+    };
+    
+    const userData = {
+      name: user.name || user.profile?.name,
+      email: user.email
+    };
+    
+    // Generate PDF
+    const pdfBuffer = await generateGoalSetterReport(userData, analyticsData);
+    
+    // Set response headers for PDF download
+    const filename = `SmartGoal_Financial_Report_${currentDate.toISOString().split('T')[0]}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    res.send(pdfBuffer);
+    
+  } catch (error) {
+    console.error('Generate monthly report error:', error);
+    res.status(500).json({ message: 'Failed to generate monthly report' });
   }
 });
 

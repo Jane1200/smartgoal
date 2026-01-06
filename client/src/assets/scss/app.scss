@@ -11,21 +11,47 @@
 /* Template-like layout bits */
 @import "structure/layout";
 
+/* ===== THEME SYSTEM ===== */
+:root {
+  --bg-color: #f8f9fa;
+  --text-color: #212529;
+  --card-bg: #ffffff;
+  --border-color: #dee2e6;
+  --hover-bg: #f8f9fa;
+  --input-bg: #ffffff;
+  --input-border: #ced4da;
+  --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] {
+  --bg-color: #0f1419;
+  --text-color: #e9ecef;
+  --card-bg: #1a1f2e;
+  --border-color: #2d3748;
+  --hover-bg: #252d3d;
+  --input-bg: #1a1f2e;
+  --input-border: #2d3748;
+  --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.7);
+}
+
 /* ===== GLOBAL UI IMPROVEMENTS ===== */
 
 /* Enhanced Typography & Readability */
 body {
-  background-color: $color-neutral-50;
-  color: $color-neutral-900;
+  background-color: var(--bg-color);
+  color: var(--text-color);
   font-weight: $font-weight-normal;
   line-height: 1.6;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: $font-family-display;
   font-weight: $font-weight-bold;
   line-height: 1.2;
-  color: $color-neutral-900;
+  color: var(--text-color);
 }
 
 /* Better Link Styling */
@@ -41,15 +67,16 @@ a {
 
 /* Card Enhancements - Better Spacing & Depth */
 .card {
-  border: 1px solid $color-neutral-200;
+  border: 1px solid var(--border-color);
   border-radius: $radius-lg;
-  box-shadow: $shadow-sm;
+  box-shadow: var(--shadow-sm);
   transition: all $transition-base;
-  background: $card-bg;
+  background: var(--card-bg);
+  color: var(--text-color);
 
   &:hover {
-    box-shadow: $shadow-md;
-    border-color: $color-neutral-300;
+    box-shadow: var(--shadow-md);
+    border-color: var(--border-color);
   }
 }
 
@@ -63,16 +90,18 @@ input[type="number"],
 input[type="date"],
 textarea {
   border-radius: $radius-lg;
-  border: 1px solid $input-border-color;
+  border: 1px solid var(--input-border);
   padding: 0.75rem 1rem;
   font-size: $font-size-base;
   transition: all $transition-base;
-  background: $input-bg;
+  background: var(--input-bg);
+  color: var(--text-color);
 
   &:focus {
     border-color: $input-border-color-focus;
     box-shadow: 0 0 0 3px rgba($color-primary, 0.1);
     outline: none;
+    background: var(--input-bg);
   }
 
   &::placeholder {
@@ -118,9 +147,9 @@ textarea {
   /* Secondary Button */
   &.btn-outline-secondary,
   &.btn-outline-primary {
-    border: 2px solid $color-neutral-200;
-    color: $color-neutral-700;
-    background: white;
+    border: 2px solid var(--border-color);
+    color: var(--text-color);
+    background: var(--card-bg);
 
     &:hover:not(:disabled) {
       border-color: $color-primary;
@@ -352,5 +381,90 @@ textarea {
   .card {
     box-shadow: none;
     border: 1px solid $color-neutral-200;
+  }
+}
+
+/* Dark Mode Additional Styles */
+[data-theme="dark"] {
+  /* Tables */
+  .table {
+    color: var(--text-color);
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+  }
+  
+  .table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+  
+  /* Modals */
+  .modal-content {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-color: var(--border-color);
+  }
+  
+  .modal-header {
+    border-bottom-color: var(--border-color);
+  }
+  
+  .modal-footer {
+    border-top-color: var(--border-color);
+  }
+  
+  /* Dropdown menus */
+  .dropdown-menu {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+  
+  .dropdown-item {
+    color: var(--text-color);
+    
+    &:hover {
+      background-color: var(--hover-bg);
+    }
+  }
+  
+  /* Navs */
+  .nav-link {
+    color: var(--text-color);
+    
+    &:hover {
+      color: $color-primary;
+    }
+  }
+  
+  /* List groups */
+  .list-group-item {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+  
+  /* Alerts */
+  .alert {
+    border-color: var(--border-color);
+  }
+  
+  /* Progress bars */
+  .progress {
+    background-color: var(--hover-bg);
+  }
+  
+  /* Text colors */
+  .text-muted {
+    color: #9ca3af !important;
+  }
+  
+  /* Borders */
+  .border {
+    border-color: var(--border-color) !important;
+  }
+  
+  /* Background utilities */
+  .bg-light {
+    background-color: var(--hover-bg) !important;
   }
 }

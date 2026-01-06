@@ -1,0 +1,389 @@
+{
+  "samples": [
+    {
+      "url": "https://www.amazon.in/dp/B08N5WRWNW",
+      "label": "legit",
+      "description": "Amazon India product page"
+    },
+    {
+      "url": "https://www.flipkart.com/apple-iphone-13/p/itm1234567890",
+      "label": "legit",
+      "description": "Flipkart product page"
+    },
+    {
+      "url": "https://www.myntra.com/tshirts/roadster/men-tshirt/12345",
+      "label": "legit",
+      "description": "Myntra product page"
+    },
+    {
+      "url": "https://www.google.com",
+      "label": "legit",
+      "description": "Google homepage"
+    },
+    {
+      "url": "https://www.facebook.com",
+      "label": "legit",
+      "description": "Facebook homepage"
+    },
+    {
+      "url": "https://www.instagram.com",
+      "label": "legit",
+      "description": "Instagram homepage"
+    },
+    {
+      "url": "https://www.youtube.com",
+      "label": "legit",
+      "description": "YouTube homepage"
+    },
+    {
+      "url": "https://www.wikipedia.org",
+      "label": "legit",
+      "description": "Wikipedia"
+    },
+    {
+      "url": "https://www.github.com",
+      "label": "legit",
+      "description": "GitHub homepage"
+    },
+    {
+      "url": "https://www.microsoft.com",
+      "label": "legit",
+      "description": "Microsoft homepage"
+    },
+    {
+      "url": "https://www.apple.com",
+      "label": "legit",
+      "description": "Apple homepage"
+    },
+    {
+      "url": "https://www.netflix.com",
+      "label": "legit",
+      "description": "Netflix homepage"
+    },
+    {
+      "url": "https://www.twitter.com",
+      "label": "legit",
+      "description": "Twitter homepage"
+    },
+    {
+      "url": "https://www.linkedin.com",
+      "label": "legit",
+      "description": "LinkedIn homepage"
+    },
+    {
+      "url": "https://www.reddit.com",
+      "label": "legit",
+      "description": "Reddit homepage"
+    },
+    {
+      "url": "https://www.stackoverflow.com",
+      "label": "legit",
+      "description": "Stack Overflow"
+    },
+    {
+      "url": "https://www.nytimes.com",
+      "label": "legit",
+      "description": "New York Times"
+    },
+    {
+      "url": "https://www.bbc.com",
+      "label": "legit",
+      "description": "BBC News"
+    },
+    {
+      "url": "https://www.cnn.com",
+      "label": "legit",
+      "description": "CNN News"
+    },
+    {
+      "url": "https://www.yahoo.com",
+      "label": "legit",
+      "description": "Yahoo homepage"
+    },
+    {
+      "url": "http://secure-login-amazon.verify-account.suspicious-domain.com/login",
+      "label": "phish",
+      "description": "Fake Amazon phishing site"
+    },
+    {
+      "url": "https://free-iphone-giveaway.scam-site.xyz/claim-now",
+      "label": "phish",
+      "description": "Free iPhone scam"
+    },
+    {
+      "url": "http://paypal-security-update.fake-site.net/verify",
+      "label": "phish",
+      "description": "Fake PayPal verification"
+    },
+    {
+      "url": "https://bank-account-verify.malicious.ru/login",
+      "label": "phish",
+      "description": "Banking phishing"
+    },
+    {
+      "url": "http://www.g00gle.com",
+      "label": "phish",
+      "description": "Fake Google with zero instead of O"
+    },
+    {
+      "url": "https://www.facebo0k.com",
+      "label": "phish",
+      "description": "Fake Facebook with zero"
+    },
+    {
+      "url": "http://claim-your-prize-now.winner123.tk/",
+      "label": "phish",
+      "description": "Prize scam"
+    },
+    {
+      "url": "https://secure-payment-update.verify-info.xyz/",
+      "label": "phish",
+      "description": "Payment verification scam"
+    },
+    {
+      "url": "http://urgent-security-alert.account-suspended.net/",
+      "label": "phish",
+      "description": "Urgent security alert scam"
+    },
+    {
+      "url": "https://www.amaz0n.in/verify-account",
+      "label": "phish",
+      "description": "Fake Amazon India with zero"
+    },
+    {
+      "url": "http://flipkart-customer-care.fake-support.com/",
+      "label": "phish",
+      "description": "Fake Flipkart support"
+    },
+    {
+      "url": "https://login-verify.account-security.xyz/",
+      "label": "phish",
+      "description": "Login verification scam"
+    },
+    {
+      "url": "http://www.netfl1x.com/suspended-account",
+      "label": "phish",
+      "description": "Fake Netflix with 1 instead of i"
+    },
+    {
+      "url": "https://paytm-wallet-update.verify-details.info/",
+      "label": "phish",
+      "description": "Fake Paytm wallet scam"
+    },
+    {
+      "url": "http://update-your-password.account-alert.net/",
+      "label": "phish",
+      "description": "Password update scam"
+    },
+    {
+      "url": "https://confirm-identity.user-verification.xyz/",
+      "label": "phish",
+      "description": "Identity confirmation scam"
+    },
+    {
+      "url": "http://www.linkedln.com",
+      "label": "phish",
+      "description": "Fake LinkedIn with 'ln' instead of 'in'"
+    },
+    {
+      "url": "https://microsoft-account-security.suspicious.com/",
+      "label": "phish",
+      "description": "Fake Microsoft security"
+    },
+    {
+      "url": "http://apple-id-locked.verify-now.net/",
+      "label": "phish",
+      "description": "Fake Apple ID locked alert"
+    },
+    {
+      "url": "https://win-free-gift-card.scam.tk/",
+      "label": "phish",
+      "description": "Free gift card scam"
+    },
+    {
+      "url": "http://tax-refund-claim.government-fake.com/",
+      "label": "phish",
+      "description": "Tax refund scam"
+    },
+    {
+      "url": "https://www.snapdeal.com/product/item123",
+      "label": "legit",
+      "description": "Snapdeal product page"
+    },
+    {
+      "url": "https://www.ajio.com/shop/men-clothing",
+      "label": "legit",
+      "description": "Ajio shopping page"
+    },
+    {
+      "url": "https://www.nykaa.com/beauty-products",
+      "label": "legit",
+      "description": "Nykaa beauty products"
+    },
+    {
+      "url": "https://www.zomato.com/bangalore/restaurants",
+      "label": "legit",
+      "description": "Zomato restaurants"
+    },
+    {
+      "url": "https://www.swiggy.com/",
+      "label": "legit",
+      "description": "Swiggy food delivery"
+    },
+    {
+      "url": "https://www.ola.cab/",
+      "label": "legit",
+      "description": "Ola cab service"
+    },
+    {
+      "url": "https://www.uber.com/in/en/",
+      "label": "legit",
+      "description": "Uber India"
+    },
+    {
+      "url": "https://www.paytm.com/",
+      "label": "legit",
+      "description": "Paytm official"
+    },
+    {
+      "url": "https://www.phonepe.com/",
+      "label": "legit",
+      "description": "PhonePe official"
+    },
+    {
+      "url": "https://www.makemytrip.com/",
+      "label": "legit",
+      "description": "MakeMyTrip travel"
+    },
+    {
+      "url": "https://www.bookmyshow.com/",
+      "label": "legit",
+      "description": "BookMyShow tickets"
+    },
+    {
+      "url": "https://www.bigbasket.com/",
+      "label": "legit",
+      "description": "BigBasket groceries"
+    },
+    {
+      "url": "https://www.cricbuzz.com/",
+      "label": "legit",
+      "description": "Cricbuzz cricket news"
+    },
+    {
+      "url": "https://www.ndtv.com/",
+      "label": "legit",
+      "description": "NDTV news"
+    },
+    {
+      "url": "https://www.timesnownews.com/",
+      "label": "legit",
+      "description": "Times Now news"
+    },
+    {
+      "url": "http://verify-google-account.malicious-site.ru/",
+      "label": "phish",
+      "description": "Fake Google account verification"
+    },
+    {
+      "url": "https://instagram-login-verify.suspicious.xyz/",
+      "label": "phish",
+      "description": "Fake Instagram login"
+    },
+    {
+      "url": "http://youtube-copyright-claim.fake-dmca.net/",
+      "label": "phish",
+      "description": "Fake YouTube copyright scam"
+    },
+    {
+      "url": "https://twitter-account-suspended.verify-appeal.com/",
+      "label": "phish",
+      "description": "Fake Twitter suspension"
+    },
+    {
+      "url": "http://whatsapp-verify-account.fake-security.tk/",
+      "label": "phish",
+      "description": "Fake WhatsApp verification"
+    },
+    {
+      "url": "https://telegram-security-update.malicious.info/",
+      "label": "phish",
+      "description": "Fake Telegram security update"
+    },
+    {
+      "url": "http://snapchat-account-recovery.scam-site.net/",
+      "label": "phish",
+      "description": "Fake Snapchat recovery"
+    },
+    {
+      "url": "https://tiktok-verification-badge.fake-verify.xyz/",
+      "label": "phish",
+      "description": "Fake TikTok verification"
+    },
+    {
+      "url": "http://claim-covid-relief-fund.government-scam.com/",
+      "label": "phish",
+      "description": "COVID relief scam"
+    },
+    {
+      "url": "https://lottery-winner-notification.prize-claim.net/",
+      "label": "phish",
+      "description": "Lottery scam"
+    },
+    {
+      "url": "http://refund-processing-center.tax-scam.tk/",
+      "label": "phish",
+      "description": "Tax refund processing scam"
+    },
+    {
+      "url": "https://banking-security-alert.account-freeze.com/",
+      "label": "phish",
+      "description": "Banking security alert scam"
+    },
+    {
+      "url": "http://credit-card-upgrade.free-benefits.xyz/",
+      "label": "phish",
+      "description": "Credit card upgrade scam"
+    },
+    {
+      "url": "https://insurance-claim-approved.verify-details.net/",
+      "label": "phish",
+      "description": "Insurance claim scam"
+    },
+    {
+      "url": "http://electricity-bill-overdue.payment-urgent.com/",
+      "label": "phish",
+      "description": "Electricity bill scam"
+    },
+    {
+      "url": "https://job-offer-selected.interview-confirm.info/",
+      "label": "phish",
+      "description": "Job offer scam"
+    },
+    {
+      "url": "http://scholarship-approved.university-fake.edu/",
+      "label": "phish",
+      "description": "Scholarship scam"
+    },
+    {
+      "url": "https://www.hdfc.com/",
+      "label": "legit",
+      "description": "HDFC Bank official"
+    },
+    {
+      "url": "https://www.icicibank.com/",
+      "label": "legit",
+      "description": "ICICI Bank official"
+    },
+    {
+      "url": "https://www.sbi.co.in/",
+      "label": "legit",
+      "description": "SBI official"
+    },
+    {
+      "url": "https://www.axisbank.com/",
+      "label": "legit",
+      "description": "Axis Bank official"
+    }
+  ]
+}

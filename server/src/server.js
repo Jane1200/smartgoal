@@ -21,7 +21,7 @@ import mlPhishingRoutes from './routes/ml-phishing.js';
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: ["http://localhost:5173"], credentials: false }));
+app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5174"], credentials: true }));
 
 app.get("/api/health", (_, res) => res.json({ ok: true }));
 
@@ -48,5 +48,7 @@ app.use('/api/ml-phishing', mlPhishingRoutes);
 
 const port = process.env.PORT || 5000;
 connectDB(process.env.MONGO_URI).then(() => {
-  app.listen(port, () => console.log(`✅ API listening on http://localhost:${port}`));
+  app.listen(port, () => {
+    console.log(`✅ API listening on http://localhost:${port}`);
+  });
 });

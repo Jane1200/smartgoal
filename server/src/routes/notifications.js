@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import Notification from "../models/Notification.js";
+import { runNotificationChecks } from "../utils/notificationService.js";
 
 const router = Router();
 
@@ -151,6 +152,28 @@ router.delete("/clear-read", requireAuth, async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: "Failed to clear notifications" 
+    });
+  }
+});
+
+// Trigger notification checks manually (for testing or on-demand)
+router.post("/check", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+
+    const notifications = await runNotificationChecks(userId);
+
+    res.json({
+      success: true,
+      message: `Created ${notifications.length} new notifications`,
+      count: notifications.length,
+      notifications,
+    });
+  } catch (error) {
+    console.error("Error running notification checks:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to run notification checks",
     });
   }
 });

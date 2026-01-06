@@ -23,6 +23,7 @@ export default function UserDashboard() {
     totalEarnings: 0,
     pendingListings: 0
   });
+  const [todayActivities, setTodayActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -46,12 +47,13 @@ export default function UserDashboard() {
         setLoading(true);
       }
 
-      const [goalsResponse, wishlistResponse, financeResponse, marketplaceResponse, sellerStatsResponse] = await Promise.allSettled([
+      const [goalsResponse, wishlistResponse, financeResponse, marketplaceResponse, sellerStatsResponse, activitiesResponse] = await Promise.allSettled([
         api.get("/goals"),
         api.get("/wishlist"),
         api.get("/finance/summary"),
         api.get("/marketplace/my-listings"),
-        api.get("/marketplace/stats/seller")
+        api.get("/marketplace/stats/seller"),
+        api.get("/analytics/today-activity")
       ]);
 
       if (goalsResponse.status === 'fulfilled') {
@@ -77,6 +79,10 @@ export default function UserDashboard() {
           totalEarnings: 0,
           pendingListings: 0
         });
+      }
+
+      if (activitiesResponse.status === 'fulfilled') {
+        setTodayActivities(activitiesResponse.value.data?.activities || []);
       }
 
       setLastUpdated(new Date());
@@ -456,108 +462,114 @@ export default function UserDashboard() {
                   </div>
                   <h5 className="card-title mb-0">Recent Activity</h5>
                 </div>
-                {achievedGoals.length > 0 && (
-                  <span className="badge bg-success">
-                    {achievedGoals.length} goal{achievedGoals.length > 1 ? 's' : ''} achieved
+                {todayActivities.length > 0 && (
+                  <span className="badge bg-primary">
+                    {todayActivities.length} activit{todayActivities.length > 1 ? 'ies' : 'y'} today
                   </span>
                 )}
               </div>
 
-              {achievedGoals.length === 0 ? (
+              {todayActivities.length === 0 ? (
                 <div className="text-center py-4">
-                  <div className="text-muted mb-2">No recent activity yet</div>
-                  <small className="text-muted">Complete your goals to see them here!</small>
+                  <div className="text-muted mb-2">No activity today yet</div>
+                  <small className="text-muted">Create goals, add finances, or list items to see your activity here!</small>
                 </div>
               ) : (
                 <div className="d-grid gap-3">
-                  {achievedGoals.slice(0, 5).map((goal) => {
-                    const current = Number(goal.currentAmount || 0);
-                    const target = Number(goal.targetAmount || 0);
+                  {todayActivities.map((activity, index) => {
+                    // Determine color based on activity type
+                    let borderColor = '#0d6efd'; // default blue
+                    let bgColor = '#f0f7ff';
+                    
+                    if (activity.type === 'goal') {
+                      borderColor = '#0d6efd';
+                      bgColor = '#f0f7ff';
+                    } else if (activity.type === 'finance') {
+                      if (activity.action === 'income') {
+                        borderColor = '#28a745';
+                        bgColor = '#f0fff4';
+                      } else {
+                        borderColor = '#dc3545';
+                        bgColor = '#fff5f5';
+                      }
+                    } else if (activity.type === 'marketplace') {
+                      if (activity.action === 'sold') {
+                        borderColor = '#28a745';
+                        bgColor = '#f0fff4';
+                      } else {
+                        borderColor = '#ffc107';
+                        bgColor = '#fffbf0';
+                      }
+                    }
                     
                     return (
                       <div 
-                        key={goal._id} 
+                        key={`${activity.type}-${activity.metadata.goalId || activity.metadata.financeId || activity.metadata.itemId}-${index}`}
                         className="activity-item p-3 border rounded"
                         style={{
-                          backgroundColor: '#f0fff4',
-                          borderColor: '#28a745 !important',
-                          borderLeft: '4px solid #28a745',
+                          backgroundColor: bgColor,
+                          borderLeft: `4px solid ${borderColor}`,
                           transition: 'all 0.2s'
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#e8f5e9';
+                          e.currentTarget.style.transform = 'translateX(4px)';
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = '#f0fff4';
+                          e.currentTarget.style.transform = 'translateX(0)';
+                          e.currentTarget.style.boxShadow = 'none';
                         }}
                       >
                         <div className="d-flex align-items-start gap-3">
-                          {/* Success Icon */}
+                          {/* Icon */}
                           <div className="flex-shrink-0">
                             <div 
                               className="rounded-circle d-flex align-items-center justify-content-center"
                               style={{
                                 width: '48px',
                                 height: '48px',
-                                backgroundColor: '#28a745',
-                                color: 'white'
+                                backgroundColor: borderColor,
+                                color: 'white',
+                                fontSize: '24px'
                               }}
                             >
-                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                              </svg>
+                              {activity.icon}
                             </div>
                           </div>
 
-                          {/* Goal Details */}
+                          {/* Activity Details */}
                           <div className="flex-grow-1">
                             <div className="d-flex justify-content-between align-items-start mb-2">
                               <div>
-                                <h6 className="mb-1 fw-bold text-success">🎉 Goal Achieved!</h6>
-                                <div className="fw-semibold">{goal.title}</div>
+                                <h6 className="mb-1 fw-bold" style={{ color: borderColor }}>
+                                  {activity.title}
+                                </h6>
+                                <div className="text-dark">{activity.description}</div>
                               </div>
-                              <span className="badge bg-success">100%</span>
                             </div>
 
-                            <div className="d-flex flex-wrap gap-3 mb-2">
-                              <div>
-                                <small className="text-muted d-block">Target Amount</small>
-                                <span className="fw-semibold text-success">
-                                  ₹{target.toLocaleString()}
-                                </span>
-                              </div>
-                              <div>
-                                <small className="text-muted d-block">Achieved Amount</small>
-                                <span className="fw-semibold text-success">
-                                  ₹{current.toLocaleString()}
-                                </span>
-                              </div>
-                              {goal.category && (
-                                <div>
-                                  <small className="text-muted d-block">Category</small>
-                                  <span className="badge bg-light text-dark">
-                                    {goal.category.replace('_', ' ')}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="d-flex justify-content-between align-items-center">
+                            <div className="d-flex align-items-center justify-content-between">
                               <small className="text-muted">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline', marginRight: '4px' }}>
-                                  <circle cx="12" cy="12" r="10"/>
-                                  <polyline points="12 6 12 12 16 14"/>
-                                </svg>
-                                {formatTimeAgo(goal.updatedAt)}
+                                {new Date(activity.timestamp).toLocaleTimeString('en-US', { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit',
+                                  hour12: true 
+                                })}
                               </small>
-                              <a 
-                                href="/goals" 
-                                className="btn btn-sm btn-success"
-                                style={{ fontSize: '0.75rem' }}
+                              
+                              {/* Badge for activity type */}
+                              <span 
+                                className="badge"
+                                style={{
+                                  backgroundColor: borderColor,
+                                  color: 'white',
+                                  fontSize: '0.7rem'
+                                }}
                               >
-                                View Goal
-                              </a>
+                                {activity.type === 'goal' ? 'Goal' : 
+                                 activity.type === 'finance' ? 'Finance' : 
+                                 'Marketplace'}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -565,11 +577,11 @@ export default function UserDashboard() {
                     );
                   })}
 
-                  {achievedGoals.length > 5 && (
+                  {todayActivities.length >= 20 && (
                     <div className="text-center pt-2">
-                      <a href="/goals" className="text-primary text-decoration-none fw-semibold">
-                        View all {achievedGoals.length} achieved goals →
-                      </a>
+                      <small className="text-muted">
+                        Showing 20 most recent activities from today
+                      </small>
                     </div>
                   )}
                 </div>
