@@ -198,35 +198,27 @@ export default function GoalRecommendations({ onGoalCreated, financeData, isGoal
               Your Financial Snapshot
             </h6>
             <div className="row g-3">
-              <div className="col-md-3">
+              <div className="col-md-4">
                 <div className="text-center p-3 bg-success bg-opacity-10 rounded">
-                  <small className="text-muted d-block mb-1">Monthly Income</small>
+                  <small className="text-muted d-block mb-1">Overall Income</small>
                   <div className="h5 mb-0 text-success">
-                    ₹{financialSummary.monthlyIncome?.toLocaleString() || '0'}
+                    ₹{financialSummary.totalIncome?.toLocaleString() || '0'}
                   </div>
                 </div>
               </div>
-              <div className="col-md-3">
+              <div className="col-md-4">
                 <div className="text-center p-3 bg-danger bg-opacity-10 rounded">
-                  <small className="text-muted d-block mb-1">Monthly Expenses</small>
+                  <small className="text-muted d-block mb-1">Overall Expenses</small>
                   <div className="h5 mb-0 text-danger">
-                    ₹{financialSummary.monthlyExpenses?.toLocaleString() || '0'}
+                    ₹{financialSummary.totalExpenses?.toLocaleString() || '0'}
                   </div>
                 </div>
               </div>
-              <div className="col-md-3">
+              <div className="col-md-4">
                 <div className="text-center p-3 bg-primary bg-opacity-10 rounded">
-                  <small className="text-muted d-block mb-1">Monthly Savings</small>
+                  <small className="text-muted d-block mb-1">Overall Balance</small>
                   <div className="h5 mb-0 text-primary">
-                    ₹{financialSummary.monthlySavings?.toLocaleString() || '0'}
-                  </div>
-                </div>
-              </div>
-              <div className="col-md-3">
-                <div className="text-center p-3 bg-info bg-opacity-10 rounded">
-                  <small className="text-muted d-block mb-1">Savings Rate</small>
-                  <div className="h5 mb-0 text-info">
-                    {financialSummary.savingsRate || 0}%
+                    ₹{financialSummary.totalSavings?.toLocaleString() || '0'}
                   </div>
                 </div>
               </div>

@@ -456,6 +456,8 @@ export async function generateGoalRecommendations(userId) {
         monthlyIncome,
         monthlyExpenses,
         monthlySavings,
+        totalIncome,
+        totalExpenses,
         totalSavings,
         savingsRate: monthlyIncome > 0 ? Math.round((monthlySavings / monthlyIncome) * 100) : 0
       },

@@ -101,6 +101,12 @@ export default function Finances() {
           monthlySavings: calculatedTotals.monthlySavings,
           monthlySavingsRate: calculatedTotals.monthlySavingsRate,
           totalSavingsRate: calculatedTotals.totalSavingsRate,
+          cashInHand: calculatedTotals.cashInHand,
+          cashAtBank: calculatedTotals.cashAtBank,
+          cashIncome: calculatedTotals.cashIncome,
+          cashExpense: calculatedTotals.cashExpense,
+          bankIncome: calculatedTotals.bankIncome,
+          bankExpense: calculatedTotals.bankExpense,
         });
       } else {
         setFinanceData(calculatedTotals);

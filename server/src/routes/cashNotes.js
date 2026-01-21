@@ -335,29 +335,40 @@ router.get("/summary", async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const summary = await CashNote.aggregate([
-      { $match: { userId: new mongoose.Types.ObjectId(userId), isConverted: false } },
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const summary = await Finance.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          paymentMethod: "cash",
+          date: { $gte: startOfToday, $lte: endOfToday },
+        },
+      },
       {
         $group: {
-          _id: '$type',
-          total: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
-      }
+          _id: "$type",
+          total: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
     const result = {
       totalIncome: 0,
       totalExpense: 0,
       incomeCount: 0,
-      expenseCount: 0
+      expenseCount: 0,
     };
 
-    summary.forEach(item => {
-      if (item._id === 'income') {
+    summary.forEach((item) => {
+      if (item._id === "income") {
         result.totalIncome = item.total;
         result.incomeCount = item.count;
-      } else if (item._id === 'expense') {
+      } else if (item._id === "expense") {
         result.totalExpense = item.total;
         result.expenseCount = item.count;
       }

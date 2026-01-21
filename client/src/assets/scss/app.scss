@@ -662,6 +662,14 @@ textarea {
       background-color: var(--hover-bg);
     }
   }
+
+  .table-light {
+    --bs-table-bg: var(--card-bg);
+    --bs-table-color: var(--text-primary);
+    --bs-table-border-color: var(--border-color);
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+    --bs-table-hover-bg: var(--hover-bg);
+  }
   
   .table-striped > tbody > tr:nth-of-type(odd) > * {
     background-color: rgba(255, 255, 255, 0.03);
