@@ -6,6 +6,7 @@ import Goal from "../models/Goal.js";
 import Marketplace from "../models/Marketplace.js";
 import User from "../models/User.js";
 import { generateGoalSetterReport } from "../utils/pdfGenerator.js";
+import { generateCleanFinancialReport } from "../utils/pdfGeneratorClean.js";
 
 const router = Router();
 
@@ -1015,8 +1016,38 @@ router.get("/generate-monthly-report", requireAuth, async (req, res) => {
       email: user.email
     };
     
-    // Generate PDF
-    const pdfBuffer = await generateGoalSetterReport(userData, analyticsData);
+    // Get all-time financial data for clean report
+    const allIncomeEntries = await Finance.find({ userId, type: 'income' });
+    const allExpenseEntries = await Finance.find({ userId, type: 'expense' });
+    
+    const totalIncome = allIncomeEntries.reduce((sum, e) => sum + e.amount, 0);
+    const totalExpenses = allExpenseEntries.reduce((sum, e) => sum + e.amount, 0);
+    
+    const cashIncome = allIncomeEntries
+      .filter(e => e.paymentMethod === 'cash')
+      .reduce((sum, e) => sum + e.amount, 0);
+    const cashExpense = allExpenseEntries
+      .filter(e => e.paymentMethod === 'cash')
+      .reduce((sum, e) => sum + e.amount, 0);
+    
+    const bankIncome = allIncomeEntries
+      .filter(e => e.paymentMethod !== 'cash')
+      .reduce((sum, e) => sum + e.amount, 0);
+    const bankExpense = allExpenseEntries
+      .filter(e => e.paymentMethod !== 'cash')
+      .reduce((sum, e) => sum + e.amount, 0);
+    
+    const financialData = {
+      totalIncome,
+      totalExpenses,
+      cashIncome,
+      cashExpense,
+      bankIncome,
+      bankExpense,
+    };
+    
+    // Generate Clean PDF
+    const pdfBuffer = await generateCleanFinancialReport(userData, financialData);
     
     // Set response headers for PDF download
     const filename = `SmartGoal_Financial_Report_${currentDate.toISOString().split('T')[0]}.pdf`;

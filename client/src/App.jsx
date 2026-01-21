@@ -8,6 +8,7 @@ import AuthLayout from "@/layouts/AuthLayout.jsx";
 import AdminLayout from "@/layouts/AdminLayout.jsx";
 import UserLayout from "@/layouts/UserLayout.jsx";
 import BuyerLayout from "@/layouts/BuyerLayout.jsx";
+import EvaluatorLayout from "@/layouts/EvaluatorLayout.jsx";
 
 import Login from "@/pages/auth/Login.jsx";
 import LoginOTP from "@/pages/auth/LoginOTP.jsx";
@@ -17,26 +18,27 @@ import VerifyEmail from "@/pages/auth/VerifyEmail.jsx";
 
 import AdminDashboard from "@/pages/dashboard/AdminDashboard.jsx";
 import UserDashboard from "@/pages/dashboard/UserDashboard.jsx";
-import BuyerDashboard from "@/pages/dashboard/BuyerDashboard.jsx";
-import BuyerProfile from "@/pages/dashboard/BuyerProfile.jsx";
+import BuyerDashboard from "@/pages/dashboard/BuyerDashboardOverview.jsx";
+import EvaluatorDashboard from "@/pages/dashboard/EvaluatorDashboard.jsx";
 import UserManagement from "@/pages/admin/UserManagement.jsx";
 import AllGoals from "@/pages/admin/AllGoals.jsx";
+import EvaluatorUserView from "@/pages/evaluator/EvaluatorUserView.jsx";
 import MarketplaceControl from "@/pages/admin/MarketplaceControl.jsx";
-import FinancialOverview from "@/pages/admin/FinancialOverview.jsx";
-import SystemAnalytics from "@/pages/admin/SystemAnalytics.jsx";
-import CronJobsManager from "@/pages/admin/CronJobsManager.jsx";
-import BuyerMarketplace from "@/pages/dashboard/BuyerMarketplace.jsx";
+import AdminReports from "@/pages/admin/Reports.jsx";
+import ContentModeration from "@/pages/admin/ContentModeration.jsx";
+import SystemSettings from "@/pages/admin/SystemSettings.jsx";
+import ActivityLogs from "@/pages/admin/ActivityLogs.jsx";
+import BuyerMarketplace from "@/pages/dashboard/BuyerMarketplaceClean.jsx";
+import Connections from "@/pages/dashboard/Connections.jsx";
 import Cart from "@/pages/dashboard/Cart.jsx";
 import Checkout from "@/pages/dashboard/Checkout.jsx";
 import Orders from "@/pages/dashboard/Orders.jsx";
-import ConnectionsPage from "@/pages/dashboard/Connections.jsx";
 import GoalsPage from "@/pages/dashboard/Goals.jsx";
 import MarketplacePage from "@/pages/dashboard/Marketplace.jsx";
 import ResellItems from "@/pages/dashboard/ResellItems.jsx";
 import FinancesPage from "@/pages/dashboard/Finances.jsx";
-import AnalyticsPage from "@/pages/dashboard/Analytics.jsx";
-import BuyerAnalyticsPage from "@/pages/dashboard/BuyerAnalytics.jsx";
 import ProfilePage from "@/pages/dashboard/Profile.jsx";
+import ProfileSimple from "@/pages/dashboard/ProfileSimple.jsx";
 import BankStatementAnalysis from "@/pages/dashboard/BankStatementAnalysis.jsx";
 
 import Home from "@/pages/public/Home.jsx";
@@ -47,6 +49,7 @@ import RequireAuth from "@/routes/RequireAuth.jsx";
 import RequireAdmin from "@/routes/RequireAdmin.jsx";
 import RequireUser from "@/routes/RequireUser.jsx";
 import RequireBuyer from "@/routes/RequireBuyer.jsx";
+import RequireEvaluator from "@/routes/RequireEvaluator.jsx";
 
 import { ToastContainer } from "react-toastify";
 import PublicLayout from "@/layouts/PublicLayout.jsx";
@@ -135,9 +138,10 @@ export default function App() {
           <Route path="/admin/users" element={<UserManagement />} />
           <Route path="/admin/goals" element={<AllGoals />} />
           <Route path="/admin/marketplace" element={<MarketplaceControl />} />
-          <Route path="/admin/finance" element={<FinancialOverview />} />
-          <Route path="/admin/analytics" element={<SystemAnalytics />} />
-          <Route path="/admin/cron-jobs" element={<CronJobsManager />} />
+          <Route path="/admin/reports" element={<AdminReports />} />
+          <Route path="/admin/moderation" element={<ContentModeration />} />
+          <Route path="/admin/settings" element={<SystemSettings />} />
+          <Route path="/admin/activity-logs" element={<ActivityLogs />} />
         </Route>
 
         {/* User Routes */}
@@ -155,10 +159,9 @@ export default function App() {
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/resell-items" element={<ResellItems />} />
           <Route path="/finances" element={<FinancesPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/bank-analysis" element={<BankStatementAnalysis />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route path="/connections" element={<Connections />} />
         </Route>
 
         {/* Buyer Routes */}
@@ -172,14 +175,29 @@ export default function App() {
           }
         >
           <Route path="/buyer-dashboard" element={<BuyerDashboard />} />
-          <Route path="/buyer-profile" element={<BuyerProfile />} />
           <Route path="/buyer-finances" element={<FinancesPage />} />
-          <Route path="/buyer-analytics" element={<BuyerAnalyticsPage />} />
           <Route path="/buyer-bank-analysis" element={<BankStatementAnalysis />} />
           <Route path="/buyer-marketplace" element={<BuyerMarketplace />} />
+          <Route path="/find-goal-setters" element={<Connections />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/orders" element={<Orders />} />
+          <Route path="/profile" element={<ProfileSimple />} />
+        </Route>
+
+        {/* Evaluator Routes */}
+        <Route
+          element={
+            <RequireAuth>
+              <RequireEvaluator>
+                <EvaluatorLayout />
+              </RequireEvaluator>
+            </RequireAuth>
+          }
+        >
+          <Route path="/evaluator-dashboard" element={<EvaluatorDashboard />} />
+          <Route path="/evaluator/users" element={<EvaluatorUserView />} />
+          <Route path="/evaluator/goals" element={<AllGoals />} />
         </Route>
 
         {/* Role-based redirect */}

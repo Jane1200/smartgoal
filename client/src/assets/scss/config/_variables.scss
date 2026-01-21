@@ -1,7 +1,7 @@
-@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@500;700;800&family=Wix+Madefor+Text:wght@400;500;600;700&display=swap");
-$font-family-sans-serif: "Wix Madefor Text", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !default;
-/* and set .hero-title to use Poppins */
-.hero-title { font-family: "Poppins", $font-family-sans-serif; }
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap");
+$font-family-sans-serif: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !default;
+/* and set .hero-title to use Plus Jakarta Sans */
+.hero-title { font-family: "Plus Jakarta Sans", $font-family-sans-serif; }
 
 $primary: #161da3;      /* green-600 */
 $success: #161da3;

@@ -254,6 +254,7 @@
   gap: 0.75rem;
   text-decoration: none;
   color: inherit;
+  cursor: pointer;
 
   .brand-icon {
     width: 32px;
@@ -516,7 +517,7 @@
     .logo-icon {
       width: 32px;
       height: 32px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #161da3 0%, #1e40af 100%);
       border-radius: 8px;
     }
 
@@ -1572,69 +1573,81 @@
 .app-wrap {
   display: grid;
   grid-template-columns: 260px 1fr;
-  min-height: calc(100dvh - 80px);
-  margin-top: 80px; /* Account for global header */
+  min-height: calc(100vh - 80px);
+  margin-top: 80px;
   position: relative;
   z-index: 1;
-  background: var(--bg-color);
+  background: #f8fafc;
   color: var(--text-color);
   transition: background-color 0.3s ease, color 0.3s ease;
+  overflow: hidden;
+  width: 100vw;
+  max-width: 100vw;
 }
 
 .sidebar {
-  background: var(--card-bg);
-  border-right: 1px solid var(--border-color);
+  background: #ffffff;
+  border-right: 1px solid #e2e8f0;
   color: var(--text-color);
   transition: background-color 0.3s ease, border-color 0.3s ease;
-  
-  .btn {
-    border-radius: 12px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    border: 2px solid transparent;
-  }
-  
-  .btn-dark {
-    background: linear-gradient(135deg, #161da3 0%, #4f46e5 100%);
-    border: none;
-    box-shadow: 0 4px 16px rgba(22,29,163,0.25);
-    color: white;
-    
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(22,29,163,0.35);
-    }
-  }
-  
-  .btn-outline-secondary {
-    background: #fff;
-    border-color: #e2e8f0;
-    color: #334155;
-    
-    &:hover {
-      border-color: #161da3;
-      color: #161da3;
-      background: rgba(22, 29, 163, 0.05);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 15px rgba(22,29,163,0.1);
-    }
-  }
-  
-  .badge {
-    background: linear-gradient(135deg, #161da3 0%, #4f46e5 100%);
-    color: white;
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    box-shadow: 0 4px 15px rgba(22, 29, 163, 0.3);
-  }
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: calc(100vh - 80px);
+  position: sticky;
+  top: 80px;
+  width: 260px;
+  flex-shrink: 0;
 }
 
 .content {
-  background: var(--bg-color);
-  padding: 2rem;
-  color: var(--text-color);
-  transition: background-color 0.3s ease;
+  overflow-x: hidden;
+  overflow-y: auto;
+  width: 100%;
+  background: #f8fafc;
+  min-height: calc(100vh - 80px);
+  padding: 0;
+}
+
+.btn {
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.btn-dark {
+  background: linear-gradient(135deg, #161da3 0%, #4f46e5 100%);
+  border: none;
+  box-shadow: 0 4px 16px rgba(22,29,163,0.25);
+  color: white;
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(22,29,163,0.35);
+  }
+}
+
+.btn-outline-secondary {
+  background: #fff;
+  border-color: #e2e8f0;
+  color: #334155;
+  
+  &:hover {
+    border-color: #161da3;
+    color: #161da3;
+    background: rgba(22, 29, 163, 0.05);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(22,29,163,0.1);
+  }
+}
+
+.badge {
+  background: linear-gradient(135deg, #161da3 0%, #4f46e5 100%);
+  color: white;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  box-shadow: 0 4px 15px rgba(22, 29, 163, 0.3);
 }
 
 .quick-actions .btn { 

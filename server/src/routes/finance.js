@@ -14,7 +14,10 @@ import fs from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { getSuggestionsForReview } from "../utils/expenseCategorizer.js";
 import { extractTransactionsFromFile } from "../utils/extractTransactionsFromFile.js";
+import { filterDuplicateTransactions } from "../utils/duplicateDetector.js";
 import { checkBudgetBreaches } from "../utils/notificationService.js";
+import { wouldExceedLimit, checkExpenseLimit } from "../utils/expenseChecker.js";
+import { validateExpenseBalance, validateBatchExpenses } from "../utils/balanceValidator.js";
 
 const router = Router();
 
@@ -94,10 +97,12 @@ const validateFinanceDate = async (dateString, userId) => {
   const today = new Date();
   today.setHours(23, 59, 59, 999); // End of today
 
+  console.log(`📅 Date validation: Entry date: ${entryDate.toISOString()}, Today: ${today.toISOString()}`);
+
   if (entryDate > today) {
     return {
       valid: false,
-      error: "Date cannot be in the future",
+      error: `Date cannot be in the future (Entry: ${entryDate.toLocaleDateString('en-IN')}, Today: ${today.toLocaleDateString('en-IN')})`,
     };
   }
 
@@ -153,25 +158,37 @@ router.get("/summary", requireAuth, async (req, res) => {
     const { month, year, all } = req.query;
 
     let summary;
+    let filters = {};
 
     if (all === "true") {
       // Get all-time summary
       summary = await Finance.getUserFinanceSummary(userId);
       console.log(`Finance summary request for user ${userId} - ALL TIME`);
+    } else if (year) {
+      // Year or month+year filtering
+      filters.year = parseInt(year);
+      if (month) {
+        filters.month = parseInt(month);
+        console.log(
+          `Finance summary request for user ${userId}, month: ${filters.month}, year: ${filters.year}`,
+        );
+      } else {
+        console.log(
+          `Finance summary request for user ${userId}, year: ${filters.year}`,
+        );
+      }
+      summary = await Finance.getUserFinanceSummary(userId, filters);
     } else {
       // Get current month if not specified
       const currentDate = new Date();
-      const targetMonth = month ? parseInt(month) : currentDate.getMonth() + 1;
-      const targetYear = year ? parseInt(year) : currentDate.getFullYear();
+      filters.month = currentDate.getMonth() + 1;
+      filters.year = currentDate.getFullYear();
 
       console.log(
-        `Finance summary request for user ${userId}, month: ${targetMonth}, year: ${targetYear}`,
+        `Finance summary request for user ${userId}, month: ${filters.month}, year: ${filters.year}`,
       );
 
-      summary = await Finance.getUserFinanceSummary(userId, {
-        month: targetMonth,
-        year: targetYear,
-      });
+      summary = await Finance.getUserFinanceSummary(userId, filters);
     }
 
     console.log("Summary data:", summary);
@@ -196,7 +213,7 @@ router.get("/summary", requireAuth, async (req, res) => {
       monthlySavings,
       incomeCount: summary.find((s) => s._id === "income")?.count || 0,
       expenseCount: summary.find((s) => s._id === "expense")?.count || 0,
-      viewMode: all === "true" ? "all-time" : "current-month",
+      viewMode: all === "true" ? "all-time" : (month ? "month" : "year"),
     });
   } catch (error) {
     console.error("Finance summary error:", error);
@@ -211,9 +228,11 @@ router.get("/income", requireAuth, async (req, res) => {
     const { month, year, limit = 50 } = req.query;
 
     const filters = {};
-    if (month && year) {
-      filters.month = parseInt(month);
+    if (year) {
       filters.year = parseInt(year);
+      if (month) {
+        filters.month = parseInt(month);
+      }
     }
 
     const income = await Finance.getUserIncome(userId, filters).limit(
@@ -234,9 +253,11 @@ router.get("/expenses", requireAuth, async (req, res) => {
     const { month, year, limit = 50 } = req.query;
 
     const filters = {};
-    if (month && year) {
-      filters.month = parseInt(month);
+    if (year) {
       filters.year = parseInt(year);
+      if (month) {
+        filters.month = parseInt(month);
+      }
     }
 
     const expenses = await Finance.getUserExpenses(userId, filters).limit(
@@ -303,6 +324,7 @@ router.post("/income", requireAuth, async (req, res) => {
       source,
       description: description || "",
       date: dateValidation.date,
+      paymentMethod: "other", // default for manual entries
     });
 
     await income.save();
@@ -487,6 +509,20 @@ router.post("/expenses", requireAuth, async (req, res) => {
       });
     }
 
+    // Validate balance - ensure expense doesn't exceed income
+    const balanceCheck = await validateExpenseBalance(userId, amountNum, 'other');
+    if (!balanceCheck.valid) {
+      return res.status(400).json({ 
+        message: balanceCheck.message,
+        currentBalance: balanceCheck.currentBalance,
+        requiredBalance: balanceCheck.requiredBalance,
+        shortfall: balanceCheck.shortfall
+      });
+    }
+
+    // Check if this expense would exceed the monthly limit
+    const limitCheck = await wouldExceedLimit(userId, parseFloat(amount));
+    
     // Create new expense entry
     const expense = new Finance({
       userId,
@@ -495,9 +531,36 @@ router.post("/expenses", requireAuth, async (req, res) => {
       category,
       description: description || "",
       date: dateValidation.date,
+      paymentMethod: "other", // default for manual entries
     });
 
     await expense.save();
+
+    // Prepare response with limit warning if applicable
+    const response = {
+      message: "Expense added successfully",
+      expense: expense
+    };
+
+    // Add limit warning to response if applicable
+    if (limitCheck.hasLimit && limitCheck.wouldExceed) {
+      response.limitWarning = {
+        exceeded: true,
+        message: `Warning: This expense exceeds your monthly limit by ₹${limitCheck.exceededBy.toFixed(2)}`,
+        projectedTotal: limitCheck.projectedTotal,
+        limit: limitCheck.limit
+      };
+    } else if (limitCheck.hasLimit && limitCheck.remaining < limitCheck.limit * 0.2) {
+      // Warn if less than 20% remaining
+      response.limitWarning = {
+        exceeded: false,
+        message: `You have ₹${limitCheck.remaining.toFixed(2)} remaining in your monthly budget`,
+        projectedTotal: limitCheck.projectedTotal,
+        limit: limitCheck.limit
+      };
+    }
+
+    res.status(201).json(response);
 
     // Trigger financial analysis and create notifications if needed (async, don't wait)
     setTimeout(async () => {
@@ -693,10 +756,7 @@ router.post("/expenses", requireAuth, async (req, res) => {
       }
     }, 1000);
 
-    res.json({
-      message: "Expense entry added successfully",
-      expense,
-    });
+    // Response already sent above with limit warnings
   } catch (error) {
     console.error("Add expense error:", error);
     res.status(500).json({ message: "Failed to add expense entry" });
@@ -789,9 +849,11 @@ router.get("/breakdown", requireAuth, async (req, res) => {
     }
 
     const filters = {};
-    if (month && year) {
-      filters.month = parseInt(month);
+    if (year) {
       filters.year = parseInt(year);
+      if (month) {
+        filters.month = parseInt(month);
+      }
     }
 
     const breakdown = await Finance.getCategoryBreakdown(userId, type, filters);
@@ -1099,7 +1161,23 @@ router.post(
   upload.single("file"),
   async (req, res) => {
     try {
-      const { startDate, endDate } = req.body;
+      console.log("=== UPLOAD STATEMENT REQUEST ===");
+      console.log("📦 Full request body:", JSON.stringify(req.body, null, 2));
+      console.log("📁 File info:", req.file ? {
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      } : "No file");
+      
+      let { startDate, endDate, password } = req.body;
+      
+      // Trim password to remove any whitespace
+      if (password) {
+        password = password.trim();
+        console.log("🔑 Password (trimmed):", password);
+        console.log("🔑 Password length:", password.length);
+      }
 
       // Debug authentication
       console.log("🔐 User authenticated:", !!req.user);
@@ -1124,11 +1202,15 @@ router.post(
       console.log("📄 Processing bank statement:", req.file.originalname);
       console.log("📁 File path:", req.file.path);
       console.log("📋 MIME type:", req.file.mimetype);
+      if (password) {
+        console.log("🔐 Password provided for encrypted PDF");
+      }
 
-      // Extract transactions from file using OCR/parsing
+      // Extract transactions from file using OCR/parsing (with optional password)
       const extractedTransactions = await extractTransactionsFromFile(
         req.file.path,
         req.file.mimetype,
+        password
       );
 
       console.log(`✅ Extracted ${extractedTransactions.length} transactions`);
@@ -1145,10 +1227,19 @@ router.post(
         console.log(`📅 Filtered to ${filteredTransactions.length} transactions in date range`);
       }
 
-      // Auto-categorize transactions
-      console.log("🏷️ Categorizing transactions...");
+      // Check for duplicate transactions
+      console.log("🔍 Checking for duplicate transactions...");
+      const duplicateCheck = await filterDuplicateTransactions(userId, filteredTransactions);
+      
+      console.log(`📊 Duplicate check results:
+        - Total transactions: ${duplicateCheck.stats.total}
+        - New transactions: ${duplicateCheck.stats.new}
+        - Duplicates found: ${duplicateCheck.stats.duplicates}`);
+
+      // Auto-categorize only new transactions
+      console.log("🏷️ Categorizing new transactions...");
       const transactionsWithCategories = await getSuggestionsForReview(
-        filteredTransactions,
+        duplicateCheck.newTransactions,
       );
 
       // Determine file type from mimetype
@@ -1168,11 +1259,13 @@ router.post(
         fileType: fileType,
         filePath: req.file.path,
         status: "completed",
-        transactionsCount: filteredTransactions.length,
+        transactionsCount: duplicateCheck.stats.new,
         extractedTransactions: {
-          total: filteredTransactions.length,
-          income: filteredTransactions.filter(t => t.type === "income").length,
-          expenses: filteredTransactions.filter(t => t.type === "expense").length,
+          total: duplicateCheck.stats.total,
+          new: duplicateCheck.stats.new,
+          duplicates: duplicateCheck.stats.duplicates,
+          income: duplicateCheck.newTransactions.filter(t => t.type === "income").length,
+          expenses: duplicateCheck.newTransactions.filter(t => t.type === "expense").length,
         },
       });
 
@@ -1188,14 +1281,32 @@ router.post(
       }
 
       console.log(
-        `✅ Extracted ${filteredTransactions.length} transactions from statement`,
+        `✅ Extracted ${duplicateCheck.stats.new} new transactions (${duplicateCheck.stats.duplicates} duplicates skipped)`,
       );
+
+      // Prepare response message
+      let message = `Successfully extracted ${duplicateCheck.stats.new} new transaction(s)`;
+      if (duplicateCheck.stats.duplicates > 0) {
+        message += `. ${duplicateCheck.stats.duplicates} duplicate(s) were skipped.`;
+      }
 
       res.json({
         success: true,
-        message: `Successfully extracted ${filteredTransactions.length} transactions`,
+        message: message,
         transactions: transactionsWithCategories,
         statementId: processedStatement._id,
+        duplicateInfo: {
+          total: duplicateCheck.stats.total,
+          new: duplicateCheck.stats.new,
+          duplicates: duplicateCheck.stats.duplicates,
+          duplicateTransactions: duplicateCheck.duplicates.map(d => ({
+            amount: d.amount,
+            date: d.date,
+            description: d.description,
+            type: d.type,
+            reason: d.reason
+          }))
+        }
       });
     } catch (error) {
       console.error("❌ Bank statement upload error:", error);
@@ -1245,7 +1356,25 @@ router.post("/batch-import", requireAuth, async (req, res) => {
       });
     }
 
-    console.log(`📥 Importing ${transactions.length} transactions...`);
+    console.log(`📥 Importing ${transactions.length} transactions for user: ${req.user.id}`);
+
+    // Determine payment method for these transactions
+    let paymentMethod = "other"; // default for bank statements
+    if (req.file?.mimetype?.includes("image")) {
+      paymentMethod = "upi";
+    }
+
+    // Validate batch expenses to ensure they don't exceed income
+    const batchValidation = await validateBatchExpenses(req.user.id, transactions, paymentMethod);
+    if (!batchValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: batchValidation.message,
+        invalidTransactions: batchValidation.invalidTransactions,
+        currentBalance: batchValidation.currentBalance,
+        details: "Some transactions would result in negative balance. Please add income first or remove these expense transactions."
+      });
+    }
 
     const results = {
       successful: 0,
@@ -1253,6 +1382,28 @@ router.post("/batch-import", requireAuth, async (req, res) => {
       skipped: 0,
       errors: [],
     };
+
+    // Allowed enums from Finance model
+    const INCOME_SOURCES = [
+      "salary",
+      "freelance",
+      "business",
+      "investment",
+      "rental",
+      "marketplace-sale",
+      "other",
+    ];
+    const EXPENSE_CATEGORIES = [
+      "food",
+      "transport",
+      "housing",
+      "healthcare",
+      "entertainment",
+      "shopping",
+      "education",
+      "travel",
+      "other",
+    ];
 
     for (const transaction of transactions) {
       try {
@@ -1268,9 +1419,39 @@ router.post("/batch-import", requireAuth, async (req, res) => {
         }
 
         // Validate date
+        let dateString = transaction.date;
+        
+        console.log(`🔍 Processing transaction: ${transaction.description}`);
+        console.log(`   Original date: ${transaction.date} (type: ${typeof transaction.date})`);
+        
+        // Handle different date formats
+        if (typeof dateString === 'string') {
+          // Remove time part if present (e.g., "2025-01-15T00:00:00" -> "2025-01-15")
+          if (dateString.includes('T')) {
+            dateString = dateString.split("T")[0];
+          }
+          
+          // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD
+          // Patterns: 15-01-2025, 15/01/2025, 15.01.2025
+          const ddmmyyyyPattern = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/;
+          const match = dateString.match(ddmmyyyyPattern);
+          
+          if (match) {
+            const day = match[1].padStart(2, '0');
+            const month = match[2].padStart(2, '0');
+            const year = match[3];
+            dateString = `${year}-${month}-${day}`;
+            console.log(`   📅 Converted date: ${transaction.date} -> ${dateString}`);
+          } else {
+            console.log(`   ℹ️ Date already in correct format or no conversion needed: ${dateString}`);
+          }
+        }
+        
+        console.log(`   Final date string: ${dateString}`);
+        
         const dateValidation = await validateFinanceDate(
-          transaction.date.split("T")[0],
-          req.user._id,
+          dateString,
+          req.user.id,
         );
 
         if (!dateValidation.valid) {
@@ -1282,20 +1463,77 @@ router.post("/batch-import", requireAuth, async (req, res) => {
           continue;
         }
 
-        // Create finance entry
-        const financeEntry = new Finance({
-          userId: req.user._id,
-          type: transaction.type || "expense",
-          category: transaction.category || "Uncategorized",
+        // Determine transaction type (income or expense)
+        const txType = transaction.type === "income" ? "income" : "expense";
+
+        // Determine payment method based on file type or transaction data
+        let paymentMethod = "other"; // default for bank statements
+        if (req.file?.mimetype?.includes("image")) {
+          // UPI screenshots
+          paymentMethod = "upi";
+        } else if (transaction.paymentMethod) {
+          // If transaction already has paymentMethod (from extraction)
+          paymentMethod = transaction.paymentMethod;
+        }
+
+        let financePayload = {
+          userId: req.user.id,
+          type: txType,
           amount: parseFloat(transaction.amount),
           description: transaction.description || "Bank transaction",
           date: dateValidation.date,
-          source: "bank_statement",
-        });
+          paymentMethod: paymentMethod,
+        };
+
+        if (txType === "income") {
+          // Map categorized label to a valid income source enum
+          const rawCategory = (transaction.category || "").toLowerCase();
+
+          // Map income categorizer labels to Finance.source enum
+          let mappedSource = "other";
+          if (["salary"].includes(rawCategory)) mappedSource = "salary";
+          else if (["freelance", "consulting", "contract"].includes(rawCategory))
+            mappedSource = "freelance";
+          else if (["investment"].includes(rawCategory))
+            mappedSource = "investment";
+          else if (["business"].includes(rawCategory))
+            mappedSource = "business";
+          else if (["rental"].includes(rawCategory))
+            mappedSource = "rental";
+          else if (["marketplace-sale"].includes(rawCategory))
+            mappedSource = "marketplace-sale";
+          else if (["gift", "refund", "other_income"].includes(rawCategory))
+            mappedSource = "other";
+
+          if (!INCOME_SOURCES.includes(mappedSource)) {
+            mappedSource = "other";
+          }
+
+          financePayload.source = mappedSource;
+        } else {
+          // Expense: map category to valid Finance.category enum
+          const rawCategory = (transaction.category || "").toLowerCase();
+
+          let mappedCategory = "other";
+          if (EXPENSE_CATEGORIES.includes(rawCategory)) {
+            mappedCategory = rawCategory;
+          } else if (["utilities", "personal_care", "other_expense"].includes(rawCategory)) {
+            mappedCategory = "other";
+          }
+
+          financePayload.category = mappedCategory;
+          // Do NOT set source for expenses to avoid enum validation issues
+        }
+
+        // Create finance entry
+        const financeEntry = new Finance(financePayload);
 
         await financeEntry.save();
         results.successful++;
+        
+        console.log(`✅ Saved: ${txType} - ₹${financePayload.amount} - ${financePayload.description} - userId: ${financePayload.userId}`);
       } catch (error) {
+        console.error(`❌ Failed to save transaction:`, error.message);
         results.failed++;
         results.errors.push({
           transaction: transaction.description,
@@ -1307,6 +1545,13 @@ router.post("/batch-import", requireAuth, async (req, res) => {
     console.log(
       `✅ Import complete: ${results.successful} successful, ${results.failed} failed, ${results.skipped} skipped`,
     );
+    
+    if (results.errors.length > 0) {
+      console.log(`❌ Errors encountered:`);
+      results.errors.forEach((err, idx) => {
+        console.log(`   ${idx + 1}. ${err.transaction}: ${err.error}`);
+      });
+    }
 
     res.json({
       success: true,

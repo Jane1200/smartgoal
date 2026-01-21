@@ -23,7 +23,7 @@ import api, { getFileUrl } from '../utils/api';
 
 /**
  * MatchedSellers Component
- * Shows KNN-matched sellers based on buyer's location and preferences
+ * Shows ML-matched sellers based on buyer's location and preferences
  * Displays in the same format as the standard marketplace view
  */
 const MatchedSellers = ({
@@ -109,7 +109,7 @@ const MatchedSellers = ({
 
       if (response.data.success) {
         const matchesData = response.data.matches || [];
-        console.log('🎯 KNN Matches received:', matchesData.length, 'sellers');
+        console.log('🎯 ML Matches received:', matchesData.length, 'sellers');
         console.log('Sample match:', matchesData[0]);
         
         // Override ML-calculated distance and ensure correct data with actual seller data

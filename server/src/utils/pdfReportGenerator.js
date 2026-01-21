@@ -105,78 +105,182 @@ async function createPDFReport(user, stats, dateRange, data) {
       const fileName = `financial-report-${user._id}-${Date.now()}.pdf`;
       const filePath = path.join(reportsDir, fileName);
       
-      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
       const stream = fs.createWriteStream(filePath);
+      const pageWidth = doc.page.width - 80;
       
       doc.pipe(stream);
 
-      // Header
-      doc.fontSize(24).font('Helvetica-Bold').text('SmartGoal Financial Report', { align: 'center' });
-      doc.fontSize(12).font('Helvetica').text(monthName, { align: 'center' });
-      doc.moveDown();
-      doc.fontSize(10).text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, { align: 'center' });
-      doc.moveDown(2);
+      // Modern Header with gradient
+      doc.save();
+      doc.rect(0, 0, doc.page.width, 140).fill('#059669');
+      doc.rect(0, 0, doc.page.width, 140).fillOpacity(0.1).fill('#000000');
+      doc.fillOpacity(1);
+      
+      doc.fontSize(32).fillColor('#ffffff').font('Helvetica-Bold')
+         .text('Monthly Financial Report', 40, 30, { align: 'center', width: pageWidth });
+      doc.fontSize(16).fillColor('#d1fae5').font('Helvetica')
+         .text(monthName, 40, 75, { align: 'center', width: pageWidth });
+      doc.fontSize(10).fillColor('#a7f3d0')
+         .text(`${user.name || 'N/A'} • ${user.email}`, 40, 100, { align: 'center', width: pageWidth });
+      doc.fontSize(8).fillColor('#d1fae5')
+         .text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 40, 118, { align: 'center', width: pageWidth });
+      doc.restore();
+      
+      doc.y = 160;
 
-      // User Information
-      doc.fontSize(14).font('Helvetica-Bold').text('User Information');
-      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-      doc.moveDown(0.5);
-      doc.fontSize(10).font('Helvetica');
-      doc.text(`Name: ${user.name || 'N/A'}`);
-      doc.text(`Email: ${user.email}`);
-      doc.moveDown(2);
+      // Financial Summary Cards
+      doc.fontSize(16).fillColor('#1f2937').font('Helvetica-Bold')
+         .text('Financial Summary', 40, doc.y);
+      doc.moveDown(0.8);
 
-      // Financial Summary
-      doc.fontSize(14).font('Helvetica-Bold').text('Financial Summary');
-      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-      doc.moveDown(0.5);
-      doc.fontSize(10).font('Helvetica');
-      
-      doc.text(`Total Income: ₹${stats.totalIncome.toLocaleString('en-IN')}`, { continued: true });
-      doc.text(`    (${data.incomes.length} transactions)`, { align: 'right' });
-      
-      doc.text(`Total Expenses: ₹${stats.totalExpenses.toLocaleString('en-IN')}`, { continued: true });
-      doc.text(`    (${data.expenses.length} transactions)`, { align: 'right' });
-      
-      doc.font('Helvetica-Bold');
-      const savingsColor = stats.netSavings >= 0 ? 'green' : 'red';
-      doc.fillColor(savingsColor).text(`Net Savings: ₹${stats.netSavings.toLocaleString('en-IN')}`);
-      doc.fillColor('black').font('Helvetica');
-      doc.moveDown(2);
+      const summaryMetrics = [
+        { 
+          label: 'Total Income', 
+          value: `₹${stats.totalIncome.toLocaleString('en-IN')}`, 
+          subtext: `${data.incomes.length} transactions`,
+          icon: '💰', 
+          color: '#10b981' 
+        },
+        { 
+          label: 'Total Expenses', 
+          value: `₹${stats.totalExpenses.toLocaleString('en-IN')}`, 
+          subtext: `${data.expenses.length} transactions`,
+          icon: '💸', 
+          color: '#ef4444' 
+        },
+        { 
+          label: 'Net Savings', 
+          value: `₹${stats.netSavings.toLocaleString('en-IN')}`, 
+          subtext: stats.netSavings >= 0 ? 'Positive balance' : 'Deficit',
+          icon: stats.netSavings >= 0 ? '💎' : '⚠️', 
+          color: stats.netSavings >= 0 ? '#8b5cf6' : '#f59e0b' 
+        }
+      ];
+
+      const cardWidth = (pageWidth - 40) / 3;
+      const cardHeight = 80;
+      let currentY = doc.y;
+
+      summaryMetrics.forEach((metric, index) => {
+        const x = 40 + (index * (cardWidth + 20));
+        const y = currentY;
+        
+        // Card with shadow
+        doc.save();
+        doc.roundedRect(x + 2, y + 2, cardWidth, cardHeight, 8).fill('#00000015');
+        doc.roundedRect(x, y, cardWidth, cardHeight, 8).fillAndStroke('#ffffff', '#e0e0e0');
+        
+        // Icon circle
+        doc.circle(x + 25, y + 25, 18).fillAndStroke(metric.color + '20', metric.color + '20');
+        doc.fontSize(20).fillColor(metric.color).text(metric.icon, x + 16, y + 15);
+        
+        // Label
+        doc.fontSize(9).fillColor('#6c757d').font('Helvetica').text(metric.label, x + 50, y + 12, { width: cardWidth - 60 });
+        
+        // Value
+        doc.fontSize(13).fillColor('#212529').font('Helvetica-Bold').text(metric.value, x + 50, y + 28, { width: cardWidth - 60 });
+        
+        // Subtext
+        doc.fontSize(8).fillColor('#9ca3af').font('Helvetica').text(metric.subtext, x + 50, y + 48, { width: cardWidth - 60 });
+        
+        doc.restore();
+      });
+
+      doc.y = currentY + cardHeight + 30;
 
       // Goals Summary
-      doc.fontSize(14).font('Helvetica-Bold').text('Goals Summary');
-      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-      doc.moveDown(0.5);
-      doc.fontSize(10).font('Helvetica');
-      doc.text(`Active Goals: ${stats.activeGoals}`);
-      doc.text(`Completed Goals: ${stats.completedGoals}`);
-      doc.text(`Total Progress: ₹${stats.totalGoalProgress.toLocaleString('en-IN')} / ₹${stats.totalGoalTarget.toLocaleString('en-IN')}`);
+      doc.fontSize(16).fillColor('#1f2937').font('Helvetica-Bold')
+         .text('Goals Summary', 40, doc.y);
+      doc.moveDown(0.8);
+
+      const goalsMetrics = [
+        { label: 'Active Goals', value: `${stats.activeGoals}`, icon: '🎯', color: '#3b82f6' },
+        { label: 'Completed Goals', value: `${stats.completedGoals}`, icon: '✅', color: '#10b981' },
+        { label: 'Total Progress', value: `₹${stats.totalGoalProgress.toLocaleString('en-IN')}`, icon: '📊', color: '#8b5cf6' },
+        { label: 'Total Target', value: `₹${stats.totalGoalTarget.toLocaleString('en-IN')}`, icon: '🎯', color: '#f59e0b' }
+      ];
+
+      const goalCardWidth = (pageWidth - 20) / 2;
+      const goalCardHeight = 60;
+      currentY = doc.y;
+
+      goalsMetrics.forEach((metric, index) => {
+        const col = index % 2;
+        const row = Math.floor(index / 2);
+        const x = 40 + (col * (goalCardWidth + 20));
+        const y = currentY + (row * (goalCardHeight + 15));
+        
+        // Card
+        doc.save();
+        doc.roundedRect(x + 2, y + 2, goalCardWidth, goalCardHeight, 8).fill('#00000015');
+        doc.roundedRect(x, y, goalCardWidth, goalCardHeight, 8).fillAndStroke('#ffffff', '#e0e0e0');
+        
+        // Icon
+        doc.circle(x + 20, y + goalCardHeight / 2, 15).fillAndStroke(metric.color + '20', metric.color + '20');
+        doc.fontSize(16).fillColor(metric.color).text(metric.icon, x + 13, y + goalCardHeight / 2 - 8);
+        
+        // Label and value
+        doc.fontSize(9).fillColor('#6c757d').text(metric.label, x + 45, y + 15, { width: goalCardWidth - 55 });
+        doc.fontSize(14).fillColor('#212529').font('Helvetica-Bold').text(metric.value, x + 45, y + 30, { width: goalCardWidth - 55 });
+        doc.font('Helvetica');
+        
+        doc.restore();
+      });
+
+      doc.y = currentY + (Math.ceil(goalsMetrics.length / 2) * (goalCardHeight + 15)) + 20;
+
       if (stats.totalGoalTarget > 0) {
         const percentage = (stats.totalGoalProgress / stats.totalGoalTarget * 100).toFixed(1);
-        doc.text(`Overall Completion: ${percentage}%`);
+        doc.fontSize(11).fillColor('#6b7280').font('Helvetica')
+           .text(`Overall Completion: ${percentage}%`, 40, doc.y);
+        doc.moveDown(1.5);
       }
-      doc.moveDown(2);
 
       // Marketplace Summary
       if (stats.marketplaceListings > 0 || stats.marketplaceSales > 0) {
-        doc.fontSize(14).font('Helvetica-Bold').text('Marketplace Summary');
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
-        doc.fontSize(10).font('Helvetica');
-        doc.text(`Total Listings: ${stats.marketplaceListings}`);
-        doc.text(`Sales This Month: ${stats.marketplaceSales}`);
-        doc.text(`Revenue This Month: ₹${stats.marketplaceRevenue.toLocaleString('en-IN')}`);
-        doc.moveDown(2);
+        doc.fontSize(16).fillColor('#1f2937').font('Helvetica-Bold')
+           .text('Marketplace Summary', 40, doc.y);
+        doc.moveDown(0.8);
+
+        const marketplaceMetrics = [
+          { label: 'Total Listings', value: `${stats.marketplaceListings}`, icon: '🏷️', color: '#06b6d4' },
+          { label: 'Sales This Month', value: `${stats.marketplaceSales}`, icon: '📦', color: '#10b981' },
+          { label: 'Revenue', value: `₹${stats.marketplaceRevenue.toLocaleString('en-IN')}`, icon: '💰', color: '#f59e0b' }
+        ];
+
+        const mpCardWidth = (pageWidth - 40) / 3;
+        const mpCardHeight = 60;
+        currentY = doc.y;
+
+        marketplaceMetrics.forEach((metric, index) => {
+          const x = 40 + (index * (mpCardWidth + 20));
+          const y = currentY;
+          
+          doc.save();
+          doc.roundedRect(x + 2, y + 2, mpCardWidth, mpCardHeight, 8).fill('#00000015');
+          doc.roundedRect(x, y, mpCardWidth, mpCardHeight, 8).fillAndStroke('#ffffff', '#e0e0e0');
+          
+          doc.circle(x + 20, y + mpCardHeight / 2, 15).fillAndStroke(metric.color + '20', metric.color + '20');
+          doc.fontSize(16).fillColor(metric.color).text(metric.icon, x + 13, y + mpCardHeight / 2 - 8);
+          
+          doc.fontSize(9).fillColor('#6c757d').text(metric.label, x + 45, y + 15, { width: mpCardWidth - 55 });
+          doc.fontSize(14).fillColor('#212529').font('Helvetica-Bold').text(metric.value, x + 45, y + 30, { width: mpCardWidth - 55 });
+          doc.font('Helvetica');
+          
+          doc.restore();
+        });
+
+        doc.y = currentY + mpCardHeight + 30;
       }
 
       // Top Income Sources
       if (data.incomes.length > 0) {
-        doc.addPage();
-        doc.fontSize(14).font('Helvetica-Bold').text('Top Income Sources');
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
-        doc.fontSize(10).font('Helvetica');
+        if (doc.y > 650) doc.addPage();
+        
+        doc.fontSize(16).fillColor('#1f2937').font('Helvetica-Bold')
+           .text('💰 Top Income Sources', 40, doc.y);
+        doc.moveDown(0.8);
 
         const incomeBySource = {};
         data.incomes.forEach(income => {
@@ -188,17 +292,33 @@ async function createPDFReport(user, stats, dateRange, data) {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
           .forEach(([source, amount], index) => {
-            doc.text(`${index + 1}. ${source}: ₹${amount.toLocaleString('en-IN')}`);
+            const itemY = doc.y;
+            
+            doc.save();
+            doc.roundedRect(40, itemY, pageWidth, 35, 6).fillAndStroke('#ecfdf5', '#a7f3d0');
+            
+            doc.circle(55, itemY + 17, 10).fillAndStroke('#10b981', '#10b981');
+            doc.fontSize(8).fillColor('#ffffff').font('Helvetica-Bold')
+               .text(`${index + 1}`, 50, itemY + 12);
+            
+            doc.fontSize(10).fillColor('#065f46').font('Helvetica-Bold')
+               .text(source, 75, itemY + 10);
+            doc.fontSize(10).fillColor('#047857')
+               .text(`₹${amount.toLocaleString('en-IN')}`, pageWidth - 80, itemY + 10);
+            
+            doc.restore();
+            doc.y = itemY + 45;
           });
-        doc.moveDown(2);
+        doc.moveDown(1);
       }
 
       // Top Expenses
       if (data.expenses.length > 0) {
-        doc.fontSize(14).font('Helvetica-Bold').text('Top Expense Categories');
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
-        doc.fontSize(10).font('Helvetica');
+        if (doc.y > 650) doc.addPage();
+        
+        doc.fontSize(16).fillColor('#1f2937').font('Helvetica-Bold')
+           .text('💸 Top Expense Categories', 40, doc.y);
+        doc.moveDown(0.8);
 
         const expenseByCategory = {};
         data.expenses.forEach(expense => {
@@ -210,37 +330,78 @@ async function createPDFReport(user, stats, dateRange, data) {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
           .forEach(([category, amount], index) => {
-            doc.text(`${index + 1}. ${category}: ₹${amount.toLocaleString('en-IN')}`);
+            const itemY = doc.y;
+            
+            doc.save();
+            doc.roundedRect(40, itemY, pageWidth, 35, 6).fillAndStroke('#fef2f2', '#fecaca');
+            
+            doc.circle(55, itemY + 17, 10).fillAndStroke('#ef4444', '#ef4444');
+            doc.fontSize(8).fillColor('#ffffff').font('Helvetica-Bold')
+               .text(`${index + 1}`, 50, itemY + 12);
+            
+            doc.fontSize(10).fillColor('#7f1d1d').font('Helvetica-Bold')
+               .text(category, 75, itemY + 10);
+            doc.fontSize(10).fillColor('#991b1b')
+               .text(`₹${amount.toLocaleString('en-IN')}`, pageWidth - 80, itemY + 10);
+            
+            doc.restore();
+            doc.y = itemY + 45;
           });
-        doc.moveDown(2);
+        doc.moveDown(1);
       }
 
       // Active Goals Details
       const activeGoals = data.goals.filter(g => g.status === 'active');
       if (activeGoals.length > 0) {
-        if (doc.y > 600) doc.addPage();
-        doc.fontSize(14).font('Helvetica-Bold').text('Active Goals');
-        doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-        doc.moveDown(0.5);
-        doc.fontSize(10).font('Helvetica');
+        if (doc.y > 650) doc.addPage();
+        
+        doc.fontSize(16).fillColor('#1f2937').font('Helvetica-Bold')
+           .text('🎯 Active Goals', 40, doc.y);
+        doc.moveDown(0.8);
 
         activeGoals.forEach((goal, index) => {
           if (doc.y > 700) doc.addPage();
+          
           const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount * 100).toFixed(1) : 0;
-          doc.text(`${index + 1}. ${goal.name}`);
-          doc.text(`   Progress: ₹${goal.currentAmount.toLocaleString('en-IN')} / ₹${goal.targetAmount.toLocaleString('en-IN')} (${progress}%)`);
-          doc.text(`   Target Date: ${new Date(goal.targetDate).toLocaleDateString('en-IN')}`);
-          doc.moveDown(0.5);
+          const goalY = doc.y;
+          const progressColor = progress >= 75 ? '#10b981' : progress >= 50 ? '#3b82f6' : progress >= 25 ? '#f59e0b' : '#ef4444';
+          
+          doc.save();
+          doc.roundedRect(40, goalY, pageWidth, 70, 8).fillAndStroke('#ffffff', '#e5e7eb');
+          
+          doc.fontSize(12).fillColor('#1f2937').font('Helvetica-Bold')
+             .text(`${index + 1}. ${goal.name}`, 50, goalY + 12, { width: pageWidth - 20 });
+          doc.fontSize(9).fillColor('#6b7280').font('Helvetica')
+             .text(`₹${goal.currentAmount.toLocaleString('en-IN')} of ₹${goal.targetAmount.toLocaleString('en-IN')}`, 50, goalY + 30);
+          doc.fontSize(8).fillColor('#9ca3af')
+             .text(`Target: ${new Date(goal.targetDate).toLocaleDateString('en-IN')}`, 50, goalY + 45);
+          
+          // Progress bar
+          const barWidth = pageWidth - 100;
+          const barX = 50;
+          const barY = goalY + 55;
+          
+          doc.roundedRect(barX, barY, barWidth, 8, 3).fillAndStroke('#e9ecef', '#e9ecef');
+          if (progress > 0) {
+            const fillWidth = (barWidth * progress) / 100;
+            doc.roundedRect(barX, barY, fillWidth, 8, 3).fillAndStroke(progressColor, progressColor);
+          }
+          
+          doc.fontSize(9).fillColor(progressColor).font('Helvetica-Bold')
+             .text(`${progress}%`, barX + barWidth + 10, barY);
+          
+          doc.restore();
+          doc.y = goalY + 80;
         });
       }
 
       // Footer
-      doc.fontSize(8).fillColor('gray').text(
-        'This report is generated automatically by SmartGoal. For questions, contact support.',
-        50,
-        doc.page.height - 50,
-        { align: 'center' }
-      );
+      const footerY = doc.page.height - 60;
+      doc.save();
+      doc.rect(0, footerY, doc.page.width, 60).fill('#f9fafb');
+      doc.fontSize(8).fillColor('#9ca3af').font('Helvetica')
+         .text('This report is generated automatically by SmartGoal. For questions, contact support.', 40, footerY + 25, { align: 'center', width: pageWidth });
+      doc.restore();
 
       doc.end();
 

@@ -3,6 +3,23 @@ import { useAuth } from "@/context/AuthContext.jsx";
 import { Navigate, useNavigate } from "react-router-dom";
 import api, { getFileUrl } from "@/utils/api.js";
 import { toast } from "react-toastify";
+import MarketplaceSearch from "@/components/MarketplaceSearch.jsx";
+import ProductDetailsModal from "@/components/ProductDetailsModal.jsx";
+import { 
+  MdSearch, 
+  MdClose, 
+  MdShoppingCart, 
+  MdAccountBalanceWallet,
+  MdPhoneAndroid,
+  MdLaptop,
+  MdWatch,
+  MdHeadphones,
+  MdTablet,
+  MdApps,
+  MdStar,
+  MdLocationOn,
+  MdArrowForward
+} from "react-icons/md";
 
 export default function BuyerDashboard() {
   const navigate = useNavigate();
@@ -12,6 +29,8 @@ export default function BuyerDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [marketplaceItems, setMarketplaceItems] = useState([]);
+  const [featuredItems, setFeaturedItems] = useState([]);
+  const [recentItems, setRecentItems] = useState([]);
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({
     totalOrders: 0,
@@ -25,17 +44,36 @@ export default function BuyerDashboard() {
     monthlySavings: 0,
     totalSavings: 0
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [filters, setFilters] = useState({});
+  const [selectedItemId, setSelectedItemId] = useState(null);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0
+  });
+
+  // Categories for quick filtering
+  const categories = [
+    { id: "all", label: "All Items", icon: MdApps, color: "#4d5fd9" },
+    { id: "phone", label: "Phones", icon: MdPhoneAndroid, color: "#5a6ee0" },
+    { id: "laptop", label: "Laptops", icon: MdLaptop, color: "#6d7ee6" },
+    { id: "smartwatch", label: "Watches", icon: MdWatch, color: "#808eed" },
+    { id: "earphones", label: "Audio", icon: MdHeadphones, color: "#939ef3" },
+    { id: "tablet", label: "Tablets", icon: MdTablet, color: "#a6aef9" }
+  ];
 
   useEffect(() => {
     fetchBuyerData(false);
-    
-    // Refresh data every 30 seconds for real-time updates
-    const interval = setInterval(() => {
-      fetchBuyerData(false);
-    }, 30000);
-
-    return () => clearInterval(interval);
+    fetchFeaturedItems();
+    fetchRecentItems();
   }, []);
+
+  // Fetch marketplace items when search/filters/category change
+  useEffect(() => {
+    fetchMarketplaceItems();
+  }, [searchQuery, filters, activeCategory]);
 
   const fetchBuyerData = async (isManualRefresh = false) => {
     try {
@@ -45,19 +83,14 @@ export default function BuyerDashboard() {
         setLoading(true);
       }
       
-      const [ordersRes, itemsRes, statsRes, financeRes] = await Promise.allSettled([
+      const [ordersRes, statsRes, financeRes] = await Promise.allSettled([
         api.get("/orders"),
-        api.get("/marketplace/browse?limit=6"),
         api.get("/orders/stats"),
         api.get("/finance/summary")
       ]);
 
       if (ordersRes.status === 'fulfilled') {
         setOrders(ordersRes.value.data || []);
-      }
-
-      if (itemsRes.status === 'fulfilled') {
-        setMarketplaceItems(itemsRes.value.data || []);
       }
 
       if (statsRes.status === 'fulfilled') {
@@ -87,6 +120,68 @@ export default function BuyerDashboard() {
         setLoading(false);
       }
     }
+  };
+
+  const fetchFeaturedItems = async () => {
+    try {
+      const response = await api.get("/marketplace/featured?limit=4");
+      setFeaturedItems(response.data || []);
+    } catch (error) {
+      console.error("Failed to fetch featured items:", error);
+    }
+  };
+
+  const fetchRecentItems = async () => {
+    try {
+      const response = await api.get("/marketplace/browse?limit=8&sortBy=newest");
+      setRecentItems(response.data.items || response.data || []);
+    } catch (error) {
+      console.error("Failed to fetch recent items:", error);
+    }
+  };
+
+  const fetchMarketplaceItems = async (page = 1) => {
+    try {
+      // Build query params
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '12',
+        ...(searchQuery && { search: searchQuery }),
+        ...(activeCategory !== "all" && { subCategory: activeCategory }),
+        ...(filters.condition && { condition: filters.condition }),
+        ...(filters.minPrice && { minPrice: filters.minPrice }),
+        ...(filters.maxPrice && { maxPrice: filters.maxPrice }),
+        ...(filters.location && { location: filters.location }),
+        ...(filters.maxDistance && { maxDistance: filters.maxDistance }),
+        ...(filters.sortBy && { sortBy: filters.sortBy })
+      });
+
+      const response = await api.get(`/marketplace/browse?${params}`);
+      
+      if (response.data.items) {
+        setMarketplaceItems(response.data.items);
+        setPagination(response.data.pagination || {
+          currentPage: 1,
+          totalPages: 1,
+          totalItems: 0
+        });
+      } else {
+        setMarketplaceItems(response.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch marketplace items:", error);
+      toast.error("Failed to load marketplace items");
+    }
+  };
+
+  const handleCategoryClick = (categoryId) => {
+    setActiveCategory(categoryId);
+    setSearchQuery(""); // Clear search when changing category
+  };
+
+  const handleViewItem = (item) => {
+    // Open product details modal
+    setSelectedItemId(item._id);
   };
 
   const handleContactSeller = (item) => {
@@ -152,292 +247,362 @@ export default function BuyerDashboard() {
 
   return (
     <div className="container py-5 dashboard-page buyer-dashboard">
-      {/* Header */}
-      <div className="dashboard-hero">
-        <div className="welcome-content">
-          <div className="d-flex justify-content-between align-items-start">
-            <div>
-              <h1 className="title d-flex align-items-center gap-2">
-                Welcome{user?.profile?.name ? `, ${user.profile.name}` : ", hey"}
-                <div className="welcome-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 3L5 7m4-4l4 4M3 5h18v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z"/>
-                  </svg>
-                </div>
-              </h1>
-              <div className="subtitle">
-                Browse, save, and purchase amazing items from our marketplace
-              </div>
+      {/* Attractive Header with Gradient */}
+      <div className="mb-5">
+        <div className="d-flex align-items-center gap-3 mb-2">
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #4d5fd9 0%, #6d7ee6 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            fontSize: '24px',
+            boxShadow: '0 4px 12px rgba(77, 95, 217, 0.3)'
+          }}>
+            🛍️
+          </div>
+          <div>
+            <h2 className="mb-0">Welcome back{user?.profile?.name ? `, ${user.profile.name}` : ""}!</h2>
+            <p className="text-muted mb-0">Discover quality electronics at great prices</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Modern Search Bar with Icon */}
+      <div className="mb-5">
+        <div className="card border-0 shadow-sm" style={{ 
+          borderRadius: '16px',
+          background: 'linear-gradient(135deg, #f8f9ff 0%, #e8ecff 100%)'
+        }}>
+          <div className="card-body p-4">
+            <div className="input-group input-group-lg">
+              <span className="input-group-text bg-white border-0" style={{ borderRadius: '12px 0 0 12px' }}>
+                <MdSearch size={28} color="#4d5fd9" />
+              </span>
+              <input
+                type="text"
+                className="form-control border-0 ps-3"
+                placeholder="Search for phones, laptops, watches..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ 
+                  fontSize: '1.1rem',
+                  borderRadius: '0 12px 12px 0',
+                  boxShadow: 'none'
+                }}
+              />
+              {searchQuery && (
+                <button 
+                  className="btn btn-link text-muted"
+                  onClick={() => setSearchQuery("")}
+                  style={{ position: 'absolute', right: '10px', zIndex: 10 }}
+                >
+                  <MdClose size={24} />
+                </button>
+              )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Attractive Category Pills with Icons */}
+      <div className="mb-5">
+        <div className="d-flex gap-3 flex-wrap justify-content-center">
+          {categories.map(cat => {
+            const IconComponent = cat.icon;
+            const isActive = activeCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                className={`btn btn-lg ${isActive ? '' : 'btn-outline-secondary'}`}
+                onClick={() => handleCategoryClick(cat.id)}
+                style={{ 
+                  minWidth: '140px',
+                  borderRadius: '12px',
+                  border: isActive ? 'none' : '2px solid #e0e0e0',
+                  background: isActive ? `linear-gradient(135deg, ${cat.color} 0%, ${cat.color}dd 100%)` : 'white',
+                  color: isActive ? 'white' : '#666',
+                  fontWeight: '600',
+                  transition: 'all 0.3s ease',
+                  boxShadow: isActive ? '0 4px 12px rgba(0,0,0,0.15)' : 'none'
+                }}
+              >
+                <IconComponent size={24} className="me-2" />
+                {cat.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Beautiful Stats Cards with Lighter Brand Color Gradients */}
+      <div className="row g-4 mb-5">
+        <div className="col-md-6">
+          <div className="card border-0 shadow-sm h-100" style={{ 
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
+            color: 'white'
+          }}>
+            <div className="card-body text-center p-4">
+              <div className="mb-3">
+                <MdAccountBalanceWallet size={56} style={{ opacity: 0.95 }} />
+              </div>
+              <h2 className="mb-2" style={{ fontSize: '2.5rem', fontWeight: '700' }}>
+                ₹{financeData.monthlySavings?.toLocaleString() || '0'}
+              </h2>
+              <p className="mb-0" style={{ fontSize: '1.1rem', opacity: 0.95 }}>Available Budget</p>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-6">
+          <div className="card border-0 shadow-sm h-100" style={{ 
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #4d5fd9 0%, #6d7ee6 100%)',
+            color: 'white'
+          }}>
+            <div className="card-body text-center p-4">
+              <div className="mb-3">
+                <MdShoppingCart size={56} style={{ opacity: 0.95 }} />
+              </div>
+              <h2 className="mb-2" style={{ fontSize: '2.5rem', fontWeight: '700' }}>
+                {stats.totalOrders}
+              </h2>
+              <p className="mb-0" style={{ fontSize: '1.1rem', opacity: 0.95 }}>Total Orders</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Browse Items - Beautiful Grid */}
+      <div className="mb-5">
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <h4 className="mb-0" style={{ fontWeight: '700', fontSize: '1.5rem' }}>
+            {searchQuery ? `Results for "${searchQuery}"` : 
+             activeCategory !== "all" ? categories.find(c => c.id === activeCategory)?.label : 
+             "Browse Electronics"}
+          </h4>
+          {pagination.totalItems > 0 && (
+            <span className="badge bg-primary fs-6" style={{ borderRadius: '8px', padding: '8px 16px' }}>
+              {pagination.totalItems} items
+            </span>
+          )}
+        </div>
+
+        {marketplaceItems.length === 0 ? (
+          <div className="card border-0 shadow-sm" style={{ borderRadius: '16px' }}>
+            <div className="card-body text-center py-5">
+              <MdSearch size={80} color="#ccc" className="mb-4" />
+              <h5 className="mb-3">No items found</h5>
+              <p className="text-muted mb-4">
+                {searchQuery || activeCategory !== "all"
+                  ? "Try adjusting your search or filters"
+                  : "Check back later for new listings"}
+              </p>
+              {(searchQuery || activeCategory !== "all") && (
+                <button 
+                  className="btn btn-primary btn-lg"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setActiveCategory("all");
+                  }}
+                  style={{ borderRadius: '12px' }}
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="row g-4 mb-5">
+              {marketplaceItems.map((item) => (
+                <div key={item._id} className="col-md-6 col-lg-4">
+                  <div 
+                    className="card border-0 shadow-sm h-100" 
+                    style={{ 
+                      cursor: 'pointer',
+                      borderRadius: '16px',
+                      transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                      overflow: 'hidden'
+                    }} 
+                    onClick={() => handleViewItem(item)}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-8px)';
+                      e.currentTarget.style.boxShadow = '0 12px 24px rgba(0,0,0,0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+                    }}
+                  >
+                    <div className="position-relative">
+                      {item.images && item.images[0] ? (
+                        <img
+                          src={getFileUrl(item.images[0]?.url || item.images[0])}
+                          alt={item.title}
+                          className="card-img-top"
+                          style={{ height: '240px', objectFit: 'cover' }}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            if (e.target.nextElementSibling) {
+                              e.target.nextElementSibling.style.display = 'flex';
+                            }
+                          }}
+                        />
+                      ) : null}
+                      <div 
+                        className="card-img-top bg-light d-flex align-items-center justify-content-center"
+                        style={{ height: '240px', display: item.images && item.images[0] ? 'none' : 'flex' }}
+                      >
+                        <MdApps size={64} color="#ccc" />
+                      </div>
+
+                      <span 
+                        className={`badge ${getConditionBadgeColor(item.condition)} position-absolute`} 
+                        style={{ 
+                          top: '12px', 
+                          right: '12px', 
+                          fontSize: '0.85rem',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        {getConditionLabel(item.condition)}
+                      </span>
+                    </div>
+
+                    <div className="card-body p-4">
+                      <h5 className="card-title mb-3" style={{ fontWeight: '600', fontSize: '1.1rem' }}>
+                        {item.title}
+                      </h5>
+                      
+                      <div className="d-flex align-items-center gap-2 mb-3 text-muted">
+                        <small style={{ fontSize: '0.9rem' }}>{item.sellerName}</small>
+                        {item.sellerRating > 0 && (
+                          <div className="d-flex align-items-center gap-1">
+                            <MdStar size={16} color="#ffc107" />
+                            <small style={{ fontSize: '0.9rem', color: '#ffc107', fontWeight: '600' }}>
+                              {item.sellerRating.toFixed(1)}
+                            </small>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="d-flex justify-content-between align-items-center">
+                        <h3 className="text-primary mb-0" style={{ fontWeight: '700', fontSize: '1.8rem' }}>
+                          ₹{(item.price || 0).toLocaleString()}
+                        </h3>
+                        <button
+                          className="btn btn-primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleContactSeller(item);
+                          }}
+                          style={{ 
+                            borderRadius: '10px',
+                            fontWeight: '600',
+                            padding: '10px 20px'
+                          }}
+                        >
+                          View <MdArrowForward size={18} className="ms-1" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Modern Pagination */}
+            {pagination.totalPages > 1 && (
+              <div className="d-flex justify-content-center">
+                <nav>
+                  <ul className="pagination pagination-lg">
+                    <li className={`page-item ${pagination.currentPage === 1 ? 'disabled' : ''}`}>
+                      <button 
+                        className="page-link"
+                        onClick={() => fetchMarketplaceItems(pagination.currentPage - 1)}
+                        disabled={pagination.currentPage === 1}
+                        style={{ borderRadius: '10px 0 0 10px', fontWeight: '600' }}
+                      >
+                        Previous
+                      </button>
+                    </li>
+                    {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
+                      const pageNum = i + 1;
+                      return (
+                        <li key={pageNum} className={`page-item ${pagination.currentPage === pageNum ? 'active' : ''}`}>
+                          <button 
+                            className="page-link"
+                            onClick={() => fetchMarketplaceItems(pageNum)}
+                            style={{ fontWeight: '600' }}
+                          >
+                            {pageNum}
+                          </button>
+                        </li>
+                      );
+                    })}
+                    <li className={`page-item ${pagination.currentPage === pagination.totalPages ? 'disabled' : ''}`}>
+                      <button 
+                        className="page-link"
+                        onClick={() => fetchMarketplaceItems(pagination.currentPage + 1)}
+                        disabled={pagination.currentPage === pagination.totalPages}
+                        style={{ borderRadius: '0 10px 10px 0', fontWeight: '600' }}
+                      >
+                        Next
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Attractive CTA with Lighter Brand Color */}
+      <div className="text-center py-5">
+        <div className="card border-0 shadow-sm" style={{ 
+          borderRadius: '16px',
+          background: 'linear-gradient(135deg, #4d5fd9 0%, #6d7ee6 100%)',
+          color: 'white'
+        }}>
+          <div className="card-body p-5">
+            <h4 className="mb-3" style={{ fontWeight: '700' }}>💡 Want to plan your finances?</h4>
+            <p className="mb-4" style={{ fontSize: '1.1rem', opacity: 0.95 }}>
+              Switch to Goal Setter mode to save for your dreams
+            </p>
             <button 
-              className="btn btn-outline-secondary btn-sm"
-              onClick={() => fetchBuyerData()}
-              title="Refresh dashboard data"
+              className="btn btn-light btn-lg"
+              onClick={() => navigate("/profile")}
+              style={{ 
+                borderRadius: '12px',
+                fontWeight: '600',
+                padding: '12px 32px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+              }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{display: 'inline-block', marginRight: '6px'}}>
-                <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-              </svg>
-              Refresh
+              Switch to Goal Setter <MdArrowForward size={20} className="ms-2" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Finance & Buying Stats */}
-      <div className="row g-4 mb-4">
-        {/* Finance Summary - Available Savings */}
-        <div className="col-12 col-lg-6">
-          <div className="card shadow-sm border-success" style={{ borderWidth: '2px' }}>
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-start mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="2" y="6" width="20" height="12" rx="2"/>
-                      <path d="M6 10h12"/>
-                      <path d="M6 14h12"/>
-                      <circle cx="12" cy="12" r="2"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Available Savings</h5>
-                </div>
-                <a href="/buyer-finances" className="btn btn-sm btn-outline-success">View Details</a>
-              </div>
-              
-              <div className="mb-3">
-                <div className="h2 mb-1 text-success">₹{financeData.monthlySavings?.toLocaleString() || '0'}</div>
-                <small className="text-muted">💰 Your current purchasing power</small>
-              </div>
-              
-              <div className="alert alert-info mb-0 py-2 px-3" style={{ fontSize: '0.875rem' }}>
-                <div className="d-flex align-items-start gap-2">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 mt-1">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="12" y1="16" x2="12" y2="12"/>
-                    <line x1="12" y1="8" x2="12.01" y2="8"/>
-                  </svg>
-                  <div>
-                    <strong>Before you purchase:</strong> You can only buy items if you have sufficient savings. 
-                    {financeData.monthlySavings > 0 ? (
-                      <span className="text-success d-block mt-1">✓ You have ₹{financeData.monthlySavings?.toLocaleString()} available for purchases</span>
-                    ) : (
-                      <span className="text-warning d-block mt-1">⚠️ Add income to your finances to start shopping</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Buyer Stats */}
-        <div className="col-12 col-lg-6">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
-                      <line x1="3" y1="6" x2="21" y2="6"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Buying Summary</h5>
-                </div>
-                
-              </div>
-              <div className="row g-3 text-center">
-                <div className="col-6">
-                  <div className="small text-muted">Total Orders</div>
-                  <div className="h4 mb-0 text-primary">{stats.totalOrders}</div>
-                </div>
-                <div className="col-6">
-                  <div className="small text-muted">Total Spent</div>
-                  <div className="h4 mb-0 text-danger">₹{(stats.totalSpent || 0).toLocaleString()}</div>
-                </div>
-                <div className="col-6">
-                  <div className="small text-muted">Saved Items</div>
-                  <div className="h4 mb-0 text-info">{stats.savedItems}</div>
-                </div>
-                <div className="col-6">
-                  <div className="small text-muted">Watching</div>
-                  <div className="h4 mb-0 text-warning">{stats.activeWatches}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Orders */}
-      <div className="row g-4 mb-4">
-        <div className="col-12">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Recent Orders</h5>
-                </div>
-                <a href="/orders" className="btn btn-sm btn-outline-primary">View All</a>
-              </div>
-              {orders.length === 0 ? (
-                <div className="text-center py-4">
-                  <div className="text-muted mb-2">No orders yet</div>
-                  <small className="text-muted">Start shopping to see your order history</small>
-                </div>
-              ) : (
-                <div className="d-grid gap-3">
-                  {orders.slice(0, 3).map((order) => (
-                    <div key={order._id} className="d-flex align-items-center justify-content-between p-3 border rounded">
-                      <div className="flex-grow-1">
-                        <div className="fw-semibold small">{order.itemTitle || 'Item'}</div>
-                        <div className="small text-muted">Order #{order._id?.substring(0, 8)}</div>
-                      </div>
-                      <div className="text-end">
-                        <div className="text-success fw-bold small">₹{(order.total || 0).toLocaleString()}</div>
-                        <span className={`badge ${getOrderStatusColor(order.status)} small`}>
-                          {order.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Featured Items for Purchase */}
-      <div className="row g-4 mb-4">
-        <div className="col-12">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-4">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="9" cy="21" r="1"/>
-                      <circle cx="20" cy="21" r="1"/>
-                      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Featured Listings</h5>
-                </div>
-                <a href="/marketplace" className="btn btn-sm btn-outline-primary">Browse More</a>
-              </div>
-
-              {marketplaceItems.length === 0 ? (
-                <div className="text-center py-5">
-                  <div className="text-muted mb-3">No items available</div>
-                  <small className="text-muted">Check back later for new listings</small>
-                </div>
-              ) : (
-                <div className="row g-3">
-                  {marketplaceItems.slice(0, 6).map((item) => (
-                    <div key={item._id} className="col-md-6 col-lg-4">
-                      <div className="card h-100 marketplace-item-card">
-                        <div className="position-relative">
-                          {item.images && item.images[0] ? (
-                            <img
-                              src={getFileUrl(item.images[0]?.url || item.images[0])}
-                              alt={item.title}
-                              className="card-img-top"
-                              style={{ height: '150px', objectFit: 'cover' }}
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                                if (e.target.nextElementSibling) {
-                                  e.target.nextElementSibling.style.display = 'flex';
-                                }
-                              }}
-                            />
-                          ) : null}
-                          <div 
-                            className="card-img-top bg-light d-flex align-items-center justify-content-center"
-                            style={{ height: '150px', display: item.images && item.images[0] ? 'none' : 'flex' }}
-                          >
-                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted">
-                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                              <circle cx="8.5" cy="8.5" r="1.5"/>
-                              <polyline points="21,15 16,10 5,21"/>
-                            </svg>
-                          </div>
-
-                          <span className={`badge ${getConditionBadgeColor(item.condition)} position-absolute`} style={{ top: '8px', right: '8px' }}>
-                            {getConditionLabel(item.condition)}
-                          </span>
-                        </div>
-
-                        <div className="card-body d-flex flex-column">
-                          <h6 className="card-title small">{item.title}</h6>
-                          <p className="card-text text-muted small flex-grow-1">
-                            {item.category && <span className="badge bg-light text-dark me-2">{item.category}</span>}
-                          </p>
-
-                          <div className="mt-auto">
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <div className="h6 text-primary mb-0">₹{(item.price || 0).toLocaleString()}</div>
-                              <small className="text-muted">{item.views || 0} views</small>
-                            </div>
-                            <div className="d-grid gap-2">
-                              <button
-                                className="btn btn-sm btn-primary"
-                                onClick={() => handleContactSeller(item)}
-                              >
-                                Contact Seller
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Stats Footer */}
-      <div className="row g-4 mb-4">
-        <div className="col-12">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <h6 className="card-title mb-3">Shopping Insights</h6>
-              <div className="row g-3 text-center">
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">This Month</div>
-                  <div className="h5 mb-0 text-primary">
-                    {orders.filter(o => new Date(o.createdAt) > new Date(Date.now() - 30*24*60*60*1000)).length} purchases
-                  </div>
-                </div>
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">Average Order</div>
-                  <div className="h5 mb-0 text-success">
-                    ₹{orders.length > 0 ? Math.round((stats.totalSpent || 0) / orders.length).toLocaleString() : '0'}
-                  </div>
-                </div>
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">Most Viewed</div>
-                  <div className="h5 mb-0 text-info">
-                    {marketplaceItems.length > 0 ? Math.max(...marketplaceItems.map(i => i.views || 0)) : '0'} views
-                  </div>
-                </div>
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">Marketplace Items</div>
-                  <div className="h5 mb-0 text-warning">{marketplaceItems.length} available</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Product Details Modal */}
+      {selectedItemId && (
+        <ProductDetailsModal
+          itemId={selectedItemId}
+          onClose={() => setSelectedItemId(null)}
+          onAddToCart={() => {
+            fetchMarketplaceItems();
+            fetchStats();
+          }}
+        />
+      )}
     </div>
   );
 }

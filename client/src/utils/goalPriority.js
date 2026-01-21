@@ -11,31 +11,26 @@ export const GOAL_CATEGORIES = {
     icon: "🛡️",
     description: "Build a safety net for unexpected expenses",
     color: "danger",
-    isFoundational: true
-  },
-  debt_repayment: {
-    label: "Debt Repayment",
-    priority: 2, // High
-    icon: "💳",
-    description: "Pay off loans and credit card debt",
-    color: "warning",
-    isFoundational: true
+    isFoundational: true,
+    aiRecommended: true
   },
   essential_purchase: {
     label: "Essential Purchase",
-    priority: 3, // Medium
+    priority: 2, // High
     icon: "🏠",
     description: "Necessary items like home repairs, medical needs",
     color: "info",
-    isFoundational: false
+    isFoundational: false,
+    aiRecommended: true
   },
   education: {
     label: "Education",
-    priority: 3, // Medium
+    priority: 2, // High
     icon: "📚",
     description: "Invest in skills and knowledge",
     color: "primary",
-    isFoundational: false
+    isFoundational: false,
+    aiRecommended: true
   },
   investment: {
     label: "Investment",
@@ -43,23 +38,19 @@ export const GOAL_CATEGORIES = {
     icon: "📈",
     description: "Long-term wealth building",
     color: "success",
-    isFoundational: false
+    isFoundational: false,
+    aiRecommended: true
   },
-  discretionary: {
-    label: "Discretionary",
-    priority: 4, // Low
-    icon: "🎯",
-    description: "Vacation, gadgets, entertainment",
-    color: "secondary",
-    isFoundational: false
-  },
-  other: {
-    label: "Other",
-    priority: 5, // Very Low
+  // Custom category (NOT recommended by AI)
+  custom: {
+    label: "Custom Category",
+    priority: 3, // Medium
     icon: "📌",
-    description: "Miscellaneous goals",
+    description: "Create your own category",
     color: "secondary",
-    isFoundational: false
+    isFoundational: false,
+    allowCustom: true,
+    aiRecommended: false
   }
 };
 
@@ -194,7 +185,45 @@ export function calculateMinimumAllocation(goals, monthlySavings) {
  * Get goal category info
  */
 export function getCategoryInfo(category) {
-  return GOAL_CATEGORIES[category] || GOAL_CATEGORIES.other;
+  // If it's a predefined category, return it
+  if (GOAL_CATEGORIES[category]) {
+    return GOAL_CATEGORIES[category];
+  }
+  
+  // Otherwise, it's a custom category
+  return {
+    label: category,
+    priority: 3,
+    icon: "📌",
+    description: "Custom category",
+    color: "secondary",
+    isFoundational: false,
+    aiRecommended: false
+  };
+}
+
+/**
+ * Get categories for custom goal creation (exclude AI-recommended ones)
+ */
+export function getCustomGoalCategories() {
+  return Object.entries(GOAL_CATEGORIES)
+    .filter(([_, info]) => !info.aiRecommended)
+    .reduce((acc, [key, info]) => {
+      acc[key] = info;
+      return acc;
+    }, {});
+}
+
+/**
+ * Get AI-recommended categories
+ */
+export function getAIRecommendedCategories() {
+  return Object.entries(GOAL_CATEGORIES)
+    .filter(([_, info]) => info.aiRecommended)
+    .reduce((acc, [key, info]) => {
+      acc[key] = info;
+      return acc;
+    }, {});
 }
 
 /**

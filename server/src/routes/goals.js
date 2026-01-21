@@ -8,6 +8,8 @@ import AutoTransfer from "../models/AutoTransfer.js";
 import Finance from "../models/Finance.js";
 import { requireAuth } from "../middleware/auth.js";
 import { checkSufficientSavings, calculateUserSavings } from "../utils/financeUtils.js";
+import { predictGoalAchievement, predictMultipleGoals } from "../utils/goalPrediction.js";
+import { sendGoalMilestoneEmail } from "../utils/emailService.js";
 
 const router = Router();
 
@@ -132,7 +134,24 @@ router.get("/", async (req, res) => {
           
           console.log(`📊 Active Goals: ${activeGoals.length}, Total Target Needed: ₹${totalTargetNeeded.toFixed(2)}`);
           
-          // Allocate savings to goals using priority-weighted distribution
+          // REALISTIC ALLOCATION: Only allocate NEW savings (not already allocated)
+          const totalAllocatedToGoals = activeGoals.reduce((sum, g) => sum + (g.currentAmount || 0), 0);
+          const newSavingsToAllocate = Math.max(0, savingsForGoals - totalAllocatedToGoals);
+          
+          console.log(`💵 Total Savings: ₹${savingsForGoals.toFixed(2)}, Already Allocated: ₹${totalAllocatedToGoals.toFixed(2)}, New to Allocate: ₹${newSavingsToAllocate.toFixed(2)}`);
+          
+          // Sort goals by priority (1 = highest priority)
+          const prioritySortedGoals = [...activeGoals].sort((a, b) => {
+            if (a.priority !== b.priority) {
+              return a.priority - b.priority;
+            }
+            return new Date(a.dueDate) - new Date(b.dueDate);
+          });
+          
+          // Allocate NEW savings to goals based on priority
+          let remainingSavings = newSavingsToAllocate;
+          
+          // Allocate savings to goals using PRIORITY-BASED allocation
           goals = await Promise.all(goals.map(async (goal) => {
             if (goal.status === 'completed' || goal.status === 'archived') {
               return goal;
@@ -140,15 +159,19 @@ router.get("/", async (req, res) => {
             
             const targetNeeded = goal.targetAmount - (goal.currentAmount || 0);
             
-            // Calculate allocation based on proportional share of savings
+            // Calculate allocation for this goal
             let allocation = 0;
-            if (totalTargetNeeded > 0 && targetNeeded > 0) {
-              // Proportional allocation based on target amount needed
-              const proportionalShare = targetNeeded / totalTargetNeeded;
-              allocation = Math.min(targetNeeded, savingsForGoals * proportionalShare);
+            if (targetNeeded > 0 && remainingSavings > 0) {
+              // Find this goal in sorted list to check if it should get allocation
+              const goalIndex = prioritySortedGoals.findIndex(g => g._id.toString() === goal._id.toString());
+              if (goalIndex !== -1) {
+                // Allocate as much as possible (up to what's needed)
+                allocation = Math.min(targetNeeded, remainingSavings);
+                remainingSavings -= allocation;
+              }
             }
             
-            const newCurrentAmount = Math.min(goal.targetAmount, (goal.currentAmount || 0) + allocation);
+            const newCurrentAmount = (goal.currentAmount || 0) + allocation;
             const progress = (newCurrentAmount / goal.targetAmount) * 100;
             
             console.log(`  Goal: "${goal.title}" - Allocated: ₹${allocation.toFixed(2)}, New Current: ₹${newCurrentAmount.toFixed(2)}/${goal.targetAmount} (${progress.toFixed(0)}%)`);
@@ -174,15 +197,16 @@ router.get("/", async (req, res) => {
               console.log(`  ⏸️ Goal "${goal.title}" automatically marked as PLANNED (0% progress)!`);
             }
             
-            // Update database if status changed or goal reached 100%
-            if (statusChanged || progress >= 100) {
+            // Check if currentAmount changed significantly (more than ₹1 difference)
+            const amountChanged = Math.abs(newCurrentAmount - (goal.currentAmount || 0)) > 1;
+            
+            // Update database if status changed, amount changed, or goal reached 100%
+            if (statusChanged || amountChanged || progress >= 100) {
               try {
-                const updateData = { status: newStatus };
-                
-                // Set exact target amount when achieved
-                if (progress >= 100) {
-                  updateData.currentAmount = goal.targetAmount;
-                }
+                const updateData = { 
+                  status: newStatus,
+                  currentAmount: progress >= 100 ? goal.targetAmount : newCurrentAmount
+                };
                 
                 const updatedGoal = await Goal.findByIdAndUpdate(
                   goal._id,
@@ -190,10 +214,12 @@ router.get("/", async (req, res) => {
                   { new: true } // Return the updated document
                 );
                 
+                console.log(`  💾 Saved to database: ${goal.title} - ₹${updateData.currentAmount.toFixed(2)}`);
+                
                 // Return the updated goal from database
                 return updatedGoal;
               } catch (updateError) {
-                console.error(`  ❌ Failed to update status for goal "${goal.title}":`, updateError);
+                console.error(`  ❌ Failed to update goal "${goal.title}":`, updateError);
                 // If update fails, return goal with virtual currentAmount and status
                 return {
                   ...goal.toObject(),
@@ -203,7 +229,7 @@ router.get("/", async (req, res) => {
               }
             }
             
-            // Return goal with updated currentAmount (virtual, not saved to DB if no status change)
+            // Return goal with updated currentAmount (virtual, not saved to DB if no significant change)
             return {
               ...goal.toObject(),
               currentAmount: newCurrentAmount
@@ -288,6 +314,132 @@ router.get("/by-period", async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch goals by period:", error);
     res.status(500).json({ message: "Failed to fetch goals by period" });
+  }
+});
+
+// Get goal achievement predictions (ML-powered)
+router.get("/predictions", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get all active goals
+    const goals = await Goal.find({ 
+      userId, 
+      status: { $in: ["planned", "in_progress"] }
+    });
+    
+    if (goals.length === 0) {
+      return res.json({ 
+        success: true, 
+        predictions: [],
+        message: "No active goals to predict"
+      });
+    }
+    
+    // Get financial transaction history
+    const financeHistory = await Finance.find({ userId }).sort({ date: 1 });
+    
+    if (financeHistory.length === 0) {
+      return res.json({
+        success: true,
+        predictions: goals.map(goal => ({
+          goalId: goal._id,
+          goalTitle: goal.title,
+          prediction: {
+            probability: 50,
+            probabilityPercentage: 50,
+            estimatedCompletionDate: null,
+            riskLevel: "unknown",
+            insights: ["Add financial transactions to get accurate predictions"],
+            metrics: {},
+            recommendations: []
+          }
+        })),
+        message: "Need financial data for accurate predictions"
+      });
+    }
+    
+    // Generate predictions for all goals
+    const predictions = predictMultipleGoals(goals, financeHistory);
+    
+    res.json({
+      success: true,
+      predictions,
+      totalGoals: goals.length,
+      dataPoints: financeHistory.length
+    });
+  } catch (error) {
+    console.error("Goal prediction error:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to generate predictions",
+      error: error.message 
+    });
+  }
+});
+
+// Get prediction for a specific goal
+router.get("/predictions/:goalId", async (req, res) => {
+  try {
+    const { goalId } = req.params;
+    const userId = req.user.id;
+    
+    // Get the goal
+    const goal = await Goal.findOne({ _id: goalId, userId });
+    
+    if (!goal) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Goal not found" 
+      });
+    }
+    
+    // Get financial transaction history
+    const financeHistory = await Finance.find({ userId }).sort({ date: 1 });
+    
+    if (financeHistory.length === 0) {
+      return res.json({
+        success: true,
+        goalId: goal._id,
+        goalTitle: goal.title,
+        prediction: {
+          probability: 50,
+          probabilityPercentage: 50,
+          estimatedCompletionDate: null,
+          riskLevel: "unknown",
+          insights: ["Add financial transactions to get accurate predictions"],
+          metrics: {},
+          recommendations: []
+        },
+        message: "Need financial data for accurate predictions"
+      });
+    }
+    
+    // Generate prediction
+    const prediction = predictGoalAchievement(goal, financeHistory);
+    
+    res.json({
+      success: true,
+      goalId: goal._id,
+      goalTitle: goal.title,
+      goalDetails: {
+        targetAmount: goal.targetAmount,
+        currentAmount: goal.currentAmount,
+        dueDate: goal.dueDate,
+        priority: goal.priority,
+        category: goal.category,
+        status: goal.status
+      },
+      prediction,
+      dataPoints: financeHistory.length
+    });
+  } catch (error) {
+    console.error("Goal prediction error:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to generate prediction",
+      error: error.message 
+    });
   }
 });
 
@@ -580,6 +732,66 @@ router.delete(
     const result = await Goal.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
     if (!result) return res.status(404).json({ message: "Goal not found" });
     res.json({ ok: true });
+  }
+);
+
+// Complete goal - Mark as completed and create expense entry to deduct from savings
+router.post(
+  "/:id/complete",
+  [param("id").isMongoId()],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ message: "Invalid id" });
+
+      const userId = req.user.id;
+      const goal = await Goal.findOne({ _id: req.params.id, userId });
+      
+      if (!goal) {
+        return res.status(404).json({ message: "Goal not found" });
+      }
+
+      // Check if goal is achieved (100% progress)
+      if (goal.status !== 'achieved' && goal.currentAmount < goal.targetAmount) {
+        return res.status(400).json({ 
+          message: "Goal must be at 100% progress (achieved status) before completing",
+          currentProgress: ((goal.currentAmount / goal.targetAmount) * 100).toFixed(1)
+        });
+      }
+
+      // Create expense entry to deduct the goal amount from savings
+      const expenseEntry = await Finance.create({
+        userId,
+        type: 'expense',
+        amount: goal.targetAmount,
+        category: 'other',
+        description: `Goal Completed: ${goal.title}`,
+        date: new Date(),
+        tags: ['goal-completion', goal.category]
+      });
+
+      // Mark goal as completed
+      goal.status = 'completed';
+      goal.currentAmount = goal.targetAmount; // Ensure it's exactly the target
+      await goal.save();
+
+      console.log(`✅ Goal "${goal.title}" completed! Expense entry created for ₹${goal.targetAmount}`);
+
+      res.json({
+        success: true,
+        message: `Goal "${goal.title}" completed! ₹${goal.targetAmount} deducted from savings.`,
+        goal,
+        expenseEntry: {
+          id: expenseEntry._id,
+          amount: expenseEntry.amount,
+          description: expenseEntry.description,
+          date: expenseEntry.date
+        }
+      });
+    } catch (error) {
+      console.error("Complete goal error:", error);
+      res.status(500).json({ message: "Failed to complete goal", error: error.message });
+    }
   }
 );
 
@@ -954,6 +1166,253 @@ router.post("/check-expired", requireAuth, async (req, res) => {
   }
 });
 
+// Manual allocation endpoint - Allocate savings to goals NOW
+router.post("/allocate-savings", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    console.log("🔄 Manual allocation triggered for user:", userId);
+    
+    // Get all active goals
+    const goals = await Goal.find({ 
+      userId, 
+      status: { $in: ["planned", "in_progress"] }
+    });
+    
+    if (goals.length === 0) {
+      return res.json({
+        success: true,
+        message: "No active goals to allocate savings to",
+        allocated: 0
+      });
+    }
+    
+    // Get user's finance data
+    const financeData = await Finance.getUserFinanceSummary(userId);
+    let totalIncome = 0;
+    let totalExpenses = 0;
+    
+    financeData.forEach(item => {
+      if (item._id === 'income') {
+        totalIncome = item.total;
+      } else if (item._id === 'expense') {
+        totalExpenses = item.total;
+      }
+    });
+    
+    const totalSavings = totalIncome - totalExpenses;
+    
+    console.log(`💰 Total Savings Available: ₹${totalSavings.toFixed(2)}`);
+    
+    if (totalSavings <= 0) {
+      return res.json({
+        success: false,
+        message: "No savings available. Add income entries to create positive balance.",
+        totalSavings: 0,
+        totalIncome,
+        totalExpenses
+      });
+    }
+    
+    // Calculate total target needed
+    const totalTargetNeeded = goals.reduce((sum, g) => sum + (g.targetAmount - (g.currentAmount || 0)), 0);
+    
+    console.log(`📊 ${goals.length} active goals, Total target needed: ₹${totalTargetNeeded.toFixed(2)}`);
+    
+    // REALISTIC ALLOCATION: Only allocate NEW savings since last allocation
+    let allocatedCount = 0;
+    const allocations = [];
+    
+    // Calculate how much NEW savings to allocate
+    // This is the difference between current total savings and what's already allocated to goals
+    const totalAllocatedToGoals = goals.reduce((sum, g) => sum + (g.currentAmount || 0), 0);
+    const newSavingsToAllocate = Math.max(0, totalSavings - totalAllocatedToGoals);
+    
+    console.log(`💵 Total Savings: ₹${totalSavings.toFixed(2)}, Already Allocated: ₹${totalAllocatedToGoals.toFixed(2)}, New to Allocate: ₹${newSavingsToAllocate.toFixed(2)}`);
+    
+    if (newSavingsToAllocate <= 0) {
+      return res.json({
+        success: false,
+        message: "All available savings are already allocated to goals. Add more income to increase savings.",
+        totalSavings,
+        totalAllocated: totalAllocatedToGoals,
+        newSavings: 0
+      });
+    }
+    
+    // Sort goals by priority (1 = highest priority)
+    const sortedGoals = [...goals].sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority; // Lower number = higher priority
+      }
+      // If same priority, sort by due date (earlier first)
+      return new Date(a.dueDate) - new Date(b.dueDate);
+    });
+    
+    // Allocate new savings to goals based on priority
+    let remainingSavings = newSavingsToAllocate;
+    
+    for (const goal of sortedGoals) {
+      if (remainingSavings <= 0) break;
+      
+      const targetNeeded = goal.targetAmount - (goal.currentAmount || 0);
+      
+      if (targetNeeded <= 0) continue; // Skip completed goals
+      
+      // Allocate as much as possible to this goal (up to what's needed)
+      const allocation = Math.min(targetNeeded, remainingSavings);
+      
+      const newCurrentAmount = (goal.currentAmount || 0) + allocation;
+      const progress = (newCurrentAmount / goal.targetAmount) * 100;
+      
+      // Check for milestone achievements (25%, 50%, 75%, 100%)
+      const oldProgress = ((goal.currentAmount || 0) / goal.targetAmount) * 100;
+      const milestones = [25, 50, 75, 100];
+      
+      for (const milestone of milestones) {
+        if (oldProgress < milestone && progress >= milestone) {
+          // Milestone reached! Send email notification
+          console.log(`🎉 Milestone ${milestone}% reached for goal: ${goal.title}`);
+          
+          try {
+            await sendGoalMilestoneEmail(req.user, {
+              _id: goal._id,
+              name: goal.title,
+              targetAmount: goal.targetAmount,
+              currentAmount: newCurrentAmount,
+            }, milestone);
+            console.log(`✅ Milestone email sent for ${milestone}%`);
+          } catch (emailError) {
+            console.error(`❌ Failed to send milestone email:`, emailError);
+            // Don't fail the allocation if email fails
+          }
+          
+          break; // Only send one milestone email per update
+        }
+      }
+      
+      // Determine new status
+      let newStatus = goal.status;
+      if (progress >= 100) {
+        newStatus = 'achieved';
+      } else if (progress > 0 && goal.status === 'planned') {
+        newStatus = 'in_progress';
+      }
+      
+      // Update goal in database
+      await Goal.findByIdAndUpdate(goal._id, {
+        currentAmount: newCurrentAmount,
+        status: newStatus
+      });
+      
+      remainingSavings -= allocation;
+      allocatedCount++;
+      
+      allocations.push({
+        goalId: goal._id,
+        title: goal.title,
+        priority: goal.priority,
+        allocated: allocation,
+        newCurrentAmount,
+        progress: progress.toFixed(1),
+        status: newStatus
+      });
+      allocatedCount++;
+      allocations.push({
+        goalId: goal._id,
+        title: goal.title,
+        allocated: allocation,
+        newCurrentAmount,
+        progress: progress.toFixed(1),
+        status: newStatus,
+        timeProgress: (timeProgress * 100).toFixed(1),
+        daysElapsed: elapsedDays,
+        totalDays: totalDays
+      });
+      
+      console.log(`  ✅ ${goal.title}: Allocated ₹${allocation.toFixed(2)}, Progress: ${progress.toFixed(1)}%, Status: ${newStatus}`);
+    }
+    
+    res.json({
+      success: true,
+      message: `Successfully allocated ₹${totalSavings.toFixed(2)} to ${allocatedCount} goals`,
+      totalSavings,
+      allocatedCount,
+      allocations
+    });
+    
+  } catch (error) {
+    console.error("Manual allocation error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to allocate savings",
+      error: error.message 
+    });
+  }
+});
+
+// Check for expired goals and create notifications (continued)
+router.post("/check-expired-continued", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    console.log(`🔍 Checking for expired goals for user ${userId}...`);
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find goals that are past due date and not yet completed or archived
+    const expiredGoals = await Goal.find({
+      userId,
+      dueDate: { $lt: today },
+      status: { $in: ['planned', 'in_progress'] }
+    });
+    
+    console.log(`Found ${expiredGoals.length} expired goals`);
+    
+    let notificationsCreated = 0;
+    
+    for (const goal of expiredGoals) {
+      // Check if notification already exists for this goal (within last 7 days)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      const existingNotification = await Notification.findOne({
+        userId,
+        'details.goalId': goal._id.toString(),
+        'details.action': 'extend_or_delete',
+        createdAt: { $gte: sevenDaysAgo }
+      });
+      
+      if (!existingNotification) {
+        await Notification.createExpiredGoalAlert(
+          userId,
+          goal._id,
+          goal.title,
+          goal.dueDate,
+          goal.currentAmount || 0,
+          goal.targetAmount
+        );
+        notificationsCreated++;
+        console.log(`✅ Created expired notification for goal: ${goal.title}`);
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Found ${expiredGoals.length} expired goal(s), created ${notificationsCreated} notification(s)`,
+      expiredCount: expiredGoals.length,
+      notificationsCreated
+    });
+  } catch (error) {
+    console.error("Check expired goals error:", error);
+    res.status(500).json({ 
+      message: "Failed to check expired goals", 
+      error: error.message 
+    });
+  }
+});
+
 // Extend goal due date
 router.put("/:goalId/extend-due-date", requireAuth, async (req, res) => {
   try {
@@ -1055,7 +1514,112 @@ router.delete("/:goalId/expired", requireAuth, async (req, res) => {
   }
 });
 
+// Get smart goal recommendations
+router.get("/recommendations", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const { generateGoalRecommendations } = await import('../utils/goalRecommendations.js');
+    const result = await generateGoalRecommendations(userId);
+    
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error("Error generating goal recommendations:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate goal recommendations",
+      error: error.message
+    });
+  }
+});
+
+// Create goal from recommendation
+router.post("/recommendations/:index/accept", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const recommendationIndex = parseInt(req.params.index);
+    
+    // Generate recommendations again to get the specific one
+    const { generateGoalRecommendations, createGoalFromRecommendation } = await import('../utils/goalRecommendations.js');
+    const result = await generateGoalRecommendations(userId);
+    
+    if (recommendationIndex < 0 || recommendationIndex >= result.recommendations.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid recommendation index"
+      });
+    }
+    
+    const recommendation = result.recommendations[recommendationIndex];
+    const goal = await createGoalFromRecommendation(userId, recommendation);
+    
+    res.json({
+      success: true,
+      message: "Goal created successfully from recommendation",
+      goal
+    });
+  } catch (error) {
+    console.error("Error creating goal from recommendation:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create goal from recommendation",
+      error: error.message
+    });
+  }
+});
+
 export default router;
 
 
 
+
+// ============================================
+// MARKETPLACE-GOAL INTEGRATION ENDPOINTS
+// ============================================
+
+import { 
+  findMarketplaceMatchesForGoals, 
+  getMarketplaceGoalStats 
+} from "../utils/marketplaceGoalIntegration.js";
+
+// Get marketplace items matching user's goals
+router.get("/marketplace-matches", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const matches = await findMarketplaceMatchesForGoals(userId);
+
+    res.json({
+      success: true,
+      matches,
+      totalMatches: matches.reduce((sum, m) => sum + m.items.length, 0)
+    });
+  } catch (error) {
+    console.error("Get marketplace matches error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to find marketplace matches"
+    });
+  }
+});
+
+// Get marketplace contribution statistics
+router.get("/marketplace-stats", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const stats = await getMarketplaceGoalStats(userId);
+
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error("Get marketplace stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get marketplace statistics"
+    });
+  }
+});

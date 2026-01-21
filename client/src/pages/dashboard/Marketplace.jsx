@@ -79,6 +79,7 @@ export default function Marketplace() {
   const [formErrors, setFormErrors] = useState({});
   const [pricingSuggestion, setPricingSuggestion] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [activeTab, setActiveTab] = useState('active'); // Tab state: 'active', 'sold', 'pending'
 
   useEffect(() => {
     fetchMyListings();
@@ -883,99 +884,321 @@ export default function Marketplace() {
             </div>
           )}
 
-          {/* My Listings */}
+          {/* My Listings with Tabs */}
           <div className="row">
             <div className="col-12">
-              <h4 className="mb-3">My Listings</h4>
-              
-              {items.length === 0 ? (
-                <div className="text-center py-5">
-                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted mb-3">
-                    <path d="M3 3h18v18H3zM9 9h6v6H9z"/>
-                    <path d="M9 1v6M15 1v6M9 17v6M15 17v6M1 9h6M17 9h6M1 15h6M17 15h6"/>
-                  </svg>
-                  <h5 className="text-muted">No listings yet</h5>
-                  <p className="text-muted">Start by listing your first item for resale</p>
+              {/* Tabs Navigation */}
+              <ul className="nav nav-tabs mb-4" role="tablist">
+                <li className="nav-item" role="presentation">
                   <button
-                    className="btn btn-primary"
-                    onClick={() => {
-                      resetForm();
-                      setShowListingForm(true);
-                    }}
+                    className={`nav-link ${activeTab === 'active' ? 'active' : ''}`}
+                    id="active-tab"
+                    onClick={() => setActiveTab('active')}
+                    type="button"
+                    role="tab"
+                    aria-controls="active-listings"
+                    aria-selected={activeTab === 'active'}
                   >
-                    List Your First Item
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <path d="M3 3h18v18H3zM9 9h6v6H9z"/>
+                    </svg>
+                    Active Listings ({items.filter(item => item.status === 'active').length})
                   </button>
-                </div>
-              ) : (
-                <div className="row g-3">
-                  {items.map(item => (
-                    <div key={item._id || item.id} className="col-md-6 col-lg-4">
-                      <div className="card h-100">
-                        <div className="position-relative">
-                          <img
-                            src={
-                              resolveImageSrc(
-                                Array.isArray(item.images)
-                                  ? (item.images[0] || "")
-                                  : ""
-                              ) || "https://via.placeholder.com/300x200?text=No+Image"
-                            }
-                            alt={item.title}
-                            className="card-img-top"
-                            style={{ height: '200px', objectFit: 'cover' }}
-                          />
-                          {/* Status Badge */}
-                          {item.status === 'sold' && (
-                            <div className="position-absolute top-0 end-0 m-2">
-                              <span className="badge bg-danger">SOLD</span>
+                </li>
+                <li className="nav-item" role="presentation">
+                  <button
+                    className={`nav-link ${activeTab === 'sold' ? 'active' : ''}`}
+                    id="sold-tab"
+                    onClick={() => setActiveTab('sold')}
+                    type="button"
+                    role="tab"
+                    aria-controls="sold-items"
+                    aria-selected={activeTab === 'sold'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                      <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    Sold Items ({items.filter(item => item.status === 'sold').length})
+                  </button>
+                </li>
+                <li className="nav-item" role="presentation">
+                  <button
+                    className={`nav-link ${activeTab === 'pending' ? 'active' : ''}`}
+                    id="pending-tab"
+                    onClick={() => setActiveTab('pending')}
+                    type="button"
+                    role="tab"
+                    aria-controls="pending-items"
+                    aria-selected={activeTab === 'pending'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    Pending ({items.filter(item => item.status === 'pending').length})
+                  </button>
+                </li>
+              </ul>
+
+              {/* Tab Content */}
+              <div className="tab-content">
+                {/* Active Listings Tab */}
+                {activeTab === 'active' && (
+                  <div
+                    className="tab-pane fade show active"
+                    id="active-listings"
+                    role="tabpanel"
+                    aria-labelledby="active-tab"
+                  >
+                    {items.filter(item => item.status === 'active').length === 0 ? (
+                      <div className="text-center py-5">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted mb-3">
+                          <path d="M3 3h18v18H3zM9 9h6v6H9z"/>
+                          <path d="M9 1v6M15 1v6M9 17v6M15 17v6M1 9h6M17 9h6M1 15h6M17 15h6"/>
+                        </svg>
+                        <h5 className="text-muted">No active listings</h5>
+                        <p className="text-muted">List your items here to start selling</p>
+                      </div>
+                  ) : (
+                    <div className="row g-3">
+                      {items.filter(item => item.status === 'active').map(item => (
+                        <div key={item._id || item.id} className="col-md-6 col-lg-4">
+                          <div className="card h-100">
+                            <div className="position-relative">
+                              <img
+                                src={
+                                  resolveImageSrc(
+                                    Array.isArray(item.images)
+                                      ? (item.images[0] || "")
+                                      : ""
+                                  ) || "https://via.placeholder.com/300x200?text=No+Image"
+                                }
+                                alt={item.title}
+                                className="card-img-top"
+                                style={{ height: '200px', objectFit: 'cover' }}
+                              />
+                              <div className="position-absolute top-0 end-0 m-2">
+                                <span className="badge bg-success">ACTIVE</span>
+                              </div>
                             </div>
-                          )}
-                          {item.status === 'pending' && (
-                            <div className="position-absolute top-0 end-0 m-2">
-                              <span className="badge bg-warning">PENDING</span>
+                            <div className="card-body d-flex flex-column">
+                              <h6 className="card-title">{item.title}</h6>
+                              <p className="card-text text-muted small flex-grow-1">
+                                {item.description?.substring(0, 100)}...
+                              </p>
+                              <div className="d-flex justify-content-between align-items-center mb-2">
+                                <div>
+                                  <div className="fw-bold text-success">₹{item.price?.toLocaleString()}</div>
+                                  <small className="text-muted">{item.category} • {item.condition}</small>
+                                </div>
+                              </div>
+                              <div className="d-flex gap-2">
+                                <button 
+                                  type="button"
+                                  className="btn btn-sm btn-outline-primary flex-fill"
+                                  onClick={() => handleEditListing(item)}
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                  </svg>
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-danger flex-fill"
+                                  onClick={() => handleDeleteListing(item._id || item.id)}
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                  </svg>
+                                  Delete
+                                </button>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                        <div className="card-body d-flex flex-column">
-                          <h6 className="card-title">{item.title}</h6>
-                          <p className="card-text text-muted small flex-grow-1">
-                            {item.description?.substring(0, 100)}...
-                          </p>
-                          <div className="d-flex justify-content-between align-items-center">
-                            <div>
-                              <div className="fw-bold text-success">₹{item.price?.toLocaleString()}</div>
-                              <small className="text-muted">{item.category} • {item.condition}</small>
-                            </div>
-                            <div className="btn-group btn-group-sm">
-                              <button 
-                                type="button"
-                                className="btn btn-outline-primary"
-                                onClick={() => handleEditListing(item)}
-                                disabled={item.status === 'sold' || item.status === 'pending'}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-outline-danger"
-                                onClick={() => handleDeleteListing(item._id || item.id)}
-                                disabled={item.status === 'sold'}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                            {(item.status === 'sold' || item.status === 'pending') && (
-                              <small className="text-muted d-block mt-2">
-                                {item.status === 'sold' ? '✓ This item has been sold' : '⏳ Payment pending'}
-                              </small>
-                            )}
                           </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
+                )}
+
+                {/* Sold Items Tab */}
+                {activeTab === 'sold' && (
+                <div
+                  className="tab-pane fade show active"
+                  id="sold-items"
+                  role="tabpanel"
+                  aria-labelledby="sold-tab"
+                >
+                  {items.filter(item => item.status === 'sold').length === 0 ? (
+                    <div className="text-center py-5">
+                      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted mb-3">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                      </svg>
+                      <h5 className="text-muted">No sold items yet</h5>
+                      <p className="text-muted">Your sold items will appear here</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="alert alert-success mb-3">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                          <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <strong>Congratulations!</strong> You've sold {items.filter(item => item.status === 'sold').length} item(s). 
+                        Don't forget to sync your income to track earnings!
+                      </div>
+                      <div className="row g-3">
+                        {items.filter(item => item.status === 'sold').map(item => (
+                          <div key={item._id || item.id} className="col-md-6 col-lg-4">
+                            <div className="card h-100 border-success">
+                              <div className="position-relative">
+                                <img
+                                  src={
+                                    resolveImageSrc(
+                                      Array.isArray(item.images)
+                                        ? (item.images[0] || "")
+                                        : ""
+                                    ) || "https://via.placeholder.com/300x200?text=No+Image"
+                                  }
+                                  alt={item.title}
+                                  className="card-img-top"
+                                  style={{ height: '200px', objectFit: 'cover', opacity: 0.8 }}
+                                />
+                                <div className="position-absolute top-0 end-0 m-2">
+                                  <span className="badge bg-success">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="me-1">
+                                      <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                    SOLD
+                                  </span>
+                                </div>
+                                {item.soldAt && (
+                                  <div className="position-absolute bottom-0 start-0 m-2">
+                                    <span className="badge bg-dark bg-opacity-75">
+                                      Sold: {new Date(item.soldAt).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="card-body d-flex flex-column">
+                                <h6 className="card-title">{item.title}</h6>
+                                <p className="card-text text-muted small flex-grow-1">
+                                  {item.description?.substring(0, 100)}...
+                                </p>
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <div>
+                                    <div className="fw-bold text-success">₹{item.price?.toLocaleString()}</div>
+                                    <small className="text-muted">{item.category} • {item.condition}</small>
+                                  </div>
+                                </div>
+                                <div className="mt-2 p-2 bg-success bg-opacity-10 rounded">
+                                  <small className="text-success d-flex align-items-center">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                                      <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                    This item has been successfully sold
+                                  </small>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                )}
+
+                {/* Pending Items Tab */}
+                {activeTab === 'pending' && (
+                <div
+                  className="tab-pane fade show active"
+                  id="pending-items"
+                  role="tabpanel"
+                  aria-labelledby="pending-tab"
+                >
+                  {items.filter(item => item.status === 'pending').length === 0 ? (
+                    <div className="text-center py-5">
+                      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted mb-3">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                      <h5 className="text-muted">No pending items</h5>
+                      <p className="text-muted">Items awaiting payment confirmation will appear here</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="alert alert-warning mb-3">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <line x1="12" y1="8" x2="12" y2="12"/>
+                          <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <strong>Pending Payments:</strong> These items are awaiting payment confirmation.
+                      </div>
+                      <div className="row g-3">
+                        {items.filter(item => item.status === 'pending').map(item => (
+                          <div key={item._id || item.id} className="col-md-6 col-lg-4">
+                            <div className="card h-100 border-warning">
+                              <div className="position-relative">
+                                <img
+                                  src={
+                                    resolveImageSrc(
+                                      Array.isArray(item.images)
+                                        ? (item.images[0] || "")
+                                        : ""
+                                    ) || "https://via.placeholder.com/300x200?text=No+Image"
+                                  }
+                                  alt={item.title}
+                                  className="card-img-top"
+                                  style={{ height: '200px', objectFit: 'cover' }}
+                                />
+                                <div className="position-absolute top-0 end-0 m-2">
+                                  <span className="badge bg-warning text-dark">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                                      <circle cx="12" cy="12" r="10"/>
+                                      <polyline points="12 6 12 12 16 14"/>
+                                    </svg>
+                                    PENDING
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="card-body d-flex flex-column">
+                                <h6 className="card-title">{item.title}</h6>
+                                <p className="card-text text-muted small flex-grow-1">
+                                  {item.description?.substring(0, 100)}...
+                                </p>
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <div>
+                                    <div className="fw-bold text-success">₹{item.price?.toLocaleString()}</div>
+                                    <small className="text-muted">{item.category} • {item.condition}</small>
+                                  </div>
+                                </div>
+                                <div className="mt-2 p-2 bg-warning bg-opacity-10 rounded">
+                                  <small className="text-warning d-flex align-items-center">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                                      <circle cx="12" cy="12" r="10"/>
+                                      <polyline points="12 6 12 12 16 14"/>
+                                    </svg>
+                                    Awaiting payment confirmation
+                                  </small>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -23,6 +23,8 @@ export default function RoleRedirect() {
           navigate("/admin-dashboard", { replace: true });
         } else if (role === "buyer") {
           navigate("/buyer-dashboard", { replace: true });
+        } else if (role === "evaluator") {
+          navigate("/evaluator-dashboard", { replace: true });
         } else {
           navigate("/dashboard", { replace: true });
         }

@@ -44,7 +44,11 @@ export default function DashboardHeader({ variant = "user" }) {
       "/checkout": "Checkout",
       "/orders": "My Orders",
       "/find-goal-setters": "Find Goal Setters",
-      "/buyer-profile": "Profile"
+      "/buyer-profile": "Profile",
+      "/evaluator-dashboard": "Evaluator Dashboard",
+      "/evaluator/users": "View Users",
+      "/evaluator/goals": "View Goals",
+      "/evaluator/analytics": "Analytics"
     };
     return pageMap[path] || "Dashboard";
   };
@@ -97,6 +101,17 @@ export default function DashboardHeader({ variant = "user" }) {
         "Access financial reports"
       ],
       description: "System administration and oversight"
+    },
+    evaluator: {
+      label: "Evaluator",
+      badge: "bg-info",
+      features: [
+        "View all users",
+        "Evaluate user activity",
+        "Monitor goals and progress",
+        "Access analytics"
+      ],
+      description: "Evaluate and monitor user activity"
     }
   };
 
@@ -118,7 +133,8 @@ export default function DashboardHeader({ variant = "user" }) {
       const dashboardMap = {
         admin: "/admin-dashboard",
         buyer: "/buyer-dashboard",
-        goal_setter: "/dashboard"
+        goal_setter: "/dashboard",
+        evaluator: "/evaluator-dashboard"
       };
       navigate(dashboardMap[newRole] || "/dashboard");
     }

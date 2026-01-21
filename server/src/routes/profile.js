@@ -8,6 +8,8 @@ import fs from "fs";
 import { requireAuth } from "../middleware/auth.js";
 import User from "../models/User.js";
 import { buildAuthPayload, buildUserResponse, ensureUserRoleArray } from "../utils/roles.js";
+import { checkExpenseLimit } from "../utils/expenseChecker.js";
+import { sendPasswordChangedEmail } from "../utils/emailService.js";
 
 const router = Router();
 
@@ -65,16 +67,34 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-// Update user profile (name, phone, address - email cannot be changed)
+// Update user profile (name, phone, address, age, occupation - email cannot be changed)
 router.put("/", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, phone, address } = req.body;
+    const { name, phone, address, age, occupation } = req.body;
     
     // Validate required fields
     if (!name) {
       return res.status(400).json({ 
         message: "Name is required" 
+      });
+    }
+    
+    // Validate age if provided
+    if (age !== undefined && age !== null && age !== "") {
+      const ageNum = parseInt(age);
+      if (isNaN(ageNum) || ageNum < 18 || ageNum > 45) {
+        return res.status(400).json({ 
+          message: "Age must be between 18 and 45" 
+        });
+      }
+    }
+    
+    // Validate occupation if provided
+    const validOccupations = ['student', 'working_professional', 'freelancer', 'entrepreneur', 'other'];
+    if (occupation !== undefined && occupation !== null && occupation !== "" && !validOccupations.includes(occupation)) {
+      return res.status(400).json({ 
+        message: "Invalid occupation value" 
       });
     }
     
@@ -93,11 +113,19 @@ router.put("/", requireAuth, async (req, res) => {
       updateData.address = address ? address.trim() : null;
     }
     
-    // Update user profile (name, phone, address; email cannot be changed)
+    if (age !== undefined && age !== null && age !== "") {
+      updateData.age = parseInt(age);
+    }
+    
+    if (occupation !== undefined && occupation !== null && occupation !== "") {
+      updateData.occupation = occupation.trim();
+    }
+    
+    // Update user profile
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       updateData,
-      { new: true, select: '-passwordHash -firebaseUid' }
+      { new: true, runValidators: true, select: '-passwordHash -firebaseUid' }
     );
     
     if (!updatedUser) {
@@ -107,6 +135,13 @@ router.put("/", requireAuth, async (req, res) => {
     res.json(updatedUser);
   } catch (error) {
     console.error("Update profile error:", error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ message: messages.join(', ') });
+    }
+    
     res.status(500).json({ message: "Failed to update profile" });
   }
 });
@@ -155,6 +190,21 @@ router.put("/password", requireAuth, async (req, res) => {
       passwordHash: newPasswordHash,
       updatedAt: new Date()
     });
+    
+    // Send security email notification
+    try {
+      const deviceInfo = {
+        device: req.headers['user-agent'] || 'Unknown Device',
+        location: req.ip || 'Unknown Location',
+        timestamp: new Date()
+      };
+      
+      await sendPasswordChangedEmail(user, deviceInfo);
+      console.log(`✅ Password change email sent to ${user.email}`);
+    } catch (emailError) {
+      console.error("❌ Failed to send password change email:", emailError);
+      // Don't fail the password change if email fails
+    }
     
     res.json({ message: "Password changed successfully" });
   } catch (error) {
@@ -766,5 +816,93 @@ router.get("/location", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Get location error:", error);
     res.status(500).json({ message: "Failed to fetch location" });
+  }
+});
+
+// Get expense limit status
+router.get("/expense-limit", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const user = await User.findById(userId).select('expenseLimit');
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    // Get current status with expense calculations
+    const status = await checkExpenseLimit(userId);
+    
+    res.json({
+      expenseLimit: user.expenseLimit,
+      status: status
+    });
+  } catch (error) {
+    console.error("Get expense limit error:", error);
+    res.status(500).json({ message: "Failed to fetch expense limit" });
+  }
+});
+
+// Update expense limit settings
+router.put("/expense-limit", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { enabled, monthlyLimit, alertThreshold } = req.body;
+    
+    // Validate inputs
+    if (enabled && (!monthlyLimit || monthlyLimit <= 0)) {
+      return res.status(400).json({ 
+        message: "Monthly limit must be greater than 0 when enabled" 
+      });
+    }
+    
+    if (alertThreshold !== undefined && (alertThreshold < 50 || alertThreshold > 100)) {
+      return res.status(400).json({ 
+        message: "Alert threshold must be between 50% and 100%" 
+      });
+    }
+    
+    // Build update object
+    const updateData = {
+      'expenseLimit.enabled': enabled !== undefined ? enabled : false,
+      updatedAt: new Date()
+    };
+    
+    if (monthlyLimit !== undefined && monthlyLimit > 0) {
+      updateData['expenseLimit.monthlyLimit'] = parseFloat(monthlyLimit);
+    }
+    
+    if (alertThreshold !== undefined) {
+      updateData['expenseLimit.alertThreshold'] = parseInt(alertThreshold);
+    }
+    
+    // Update user expense limit
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      updateData,
+      { new: true, runValidators: true, select: '-passwordHash -firebaseUid' }
+    );
+    
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    // Get updated status
+    const status = await checkExpenseLimit(userId);
+    
+    res.json({
+      message: "Expense limit updated successfully",
+      expenseLimit: updatedUser.expenseLimit,
+      status: status
+    });
+  } catch (error) {
+    console.error("Update expense limit error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ message: messages.join(', ') });
+    }
+    
+    res.status(500).json({ message: "Failed to update expense limit" });
   }
 });

@@ -33,6 +33,11 @@ const financeSchema = new mongoose.Schema(
       trim: true, 
       maxlength: 500 
     },
+    paymentMethod: {
+      type: String,
+      enum: ["cash", "upi", "bank", "card", "other"],
+      default: "other"
+    },
     date: { 
       type: Date, 
       required: true,
@@ -88,36 +93,65 @@ financeSchema.pre('save', function(next) {
 
 // Static methods
 financeSchema.statics.getUserIncome = function(userId, filters = {}) {
-  const query = { userId, type: 'income' };
+  // FIXED: Convert userId to ObjectId for consistency
+  const query = { userId: new mongoose.Types.ObjectId(userId), type: 'income' };
   
-  if (filters.month && filters.year) {
-    const startDate = new Date(filters.year, filters.month - 1, 1);
-    const endDate = new Date(filters.year, filters.month, 0);
-    query.date = { $gte: startDate, $lte: endDate };
+  if (filters.year) {
+    if (filters.month) {
+      // Month + Year filtering
+      const startDate = new Date(filters.year, filters.month - 1, 1);
+      // FIXED: Set end time to end of day to include all transactions
+      const endDate = new Date(filters.year, filters.month, 0, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    } else {
+      // Year-only filtering
+      const startDate = new Date(filters.year, 0, 1);
+      const endDate = new Date(filters.year, 11, 31, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    }
   }
   
   return this.find(query).sort({ date: -1 });
 };
 
 financeSchema.statics.getUserExpenses = function(userId, filters = {}) {
-  const query = { userId, type: 'expense' };
+  // FIXED: Convert userId to ObjectId for consistency
+  const query = { userId: new mongoose.Types.ObjectId(userId), type: 'expense' };
   
-  if (filters.month && filters.year) {
-    const startDate = new Date(filters.year, filters.month - 1, 1);
-    const endDate = new Date(filters.year, filters.month, 0);
-    query.date = { $gte: startDate, $lte: endDate };
+  if (filters.year) {
+    if (filters.month) {
+      // Month + Year filtering
+      const startDate = new Date(filters.year, filters.month - 1, 1);
+      // FIXED: Set end time to end of day to include all transactions
+      const endDate = new Date(filters.year, filters.month, 0, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    } else {
+      // Year-only filtering
+      const startDate = new Date(filters.year, 0, 1);
+      const endDate = new Date(filters.year, 11, 31, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    }
   }
   
   return this.find(query).sort({ date: -1 });
 };
 
 financeSchema.statics.getUserFinanceSummary = function(userId, filters = {}) {
-  const query = { userId };
+  const query = { userId: new mongoose.Types.ObjectId(userId) };
   
-  if (filters.month && filters.year) {
-    const startDate = new Date(filters.year, filters.month - 1, 1);
-    const endDate = new Date(filters.year, filters.month, 0);
-    query.date = { $gte: startDate, $lte: endDate };
+  if (filters.year) {
+    if (filters.month) {
+      // Month + Year filtering
+      const startDate = new Date(filters.year, filters.month - 1, 1);
+      // FIXED: Set end time to end of day to include all transactions
+      const endDate = new Date(filters.year, filters.month, 0, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    } else {
+      // Year-only filtering
+      const startDate = new Date(filters.year, 0, 1);
+      const endDate = new Date(filters.year, 11, 31, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    }
   }
   
   return this.aggregate([
@@ -140,7 +174,8 @@ financeSchema.statics.getMonthlyTrends = function(userId, months = 6) {
   return this.aggregate([
     {
       $match: {
-        userId: mongoose.Types.ObjectId(userId),
+        // FIXED: Use 'new' keyword for ObjectId constructor
+        userId: new mongoose.Types.ObjectId(userId),
         date: { $gte: startDate, $lte: endDate }
       }
     },
@@ -162,21 +197,32 @@ financeSchema.statics.getMonthlyTrends = function(userId, months = 6) {
 };
 
 financeSchema.statics.getCategoryBreakdown = function(userId, type, filters = {}) {
-  const query = { userId, type };
+  // FIXED: Convert userId to ObjectId for aggregation
+  const query = { userId: new mongoose.Types.ObjectId(userId), type };
   
-  if (filters.month && filters.year) {
-    const startDate = new Date(filters.year, filters.month - 1, 1);
-    const endDate = new Date(filters.year, filters.month, 0);
-    query.date = { $gte: startDate, $lte: endDate };
+  if (filters.year) {
+    if (filters.month) {
+      // Month + Year filtering
+      const startDate = new Date(filters.year, filters.month - 1, 1);
+      // FIXED: Set end time to end of day to include all transactions
+      const endDate = new Date(filters.year, filters.month, 0, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    } else {
+      // Year-only filtering
+      const startDate = new Date(filters.year, 0, 1);
+      const endDate = new Date(filters.year, 11, 31, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    }
   }
   
-  const groupField = type === 'income' ? 'source' : 'category';
+  // FIXED: Use $ prefix for MongoDB field reference in aggregation
+  const groupField = type === 'income' ? '$source' : '$category';
   
   return this.aggregate([
     { $match: query },
     {
       $group: {
-        _id: `$${groupField}`,
+        _id: groupField,
         total: { $sum: '$amount' },
         count: { $sum: 1 },
         average: { $avg: '$amount' }
@@ -189,8 +235,3 @@ financeSchema.statics.getCategoryBreakdown = function(userId, type, filters = {}
 };
 
 export default mongoose.model("Finance", financeSchema);
-
-
-
-
-

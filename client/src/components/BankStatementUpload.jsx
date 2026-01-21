@@ -6,10 +6,9 @@ export default function BankStatementUpload({ onImportComplete }) {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [extractedTransactions, setExtractedTransactions] = useState([]);
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
   const [showReview, setShowReview] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
 
   const handleFileSelect = (e) => {
     const selectedFile = e.target.files?.[0];
@@ -17,6 +16,7 @@ export default function BankStatementUpload({ onImportComplete }) {
       setFile(selectedFile);
       setShowReview(false);
       setExtractedTransactions([]);
+      setDuplicateInfo(null);
     }
   };
 
@@ -31,6 +31,7 @@ export default function BankStatementUpload({ onImportComplete }) {
       setFile(droppedFile);
       setShowReview(false);
       setExtractedTransactions([]);
+      setDuplicateInfo(null);
     }
   };
 
@@ -39,7 +40,6 @@ export default function BankStatementUpload({ onImportComplete }) {
 
     // Check authentication before uploading
     const authData = localStorage.getItem("sg_auth");
-    console.log("🔐 Auth data from localStorage:", authData);
     
     if (!authData) {
       toast.error("Please log in to upload bank statements");
@@ -49,8 +49,6 @@ export default function BankStatementUpload({ onImportComplete }) {
     let parsedAuth;
     try {
       parsedAuth = JSON.parse(authData);
-      console.log("🎫 Parsed auth token:", parsedAuth.token ? "Present" : "Missing");
-      console.log("👤 User from auth:", parsedAuth.user?.email || parsedAuth.user?._id);
     } catch (e) {
       console.error("❌ Failed to parse auth data:", e);
       toast.error("Invalid authentication data. Please log in again.");
@@ -61,8 +59,6 @@ export default function BankStatementUpload({ onImportComplete }) {
       setUploading(true);
       const formData = new FormData();
       formData.append("file", file);
-      if (startDate) formData.append("startDate", startDate);
-      if (endDate) formData.append("endDate", endDate);
 
       const response = await api.post("/finance/upload-statement", formData, {
         headers: {
@@ -72,8 +68,18 @@ export default function BankStatementUpload({ onImportComplete }) {
 
       if (response.data.success) {
         setExtractedTransactions(response.data.transactions);
+        setDuplicateInfo(response.data.duplicateInfo);
         setShowReview(true);
-        toast.success(response.data.message);
+        
+        // Show detailed message about duplicates
+        if (response.data.duplicateInfo && response.data.duplicateInfo.duplicates > 0) {
+          toast.info(
+            `📊 Found ${response.data.duplicateInfo.total} transactions: ${response.data.duplicateInfo.new} new, ${response.data.duplicateInfo.duplicates} duplicate(s) skipped`,
+            { autoClose: 5000 }
+          );
+        } else {
+          toast.success(response.data.message);
+        }
       }
     } catch (error) {
       console.error("Upload error:", error);
@@ -97,12 +103,25 @@ export default function BankStatementUpload({ onImportComplete }) {
       });
 
       if (response.data.success) {
-        toast.success(response.data.message);
+        const { results } = response.data;
+        
+        if (results.successful > 0) {
+          toast.success(`✅ Imported ${results.successful} transaction(s) successfully!`);
+        }
+        
+        if (results.failed > 0) {
+          toast.error(`❌ ${results.failed} transaction(s) failed. Check console for details.`);
+          console.error("Failed transactions:", results.errors);
+        }
+        
+        if (results.skipped > 0) {
+          toast.warning(`⚠️ ${results.skipped} transaction(s) skipped (invalid data).`);
+        }
+        
         setFile(null);
         setExtractedTransactions([]);
+        setDuplicateInfo(null);
         setShowReview(false);
-        setStartDate("");
-        setEndDate("");
 
         if (onImportComplete) {
           onImportComplete(response.data.results);
@@ -120,7 +139,7 @@ export default function BankStatementUpload({ onImportComplete }) {
     <div className="card mb-4 shadow-sm border-0">
       <div className="card-header bg-white border-bottom py-3">
         <h5 className="mb-1 text-primary fw-semibold">📄 Upload Bank Statement</h5>
-        <p className="text-muted small mb-0">Automatically extract income and expenses from your bank statement</p>
+        <p className="text-muted small mb-0">Automatically extract income and expenses from your bank statement (CSV format)</p>
       </div>
       <div className="card-body bg-light p-4">
         {/* Upload area */}
@@ -140,7 +159,7 @@ export default function BankStatementUpload({ onImportComplete }) {
           <input
             id="fileInput"
             type="file"
-            accept=".pdf,.csv"
+            accept=".csv"
             onChange={handleFileSelect}
             style={{ display: "none" }}
           />
@@ -165,7 +184,7 @@ export default function BankStatementUpload({ onImportComplete }) {
                 or <span className="text-primary fw-semibold" style={{ cursor: "pointer" }}>click to browse</span>
               </p>
               <p className="text-muted small mt-2 mb-0">
-                Supports PDF and CSV files (maximum 10MB)
+                Supports CSV files only (maximum 10MB)
               </p>
             </>
           ) : (
@@ -201,32 +220,6 @@ export default function BankStatementUpload({ onImportComplete }) {
               </button>
             </div>
           )}
-        </div>
-
-        {/* Date range inputs */}
-        <div className="row mb-4">
-          <div className="col-md-6 mb-3 mb-md-0">
-            <label className="form-label text-dark fw-semibold">
-              Statement Start Date <span className="text-muted small">(Optional)</span>
-            </label>
-            <input
-              type="date"
-              className="form-control form-control-lg"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label text-dark fw-semibold">
-              Statement End Date <span className="text-muted small">(Optional)</span>
-            </label>
-            <input
-              type="date"
-              className="form-control form-control-lg"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
         </div>
 
         {/* Process button */}
@@ -269,10 +262,70 @@ export default function BankStatementUpload({ onImportComplete }) {
       {/* Review extracted transactions */}
       {showReview && extractedTransactions.length > 0 && (
         <div className="card-body border-top bg-white pt-4">
+          {/* Duplicate Information Alert */}
+          {duplicateInfo && duplicateInfo.duplicates > 0 ? (
+            <div className="alert alert-info d-flex align-items-start mb-3" role="alert">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="me-3 flex-shrink-0"
+                style={{ marginTop: "2px" }}
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <div>
+                <h6 className="alert-heading mb-2">Duplicate Detection</h6>
+                <p className="mb-2">
+                  <strong>{duplicateInfo.duplicates} duplicate transaction(s)</strong> were found and automatically skipped to prevent double entries.
+                </p>
+                <small className="text-muted">
+                  Total extracted: {duplicateInfo.total} | New: {duplicateInfo.new} | Duplicates: {duplicateInfo.duplicates}
+                </small>
+                {duplicateInfo.duplicateTransactions && duplicateInfo.duplicateTransactions.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="text-primary" style={{ cursor: "pointer" }}>
+                      View skipped duplicates
+                    </summary>
+                    <div className="mt-2 p-2 bg-light rounded">
+                      {duplicateInfo.duplicateTransactions.map((dup, idx) => (
+                        <div key={idx} className="small text-muted mb-1">
+                          • {new Date(dup.date).toLocaleDateString()} - {dup.description} - ₹{dup.amount?.toLocaleString()} ({dup.type})
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            </div>
+          ) : duplicateInfo && duplicateInfo.duplicates === 0 && (
+            <div className="alert alert-success d-flex align-items-center mb-3" role="alert">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="me-2"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>
+                <strong>All transactions are new!</strong> No duplicates detected.
+              </span>
+            </div>
+          )}
+
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <h6 className="mb-0 text-dark fw-semibold">📋 Review Extracted Transactions</h6>
-            <span className="badge bg-primary rounded-pill px-3 py-2" style={{ fontSize: "0.9rem" }}>
-              {extractedTransactions.length} transactions found
+            <h6 className="mb-0 text-dark fw-semibold">📋 Review New Transactions</h6>
+            <span className="badge bg-success rounded-pill px-3 py-2" style={{ fontSize: "0.9rem" }}>
+              {extractedTransactions.length} new transaction(s)
             </span>
           </div>
 

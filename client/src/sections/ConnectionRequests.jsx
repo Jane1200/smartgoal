@@ -224,44 +224,7 @@ export default function ConnectionRequests() {
       </div>
 
       {/* Stats Cards */}
-      <div className="row g-3 mb-4">
-        <div className="col-6 col-md-3">
-          <div className="card admin-stat-card admin-stat-warning h-100">
-            <div className="card-body text-center">
-              <h6 className="card-title">Pending</h6>
-              <h3 className="mb-0">{stats.pending}</h3>
-              <small className="text-muted">Awaiting response</small>
-            </div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="card admin-stat-card admin-stat-success h-100">
-            <div className="card-body text-center">
-              <h6 className="card-title">Accepted</h6>
-              <h3 className="mb-0">{stats.accepted}</h3>
-              <small className="text-muted">Connected</small>
-            </div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="card admin-stat-card admin-stat-danger h-100">
-            <div className="card-body text-center">
-              <h6 className="card-title">Rejected</h6>
-              <h3 className="mb-0">{stats.rejected}</h3>
-              <small className="text-muted">Declined</small>
-            </div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="card admin-stat-card admin-stat-info h-100">
-            <div className="card-body text-center">
-              <h6 className="card-title">Total</h6>
-              <h3 className="mb-0">{stats.total}</h3>
-              <small className="text-muted">All requests</small>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Removed separate stats cards - stats are shown in tab labels */}
 
       {/* Connection Requests */}
       <div className="card">

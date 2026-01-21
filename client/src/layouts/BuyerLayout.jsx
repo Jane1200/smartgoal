@@ -123,46 +123,6 @@ export default function BuyerLayout() {
               My Orders
             </NavLink>
             <NavLink
-              to="/buyer-finances"
-              className={({ isActive }) =>
-                `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`
-              }
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <rect x="2" y="6" width="20" height="12" rx="2" />
-                <path d="M6 10h12" />
-                <path d="M6 14h12" />
-                <circle cx="12" cy="12" r="2" />
-              </svg>
-              My Finances
-            </NavLink>
-
-            <NavLink
-              to="/buyer-analytics"
-              className={({ isActive }) =>
-                `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`
-              }
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <polyline points="22,12 18,12 15,21 9,3 6,12 2,12" />
-              </svg>
-              Analytics
-            </NavLink>
-            <NavLink
               to="/find-goal-setters"
               className={({ isActive }) =>
                 `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`
@@ -184,7 +144,28 @@ export default function BuyerLayout() {
               Find Goal Setters
             </NavLink>
             <NavLink
-              to="/buyer-profile"
+              to="/buyer-finances"
+              className={({ isActive }) =>
+                `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`
+              }
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <rect x="2" y="6" width="20" height="12" rx="2" />
+                <path d="M6 10h12" />
+                <path d="M6 14h12" />
+                <circle cx="12" cy="12" r="2" />
+              </svg>
+              My Finances
+            </NavLink>
+            <NavLink
+              to="/profile"
               className={({ isActive }) =>
                 `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`
               }

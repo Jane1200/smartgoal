@@ -39,18 +39,14 @@ const SCAM_KEYWORDS = [
   "meet in person mandatory", "no online payment", "only cash accepted"
 ];
 
-// URL patterns that indicate external links (potential phishing)
+// URL patterns that indicate suspicious shortened links
 const SUSPICIOUS_URL_PATTERNS = [
   /bit\.ly/i,
   /tinyurl/i,
   /goo\.gl/i,
   /t\.co/i,
   /ow\.ly/i,
-  /shortened\.link/i,
-  /click\.here/i,
-  /verify\.your/i,
-  /secure\.payment/i,
-  /account\.update/i
+  /shortened\.link/i
 ];
 
 // Phone number patterns
@@ -105,7 +101,7 @@ export function detectFraud(listing) {
     flags.push({
       type: "suspicious_url",
       severity: "high",
-      message: "Contains shortened or suspicious URLs that may lead to phishing sites"
+      message: "Contains shortened or suspicious URLs"
     });
   }
 

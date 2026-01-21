@@ -18,7 +18,8 @@ const emptyForm = {
   targetAmount: "",
   dueDate: "",
   status: "planned",
-  category: "other",
+  category: "custom", // Always custom for manual goals
+  customCategory: "",
   priority: 3,
 };
 
@@ -26,7 +27,10 @@ export default function GoalsManager({
   viewMode, 
   financeData, 
   isGoalCreationEnabled: goalCreationEnabled, 
-  refreshFinanceData 
+  refreshFinanceData,
+  showCreateForm = true,
+  onGoalCreated,
+  createOnly = false // New prop to show ONLY the create form
 }) {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -96,13 +100,18 @@ export default function GoalsManager({
 
   function startEdit(goal) {
     setEditingId(goal._id);
+    
+    // Check if the category is a predefined one or custom
+    const isPredefinedCategory = Object.keys(GOAL_CATEGORIES).includes(goal.category);
+    
     setForm({
       title: goal.title || "",
       description: goal.description || "",
       targetAmount: goal.targetAmount ?? "",
       dueDate: goal.dueDate ? goal.dueDate.substring(0, 10) : "",
       status: goal.status || "planned",
-      category: goal.category || "other",
+      category: isPredefinedCategory ? goal.category : "custom",
+      customCategory: isPredefinedCategory ? "" : goal.category,
       priority: goal.priority || 3,
     });
   }
@@ -124,6 +133,15 @@ export default function GoalsManager({
       errors.category = "Please select a goal category";
     }
     
+    // Validate custom category if selected
+    if (form.category === 'custom') {
+      if (!form.customCategory || form.customCategory.trim().length < 3) {
+        errors.customCategory = "Custom category must be at least 3 characters";
+      } else if (form.customCategory.trim().length > 30) {
+        errors.customCategory = "Custom category cannot exceed 30 characters";
+      }
+    }
+    
     // Check for meaningful text in title
     if (form.title) {
       const titleError = validateMeaningfulTextSync('text_field', form.title.trim());
@@ -140,7 +158,7 @@ export default function GoalsManager({
       }
     }
 
-    if (!goalValidation.isValid || errors.category || errors.title || errors.description) {
+    if (!goalValidation.isValid || errors.category || errors.customCategory || errors.title || errors.description) {
       setFormErrors(errors);
       
       // Show specific error message for better UX
@@ -168,13 +186,16 @@ export default function GoalsManager({
     setSaving(true);
     
     try {
+      // Determine the final category to save
+      const finalCategory = form.category === 'custom' ? form.customCategory.trim() : form.category;
+      
       const payload = {
         title: form.title.trim(),
         description: form.description.trim(),
         targetAmount: form.targetAmount === "" ? undefined : parseInt(form.targetAmount, 10), // Parse as integer to avoid decimals
         dueDate: form.dueDate || undefined,
         status: form.status,
-        category: form.category || "other",
+        category: finalCategory,
         priority: form.priority || calculateAutoPriority(form.category),
       };
       
@@ -193,9 +214,17 @@ export default function GoalsManager({
         setGoals((prev) => prev.map((g) => (g._id === editingId ? data : g)));
         toast.success("Goal updated successfully");
       } else {
-        const { data } = await api.post("/goals", payload);
-        setGoals((prev) => [data, ...prev]);
+        await api.post("/goals", payload);
         toast.success("Goal created successfully");
+        
+        // Fetch all goals again to get allocated savings
+        const { data: allGoals } = await api.get("/goals");
+        setGoals(allGoals);
+        
+        // Call onGoalCreated callback if provided
+        if (onGoalCreated) {
+          onGoalCreated();
+        }
       }
       startCreate();
       // Refresh finance data to update savings
@@ -223,6 +252,31 @@ export default function GoalsManager({
     }
   }
 
+  async function completeGoal(goal) {
+    if (!window.confirm(
+      `Complete "${goal.title}"?\n\n` +
+      `This will:\n` +
+      `✓ Mark the goal as completed\n` +
+      `✓ Create an expense entry for ₹${goal.targetAmount}\n` +
+      `✓ Deduct ₹${goal.targetAmount} from your savings\n\n` +
+      `This action represents actually spending the money on this goal.`
+    )) {
+      return;
+    }
+    
+    try {
+      const { data } = await api.post(`/goals/${goal._id}/complete`);
+      toast.success(data.message);
+      // Reload goals and finance data
+      await loadGoals();
+      refreshFinanceData();
+    } catch (error) {
+      console.error("Failed to complete goal:", error);
+      const errorMsg = error.response?.data?.message || "Failed to complete goal";
+      toast.error(errorMsg);
+    }
+  }
+
   // Calculate progress percentage
   function getProgressPercentage(goal) {
     if (!goal.targetAmount || goal.targetAmount === 0) return 0;
@@ -242,64 +296,65 @@ export default function GoalsManager({
   }
 
   return (
-    <div className="row g-4">
-      <div className="col-12 col-lg-5">
-        <div className="card shadow-sm">
-          <div className="card-body">
-            <div className="d-flex align-items-center gap-2 mb-3">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-primary">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                <line x1="9" y1="9" x2="9.01" y2="9"/>
-                <line x1="15" y1="9" x2="15.01" y2="9"/>
+    <div className="row g-4 justify-content-center">
+      {showCreateForm && (
+        <div className={createOnly ? "col-12 col-lg-6" : "col-12 col-lg-5"}>
+          <div className="card shadow-sm border-0">
+          <div className="card-header bg-gradient text-white" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+            <div className="d-flex align-items-center gap-2">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
               </svg>
-              <h5 className="card-title mb-0">{isEdit ? "Edit Goal" : "Create New Goal"}</h5>
+              <h5 className="mb-0">{isEdit ? "Edit Goal" : "Create New Goal"}</h5>
             </div>
-            
-            <form className="d-grid gap-3" onSubmit={saveGoal}>
-              <div>
-                <label className="form-label fw-semibold small d-flex justify-content-between align-items-center">
-                  <span>Goal Title *</span>
+            <p className="mb-0 small opacity-75 mt-1">
+              {isEdit ? "Update your goal details" : "Set a financial target and track your progress"}
+            </p>
+          </div>
+          
+          <div className="card-body p-4">
+            <form onSubmit={saveGoal}>
+              {/* Goal Title */}
+              <div className="mb-4">
+                <label className="form-label fw-bold d-flex justify-content-between align-items-center">
+                  <span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                    Goal Title
+                  </span>
                   <span className={`badge ${getCharCountClass(getCharacterCount(form.title), 100)}`}>
                     {getCharacterCount(form.title)}/100
                   </span>
                 </label>
                 <input
-                  className={`form-control ${formErrors.title ? 'is-invalid' : (form.title.trim().length >= 3 && !hasSuspiciousWords(form.title.trim()) ? 'is-valid' : '')}`}
-                  placeholder="e.g., Save for vacation, Emergency Fund"
+                  className={`form-control form-control-lg ${formErrors.title ? 'is-invalid' : (form.title.trim().length >= 3 && !hasSuspiciousWords(form.title.trim()) ? 'is-valid' : '')}`}
+                  placeholder="e.g., Emergency Fund, New Laptop, Dream Vacation"
                   value={form.title}
                   onChange={(e) => {
                     const newTitle = e.target.value;
-                    
-                    // Prevent exceeding max length
-                    if (newTitle.length > 100) {
-                      return;
-                    }
+                    if (newTitle.length > 100) return;
                     
                     setForm({ ...form, title: newTitle });
-                    
-                    // Live validation as user types
                     const title = newTitle.trim();
                     if (!title) {
-                      setFormErrors({ ...formErrors, title: null }); // Don't show error while typing
+                      setFormErrors({ ...formErrors, title: null });
                     } else if (title.length < 3) {
                       setFormErrors({ ...formErrors, title: "Title must be at least 3 characters" });
                     } else if (!/^[a-zA-Z0-9\s\-_.,!?():]+$/.test(title)) {
                       setFormErrors({ ...formErrors, title: "Only letters, numbers, spaces, and basic punctuation allowed" });
                     } else {
-                      // Use meaningful text validator for better validation
                       const meaningError = validateMeaningfulTextSync('text_field', title);
                       if (meaningError) {
                         setFormErrors({ ...formErrors, title: meaningError });
                       } else {
-                        setFormErrors({ ...formErrors, title: null }); // Clear error if valid
+                        setFormErrors({ ...formErrors, title: null });
                       }
                     }
                   }}
                   onBlur={(e) => {
-                    // Validate on blur for required check
-                    const title = e.target.value.trim();
-                    if (!title) {
+                    if (!e.target.value.trim()) {
                       setFormErrors({ ...formErrors, title: "Title is required" });
                     }
                   }}
@@ -308,92 +363,57 @@ export default function GoalsManager({
                 />
                 <FormError error={formErrors.title} />
                 {!formErrors.title && form.title.trim().length >= 3 && !hasSuspiciousWords(form.title.trim()) && (
-                  <small className="text-success">✓ Valid goal title</small>
-                )}
-                {!formErrors.title && !form.title && (
-                  <small className="text-muted">Min 3 characters, max 100. Use meaningful words only.</small>
+                  <div className="form-text text-success">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Looks good!
+                  </div>
                 )}
               </div>
-              
-              <div>
-                <label className="form-label fw-semibold small d-flex justify-content-between align-items-center">
-                  <span>Description</span>
-                  <span className={`badge ${getCharCountClass(getCharacterCount(form.description), 500)}`}>
-                    {getCharacterCount(form.description)}/500
-                  </span>
+
+              {/* Goal Category */}
+              <div className="mb-4">
+                <label className="form-label fw-bold">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                  </svg>
+                  Goal Category *
                 </label>
-                <textarea
-                  className={`form-control ${formErrors.description ? 'is-invalid' : (form.description.trim().length > 0 && !hasSuspiciousWords(form.description.trim()) ? 'is-valid' : '')}`}
-                  placeholder="Describe your goal... (e.g., Planning a family vacation to Goa in December)"
-                  rows={3}
-                  value={form.description}
+                <input
+                  className={`form-control form-control-lg ${formErrors.customCategory ? 'is-invalid' : ''}`}
+                  type="text"
+                  placeholder="e.g., Wedding, Car, Medical, Home, Business, Gift, Pet Care, Hobby"
+                  value={form.customCategory}
+                  maxLength={30}
                   onChange={(e) => {
-                    const newDescription = e.target.value;
-                    
-                    // Prevent exceeding max length
-                    if (newDescription.length > 500) {
-                      return;
-                    }
-                    
-                    setForm({ ...form, description: newDescription });
-                    
-                    // Live validation as user types
-                    const description = newDescription.trim();
-                    if (!description) {
-                      setFormErrors({ ...formErrors, description: null });
-                    } else {
-                      // Use meaningful text validator for better validation
-                      const meaningError = validateMeaningfulTextSync('text_field', description);
-                      if (meaningError) {
-                        setFormErrors({ ...formErrors, description: meaningError });
-                      } else {
-                        setFormErrors({ ...formErrors, description: null });
-                      }
+                    setForm({ ...form, customCategory: e.target.value });
+                    if (formErrors.customCategory) {
+                      setFormErrors({ ...formErrors, customCategory: null });
                     }
                   }}
                   disabled={!isGoalCreationEnabled() && !isEdit}
                 />
-                <FormError error={formErrors.description} />
-                {!formErrors.description && form.description.trim().length > 0 && !hasSuspiciousWords(form.description.trim()) && (
-                  <small className="text-success">✓ Valid description</small>
-                )}
-                {!formErrors.description && !form.description && (
-                  <small className="text-muted">Optional, max 500 characters. Use meaningful text.</small>
-                )}
+                <FormError error={formErrors.customCategory} />
+                <div className="form-text text-muted">
+                  Create your own category name (3-30 characters). Examples: Wedding Fund, Sister's Education, Medical Emergency, Dream Car
+                </div>
               </div>
-              
-              <div>
-                <label className="form-label fw-semibold small">Goal Category *</label>
-                <select
-                  className={`form-select ${formErrors.category ? 'is-invalid' : ''}`}
-                  value={form.category}
-                  onChange={(e) => {
-                    const newCategory = e.target.value;
-                    const autoPriority = calculateAutoPriority(newCategory);
-                    setForm({ ...form, category: newCategory, priority: autoPriority });
-                    // Clear error when user selects a category
-                    if (formErrors.category) {
-                      setFormErrors({ ...formErrors, category: null });
-                    }
-                  }}
-                  disabled={!isGoalCreationEnabled() && !isEdit}
-                >
-                  {Object.entries(GOAL_CATEGORIES).map(([key, cat]) => (
-                    <option key={key} value={key}>
-                      {cat.icon} {cat.label} - {cat.description}
-                    </option>
-                  ))}
-                </select>
-                <FormError error={formErrors.category} />
-                <small className="text-muted">
-                  Priority is automatically set based on category. Critical goals should be completed first.
-                </small>
-              </div>
-              
-              <div className="row g-2">
-                <div className="col">
-                  <label className="form-label fw-semibold small">Target Amount *</label>
-                  <div className="input-group">
+
+              {/* Target Amount & Due Date Row */}
+              <div className="row g-3 mb-4">
+                <div className="col-md-6">
+                  <label className="form-label fw-bold">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                      <line x1="12" y1="1" x2="12" y2="23"/>
+                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    Target Amount
+                  </label>
+                  <div className="input-group input-group-lg">
                     <span className="input-group-text">₹</span>
                     <input
                       className={`form-control ${formErrors.targetAmount ? 'is-invalid' : ''}`}
@@ -401,33 +421,30 @@ export default function GoalsManager({
                       min="100"
                       max="100000"
                       step="1"
-                      placeholder="100000"
+                      placeholder="10000"
                       value={form.targetAmount}
                       onChange={(e) => {
                         const newAmount = e.target.value;
                         setForm({ ...form, targetAmount: newAmount });
                         
-                        // Live validation as user types
                         if (!newAmount || newAmount === "") {
-                          setFormErrors({ ...formErrors, targetAmount: null }); // Don't show error while typing
+                          setFormErrors({ ...formErrors, targetAmount: null });
                         } else {
                           const numAmount = Number(newAmount);
                           if (isNaN(numAmount)) {
                             setFormErrors({ ...formErrors, targetAmount: "Must be a valid number" });
-                          } else                           if (numAmount < 100) {
-                            setFormErrors({ ...formErrors, targetAmount: "Minimum amount is ₹100" });
+                          } else if (numAmount < 100) {
+                            setFormErrors({ ...formErrors, targetAmount: "Minimum ₹100" });
                           } else if (numAmount > 100000) {
-                            setFormErrors({ ...formErrors, targetAmount: "Maximum amount is ₹1,00,000" });
+                            setFormErrors({ ...formErrors, targetAmount: "Maximum ₹1,00,000" });
                           } else {
-                            setFormErrors({ ...formErrors, targetAmount: null }); // Clear error if valid
+                            setFormErrors({ ...formErrors, targetAmount: null });
                           }
                         }
                       }}
                       onBlur={(e) => {
-                        // Validate on blur for required check
-                        const amount = e.target.value;
-                        if (!amount || amount === "") {
-                          setFormErrors({ ...formErrors, targetAmount: "Target amount is required" });
+                        if (!e.target.value || e.target.value === "") {
+                          setFormErrors({ ...formErrors, targetAmount: "Amount is required" });
                         }
                       }}
                       disabled={!isGoalCreationEnabled() && !isEdit}
@@ -435,15 +452,21 @@ export default function GoalsManager({
                     />
                   </div>
                   <FormError error={formErrors.targetAmount} />
-                  <small className="text-muted">Min ₹100, Max ₹1,00,000</small>
+                  <div className="form-text text-muted">₹100 - ₹1,00,000</div>
                 </div>
-              </div>
-              
-              <div className="row g-2">
-                <div className={isEdit ? "col" : "col-12"}>
-                  <label className="form-label fw-semibold small">Due Date *</label>
+
+                <div className="col-md-6">
+                  <label className="form-label fw-bold">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    Target Date
+                  </label>
                   <input
-                    className={`form-control ${formErrors.dueDate ? 'is-invalid' : ''}`}
+                    className={`form-control form-control-lg ${formErrors.dueDate ? 'is-invalid' : ''}`}
                     type="date"
                     value={form.dueDate}
                     min={(() => {
@@ -457,9 +480,8 @@ export default function GoalsManager({
                       const newDate = e.target.value;
                       setForm({ ...form, dueDate: newDate });
                       
-                      // Live validation as user selects
                       if (!newDate) {
-                        setFormErrors({ ...formErrors, dueDate: null }); // Don't show error immediately
+                        setFormErrors({ ...formErrors, dueDate: null });
                       } else {
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
@@ -467,48 +489,101 @@ export default function GoalsManager({
                         dueDate.setHours(0, 0, 0, 0);
                         
                         if (dueDate < today) {
-                          setFormErrors({ ...formErrors, dueDate: "Due date must be today or in the future" });
+                          setFormErrors({ ...formErrors, dueDate: "Must be today or future" });
                         } else {
-                          setFormErrors({ ...formErrors, dueDate: null }); // Clear error if valid
+                          setFormErrors({ ...formErrors, dueDate: null });
                         }
                       }
                     }}
                     onBlur={(e) => {
-                      // Validate on blur for required check
-                      const selectedDate = e.target.value;
-                      if (!selectedDate) {
-                        setFormErrors({ ...formErrors, dueDate: "Due date is required" });
+                      if (!e.target.value) {
+                        setFormErrors({ ...formErrors, dueDate: "Date is required" });
                       }
                     }}
                     disabled={!isGoalCreationEnabled() && !isEdit}
                     required
                   />
                   <FormError error={formErrors.dueDate} />
-                  <small className="text-muted">Must be today or future date</small>
+                  <div className="form-text text-muted">When do you want to achieve this?</div>
                 </div>
-                {isEdit && (
-                  <div className="col">
-                    <label className="form-label fw-semibold small">Status</label>
-                    <select
-                      className="form-select"
-                      value={form.status}
-                      onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    >
-                      <option value="planned">📋 Planned</option>
-                      <option value="in_progress">🚀 In Progress</option>
-                      <option value="achieved">✅ Achieved</option>
-                      <option value="completed">✓ Completed</option>
-                      <option value="archived">📦 Archived</option>
-                    </select>
-                    <small className="text-muted">
-                      Status updates automatically based on progress
-                    </small>
-                  </div>
-                )}
               </div>
+
+              {/* Description */}
+              <div className="mb-4">
+                <label className="form-label fw-bold d-flex justify-content-between align-items-center">
+                  <span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="16" y1="13" x2="8" y2="13"/>
+                      <line x1="16" y1="17" x2="8" y2="17"/>
+                      <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                    Description (Optional)
+                  </span>
+                  <span className={`badge ${getCharCountClass(getCharacterCount(form.description), 500)}`}>
+                    {getCharacterCount(form.description)}/500
+                  </span>
+                </label>
+                <textarea
+                  className={`form-control ${formErrors.description ? 'is-invalid' : (form.description.trim().length > 0 && !hasSuspiciousWords(form.description.trim()) ? 'is-valid' : '')}`}
+                  placeholder="Add more details about your goal... (e.g., Why is this important? What will you use it for?)"
+                  rows={3}
+                  value={form.description}
+                  onChange={(e) => {
+                    const newDescription = e.target.value;
+                    if (newDescription.length > 500) return;
+                    
+                    setForm({ ...form, description: newDescription });
+                    const description = newDescription.trim();
+                    if (!description) {
+                      setFormErrors({ ...formErrors, description: null });
+                    } else {
+                      const meaningError = validateMeaningfulTextSync('text_field', description);
+                      if (meaningError) {
+                        setFormErrors({ ...formErrors, description: meaningError });
+                      } else {
+                        setFormErrors({ ...formErrors, description: null });
+                      }
+                    }
+                  }}
+                  disabled={!isGoalCreationEnabled() && !isEdit}
+                />
+                <FormError error={formErrors.description} />
+              </div>
+
+              {/* Status (only for edit) */}
+              {isEdit && (
+                <div className="mb-4">
+                  <label className="form-label fw-bold">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                    Status
+                  </label>
+                  <select
+                    className="form-select form-select-lg"
+                    value={form.status}
+                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  >
+                    <option value="planned">📋 Planned</option>
+                    <option value="in_progress">🚀 In Progress</option>
+                    <option value="achieved">✅ Achieved</option>
+                    <option value="completed">✓ Completed</option>
+                    <option value="archived">📦 Archived</option>
+                  </select>
+                  <div className="form-text text-muted">Status updates automatically based on progress</div>
+                </div>
+              )}
               
-              <div className="d-flex gap-2 pt-2">
-                <button className="btn btn-primary flex-grow-1" disabled={saving || (!isGoalCreationEnabled() && !isEdit)} type="submit">
+              {/* Action Buttons */}
+              <div className="d-grid gap-2">
+                <button 
+                  className="btn btn-lg btn-primary" 
+                  disabled={saving || (!isGoalCreationEnabled() && !isEdit)} 
+                  type="submit"
+                  style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: 'none' }}
+                >
                   {saving ? (
                     <>
                       <span className="spinner-border spinner-border-sm me-2" role="status"></span>
@@ -516,10 +591,10 @@ export default function GoalsManager({
                     </>
                   ) : (
                     <>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
                         <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                        <polyline points="17,21 17,13 7,13 7,21"/>
-                        <polyline points="7,3 7,8 15,8"/>
+                        <polyline points="17 21 17 13 7 13 7 21"/>
+                        <polyline points="7 3 7 8 15 8"/>
                       </svg>
                       {isEdit ? "Update Goal" : "Create Goal"}
                     </>
@@ -527,7 +602,7 @@ export default function GoalsManager({
                 </button>
                 {isEdit && (
                   <button
-                    className="btn btn-outline-secondary"
+                    className="btn btn-lg btn-outline-secondary"
                     type="button"
                     onClick={startCreate}
                   >
@@ -535,20 +610,66 @@ export default function GoalsManager({
                   </button>
                 )}
               </div>
+
+              {/* Help Text */}
+              {!isGoalCreationEnabled() && !isEdit && (
+                <div className="alert alert-warning mt-3 mb-0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  You need at least ₹100 in savings to create goals
+                </div>
+              )}
             </form>
           </div>
         </div>
       </div>
+      )}
 
-      <div className="col-12 col-lg-7">
-        <div className="card shadow-sm">
+      {!createOnly && (
+        <div className={showCreateForm ? "col-12 col-lg-7" : "col-12"}>
+          <div className="card shadow-sm">
           <div className="card-body">
-            <div className="d-flex justify-content-between align-items-center mb-3">
-              <h5 className="card-title mb-0">Your Goals</h5>
-              <button className="btn btn-sm btn-outline-primary" onClick={loadGoals} disabled={loading}>
-                {loading ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
+            {/* Goals Summary */}
+            {!loading && goals.length > 0 && (
+              <div className="row g-3 mb-4">
+                <div className="col-md-4">
+                  <div className="card bg-primary bg-opacity-10 border-primary">
+                    <div className="card-body py-3">
+                      <div className="small text-muted mb-1">Active Goals</div>
+                      <div className="h4 mb-0 text-primary">
+                        {goals.filter(g => g.status !== 'completed' && g.status !== 'archived').length}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-md-4">
+                  <div className="card bg-success bg-opacity-10 border-success">
+                    <div className="card-body py-3">
+                      <div className="small text-muted mb-1">Total Target</div>
+                      <div className="h4 mb-0 text-success">
+                        ₹{goals.reduce((sum, g) => sum + (g.targetAmount || 0), 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-md-4">
+                  <div className="card bg-warning bg-opacity-10 border-warning">
+                    <div className="card-body py-3">
+                      <div className="small text-muted mb-1">Amount Needed</div>
+                      <div className="h4 mb-0 text-warning">
+                        ₹{goals.reduce((sum, g) => {
+                          const remaining = (g.targetAmount || 0) - (g.currentAmount || 0);
+                          return sum + Math.max(0, remaining);
+                        }, 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {loading ? (
               <div className="text-center py-4">
@@ -574,11 +695,19 @@ export default function GoalsManager({
                 {sortGoalsByPriority(goals).map((g) => {
                   const categoryInfo = getCategoryInfo(g.category || 'other');
                   const priorityInfo = getPriorityInfo(g.priority || 3);
+                  const progress = getProgressPercentage(g);
+                  const daysRemaining = g.dueDate ? Math.ceil((new Date(g.dueDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+                  const isOverdue = daysRemaining !== null && daysRemaining < 0;
+                  const isUrgent = daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 7;
+                  const amountRemaining = g.targetAmount ? g.targetAmount - (g.currentAmount || 0) : 0;
+                  const monthlyTarget = g.dueDate && g.targetAmount ? 
+                    Math.ceil(amountRemaining / Math.max(1, Math.ceil(daysRemaining / 30))) : 0;
+                  
                   return (
-                  <div key={g._id} className="list-group-item border-0 border-bottom">
+                  <div key={g._id} className={`list-group-item border-0 border-bottom ${isOverdue ? 'border-start border-danger border-3' : isUrgent ? 'border-start border-warning border-3' : ''}`}>
                     <div className="d-flex justify-content-between align-items-start">
                       <div className="flex-grow-1">
-                        <div className="d-flex align-items-center gap-2 mb-2">
+                        <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
                           <span style={{ fontSize: '1.2rem' }}>{categoryInfo.icon}</span>
                           <h6 className="mb-0 fw-semibold">{g.title}</h6>
                           <span className={`badge bg-${priorityInfo.color}`} title={`Priority: ${priorityInfo.label}`}>
@@ -587,29 +716,53 @@ export default function GoalsManager({
                           <span className={`badge ${getStatusBadgeClass(g.status)}`}>
                             {g.status.replace('_', ' ')}
                           </span>
+                          
+                          {/* Days Remaining Badge */}
+                          {daysRemaining !== null && g.status !== 'completed' && g.status !== 'archived' && (
+                            <span className={`badge ${isOverdue ? 'bg-danger' : isUrgent ? 'bg-warning text-dark' : 'bg-info'}`}>
+                              {isOverdue ? (
+                                <>⏰ Overdue by {Math.abs(daysRemaining)} days</>
+                              ) : daysRemaining === 0 ? (
+                                <>🔥 Due Today!</>
+                              ) : daysRemaining === 1 ? (
+                                <>⏰ Due Tomorrow</>
+                              ) : (
+                                <>📅 {daysRemaining} days left</>
+                              )}
+                            </span>
+                          )}
                         </div>
                         
                         {g.description && (
                           <p className="text-muted small mb-2">{g.description}</p>
                         )}
                         
-                        {/* Progress Bar */}
+                        {/* Progress Bar with Enhanced Info */}
                         {g.targetAmount && g.targetAmount > 0 && (
                           <div className="mb-2">
-                            <div className="d-flex justify-content-between small text-muted mb-1">
-                              <span>Progress</span>
-                              <span>{Math.round(getProgressPercentage(g))}%</span>
+                            <div className="d-flex justify-content-between small mb-1">
+                              <span className="text-muted">Progress: {Math.round(progress)}%</span>
+                              <span className={`fw-semibold ${progress >= 100 ? 'text-success' : progress >= 75 ? 'text-info' : progress >= 50 ? 'text-warning' : 'text-muted'}`}>
+                                ₹{amountRemaining.toLocaleString()} remaining
+                              </span>
                             </div>
-                            <div className="progress" style={{ height: "6px" }}>
+                            <div className="progress" style={{ height: "8px" }}>
                               <div 
-                                className="progress-bar bg-primary" 
-                                style={{ width: `${getProgressPercentage(g)}%` }}
+                                className={`progress-bar ${progress >= 100 ? 'bg-success' : progress >= 75 ? 'bg-info' : progress >= 50 ? 'bg-warning' : 'bg-primary'}`}
+                                style={{ width: `${Math.min(100, progress)}%` }}
                               ></div>
                             </div>
                             <div className="d-flex justify-content-between small text-muted mt-1">
-                              <span>₹{g.currentAmount || 0}</span>
-                              <span>₹{g.targetAmount}</span>
+                              <span>₹{(g.currentAmount || 0).toLocaleString()}</span>
+                              <span>₹{g.targetAmount.toLocaleString()}</span>
                             </div>
+                            
+                            {/* Monthly Target */}
+                            {monthlyTarget > 0 && g.status !== 'completed' && g.status !== 'archived' && (
+                              <div className="alert alert-info py-2 px-3 mt-2 mb-0 small">
+                                <strong>💰 Monthly Target:</strong> Save ₹{monthlyTarget.toLocaleString()}/month to reach this goal on time
+                              </div>
+                            )}
                           </div>
                         )}
                         
@@ -636,6 +789,18 @@ export default function GoalsManager({
                       </div>
                       
                       <div className="d-flex gap-1">
+                        {g.status === 'achieved' && (
+                          <button 
+                            className="btn btn-sm btn-success" 
+                            onClick={() => completeGoal(g)}
+                            title="Complete goal and deduct from savings"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                              <polyline points="20,6 9,17 4,12"/>
+                            </svg>
+                            Complete
+                          </button>
+                        )}
                         <button 
                           className="btn btn-sm btn-outline-primary" 
                           onClick={() => startEdit(g)}
@@ -661,13 +826,14 @@ export default function GoalsManager({
                       </div>
                     </div>
                   </div>
-                  );
+                );
                 })}
               </div>
             )}
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

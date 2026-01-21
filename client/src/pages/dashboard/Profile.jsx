@@ -4,11 +4,26 @@ import { Navigate, useNavigate } from "react-router-dom";
 import api, { getFileUrl } from "@/utils/api.js";
 import { toast } from "react-toastify";
 import { validateForm, validationRules, validateFileUpload } from "@/utils/validations.js";
+import {
+  Person,
+  Edit,
+  Lock,
+  CameraAlt,
+  Email,
+  Phone,
+  Home,
+  CalendarToday,
+  Verified,
+  Cake,
+  Work,
+} from "@mui/icons-material";
 
 export default function Profile() {
+  console.log("🔵 Profile component rendering");
   const navigate = useNavigate();
   const authContext = useAuth();
   const user = authContext?.user;
+  console.log("🔵 Profile - user:", user);
 
   const { updateUser } = authContext;
   const [loading, setLoading] = useState(true);
@@ -18,6 +33,7 @@ export default function Profile() {
   const [showAvatarForm, setShowAvatarForm] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [formErrors, setFormErrors] = useState({});
+  const [error, setError] = useState(null);
   
   const [profileData, setProfileData] = useState({
     name: "",
@@ -26,14 +42,28 @@ export default function Profile() {
     isVerified: false,
     avatar: "",
     createdAt: "",
-    updatedAt: ""
+    updatedAt: "",
+    location: {
+      city: "",
+      state: "",
+      latitude: null,
+      longitude: null,
+      postalCode: ""
+    }
   });
   
   const [editForm, setEditForm] = useState({
     name: "",
     email: "",
     phone: "",
-    address: ""
+    address: "",
+    age: "",
+    occupation: "",
+    city: "",
+    state: "",
+    latitude: "",
+    longitude: "",
+    postalCode: ""
   });
   
   const [passwordForm, setPasswordForm] = useState({
@@ -47,24 +77,80 @@ export default function Profile() {
   });
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   useEffect(() => {
     fetchProfileData();
   }, []);
 
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser");
+      return;
+    }
+
+    setGettingLocation(true);
+    toast.info("Getting your location...");
+    
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        setEditForm(prev => ({
+          ...prev,
+          latitude: latitude.toFixed(6),
+          longitude: longitude.toFixed(6)
+        }));
+        
+        setGettingLocation(false);
+        toast.success("Location detected successfully!");
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setGettingLocation(false);
+        toast.error("Failed to get your location. Please enter manually.");
+      }
+    );
+  };
+
   const fetchProfileData = async () => {
     try {
+      console.log("🔵 Fetching profile data...");
       setLoading(true);
+      setError(null);
       const response = await api.get("/profile");
-      setProfileData(response.data);
+      console.log("🔵 Profile data received:", response.data);
+      
+      // Ensure location object exists
+      const profileWithLocation = {
+        ...response.data,
+        location: response.data.location || {
+          city: "",
+          state: "",
+          latitude: null,
+          longitude: null,
+          postalCode: ""
+        }
+      };
+      
+      setProfileData(profileWithLocation);
       setEditForm({
-        name: response.data.name,
-        email: response.data.email,
-        phone: response.data.phone || "",
-        address: response.data.address || ""
+        name: profileWithLocation.name || "",
+        email: profileWithLocation.email || "",
+        phone: profileWithLocation.phone || "",
+        address: profileWithLocation.address || "",
+        age: profileWithLocation.age || "",
+        occupation: profileWithLocation.occupation || "",
+        city: profileWithLocation.location?.city || "",
+        state: profileWithLocation.location?.state || "",
+        latitude: profileWithLocation.location?.latitude || "",
+        longitude: profileWithLocation.location?.longitude || "",
+        postalCode: profileWithLocation.location?.postalCode || ""
       });
+      console.log("🔵 Profile state updated successfully");
     } catch (error) {
-      console.error("Failed to fetch profile:", error);
+      console.error("❌ Failed to fetch profile:", error);
+      setError("Failed to load profile data. Please refresh the page.");
       toast.error("Failed to load profile data");
     } finally {
       setLoading(false);
@@ -89,14 +175,31 @@ export default function Profile() {
 
     try {
       setSaving(true);
+      
+      // Update basic profile
       const response = await api.put("/profile", {
         name: editForm.name.trim(),
         phone: editForm.phone ? editForm.phone.trim() : "",
-        address: editForm.address ? editForm.address.trim() : ""
+        address: editForm.address ? editForm.address.trim() : "",
+        age: editForm.age ? parseInt(editForm.age) : undefined,
+        occupation: editForm.occupation ? editForm.occupation.trim() : undefined
       });
 
+      // Update location if provided
+      if (editForm.latitude && editForm.longitude) {
+        await api.put("/profile/location", {
+          latitude: parseFloat(editForm.latitude),
+          longitude: parseFloat(editForm.longitude),
+          address: editForm.address || "",
+          city: editForm.city || "",
+          state: editForm.state || "",
+          country: "India",
+          postalCode: editForm.postalCode || ""
+        });
+      }
+
       toast.success("Profile updated successfully!");
-      setProfileData(response.data);
+      await fetchProfileData(); // Refresh profile data
       updateUser(response.data);
       setShowEditForm(false);
     } catch (error) {
@@ -329,23 +432,39 @@ export default function Profile() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="container-xxl py-4">
+        <div className="alert alert-danger">
+          <h5>Error Loading Profile</h5>
+          <p>{error}</p>
+          <button className="btn btn-primary" onClick={fetchProfileData}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container-xxl py-4">
       <div className="row">
         <div className="col-12">
           <div className="d-flex justify-content-between align-items-center mb-4">
-            <div>
-              <h1 className="h3 mb-1">My Profile</h1>
-              <p className="text-muted mb-0">Manage your account settings and preferences</p>
+            <div className="d-flex align-items-center gap-3">
+              <div className="bg-primary bg-opacity-10 p-3 rounded-3">
+                <Person className="text-primary" style={{ fontSize: "2rem" }} />
+              </div>
+              <div>
+                <h1 className="h3 mb-1">My Profile</h1>
+                <p className="text-muted mb-0">Manage your account settings and preferences</p>
+              </div>
             </div>
             <button
-              className="btn btn-primary"
+              className="btn btn-primary d-flex align-items-center gap-2"
               onClick={() => setShowEditForm(true)}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
+              <Edit fontSize="small" />
               Edit Profile
             </button>
           </div>
@@ -374,6 +493,59 @@ export default function Profile() {
                     <div className="col-12">
                       <label className="form-label text-muted">Address</label>
                       <div className="h6 mb-0">{profileData.address || 'Not provided'}</div>
+                    </div>
+                    
+                    {/* Location Information */}
+                    {(profileData.location?.city || profileData.location?.latitude) && (
+                      <>
+                        <div className="col-12 mt-3">
+                          <h6 className="text-muted mb-2">📍 Location</h6>
+                        </div>
+                        {profileData.location?.city && (
+                          <div className="col-md-6">
+                            <label className="form-label text-muted">City</label>
+                            <div className="h6 mb-0">{profileData.location.city}</div>
+                          </div>
+                        )}
+                        {profileData.location?.state && (
+                          <div className="col-md-6">
+                            <label className="form-label text-muted">State</label>
+                            <div className="h6 mb-0">{profileData.location.state}</div>
+                          </div>
+                        )}
+                        {profileData.location?.latitude && profileData.location?.longitude && (
+                          <div className="col-12">
+                            <label className="form-label text-muted">Coordinates</label>
+                            <div className="h6 mb-0">
+                              {Number(profileData.location.latitude).toFixed(6)}, {Number(profileData.location.longitude).toFixed(6)}
+                            </div>
+                            <small className="text-muted">Used for nearby buyer-seller matching (within 5 km)</small>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    
+                    <div className="col-md-6">
+                      <label className="form-label text-muted">
+                        <Cake fontSize="small" className="me-1" />
+                        Age
+                      </label>
+                      <div className="h6 mb-0">{profileData.age ? `${profileData.age} years` : 'Not provided'}</div>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label text-muted">
+                        <Work fontSize="small" className="me-1" />
+                        Occupation
+                      </label>
+                      <div className="h6 mb-0">
+                        {profileData.occupation ? (
+                          profileData.occupation === 'student' ? '🎓 Student' :
+                          profileData.occupation === 'working_professional' ? '💼 Working Professional' :
+                          profileData.occupation === 'freelancer' ? '💻 Freelancer' :
+                          profileData.occupation === 'entrepreneur' ? '🚀 Entrepreneur' :
+                          '👤 Other'
+                        ) : 'Not provided'}
+                      </div>
                     </div>
                     <div className="col-md-6 d-flex align-items-center gap-3">
                       <div>
@@ -596,6 +768,125 @@ export default function Profile() {
                             placeholder="Enter your address"
                             rows="3"
                           ></textarea>
+                        </div>
+                        <div className="col-md-6">
+                          <label htmlFor="editAge" className="form-label">
+                            <Cake fontSize="small" className="me-1" />
+                            Age
+                          </label>
+                          <input
+                            type="number"
+                            id="editAge"
+                            className="form-control"
+                            value={editForm.age}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, age: e.target.value }))}
+                            placeholder="Enter your age (18-45)"
+                            min="18"
+                            max="45"
+                          />
+                          <small className="text-muted">Age must be between 18 and 45</small>
+                        </div>
+                        <div className="col-md-6">
+                          <label htmlFor="editOccupation" className="form-label">
+                            <Work fontSize="small" className="me-1" />
+                            Occupation
+                          </label>
+                          <select
+                            id="editOccupation"
+                            className="form-select"
+                            value={editForm.occupation}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, occupation: e.target.value }))}
+                          >
+                            <option value="">Select occupation</option>
+                            <option value="student">🎓 Student</option>
+                            <option value="working_professional">💼 Working Professional</option>
+                            <option value="freelancer">💻 Freelancer</option>
+                            <option value="entrepreneur">🚀 Entrepreneur</option>
+                            <option value="other">👤 Other</option>
+                          </select>
+                          <small className="text-muted">Helps personalize your goal recommendations</small>
+                        </div>
+                        
+                        {/* Location Section */}
+                        <div className="col-12 mt-4">
+                          <h6 className="mb-3">📍 Location (for nearby matching)</h6>
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary btn-sm mb-3"
+                            onClick={handleGetCurrentLocation}
+                            disabled={gettingLocation}
+                          >
+                            {gettingLocation ? (
+                              <>
+                                <span className="spinner-border spinner-border-sm me-2" />
+                                Getting location...
+                              </>
+                            ) : (
+                              <>📍 Use My Current Location</>
+                            )}
+                          </button>
+                          <small className="text-muted d-block mb-3">
+                            Click to automatically detect your location for nearby buyer-seller matching
+                          </small>
+                        </div>
+                        
+                        <div className="col-md-6">
+                          <label htmlFor="editCity" className="form-label">City</label>
+                          <input
+                            type="text"
+                            id="editCity"
+                            className="form-control"
+                            value={editForm.city}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, city: e.target.value }))}
+                            placeholder="Enter your city"
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label htmlFor="editState" className="form-label">State</label>
+                          <input
+                            type="text"
+                            id="editState"
+                            className="form-control"
+                            value={editForm.state}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, state: e.target.value }))}
+                            placeholder="Enter your state"
+                          />
+                        </div>
+                        <div className="col-md-4">
+                          <label htmlFor="editLatitude" className="form-label">Latitude</label>
+                          <input
+                            type="number"
+                            step="0.000001"
+                            id="editLatitude"
+                            className="form-control"
+                            value={editForm.latitude}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, latitude: e.target.value }))}
+                            placeholder="e.g., 19.0760"
+                          />
+                        </div>
+                        <div className="col-md-4">
+                          <label htmlFor="editLongitude" className="form-label">Longitude</label>
+                          <input
+                            type="number"
+                            step="0.000001"
+                            id="editLongitude"
+                            className="form-control"
+                            value={editForm.longitude}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, longitude: e.target.value }))}
+                            placeholder="e.g., 72.8777"
+                          />
+                        </div>
+                        <div className="col-md-4">
+                          <label htmlFor="editPostalCode" className="form-label">Postal Code</label>
+                          <input
+                            type="text"
+                            id="editPostalCode"
+                            className="form-control"
+                            value={editForm.postalCode}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, postalCode: e.target.value }))}
+                            placeholder="e.g., 400001"
+                            maxLength="6"
+                          />
                         </div>
                       </div>
                     </div>

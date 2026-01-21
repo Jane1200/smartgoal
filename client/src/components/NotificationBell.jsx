@@ -48,7 +48,7 @@ export default function NotificationBell() {
 
   const markAsRead = async (id) => {
     try {
-      await api.patch(`/notifications/${id}/read`);
+      await api.put(`/notifications/${id}/read`);
       setNotifications((prev) =>
         prev.map((n) => (n._id === id ? { ...n, isRead: true } : n))
       );
@@ -60,7 +60,7 @@ export default function NotificationBell() {
 
   const markAllAsRead = async () => {
     try {
-      await api.patch("/notifications/read-all");
+      await api.put("/notifications/mark-all-read");
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
       toast.success("All notifications marked as read");

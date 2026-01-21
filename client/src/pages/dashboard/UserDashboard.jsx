@@ -1,13 +1,26 @@
-import { useAuth } from "@/context/AuthContext.jsx";
-import { Navigate } from "react-router-dom";
-import QuickActions from "@/sections/QuickActions.jsx";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext.jsx";
+import { Navigate, Link } from "react-router-dom";
 import api from "@/utils/api.js";
+import {
+  EmojiEvents,
+  TrendingUp,
+  TrendingDown,
+  FavoriteBorder,
+  Storefront,
+  Refresh,
+  AccountBalanceWallet,
+  AttachMoney,
+  CalendarToday,
+  TrendingFlat,
+  CheckCircle,
+  Warning,
+  Add,
+} from "@mui/icons-material";
 
 export default function UserDashboard() {
   const auth = useAuth();
   const user = auth?.user;
-  const logout = auth?.logout;
 
   const [goals, setGoals] = useState([]);
   const [wishlist, setWishlist] = useState([]);
@@ -31,7 +44,6 @@ export default function UserDashboard() {
   useEffect(() => {
     fetchUserData(false);
     
-    // Refresh data every 30 seconds for real-time updates
     const interval = setInterval(() => {
       fetchUserData(false);
     }, 30000);
@@ -97,18 +109,9 @@ export default function UserDashboard() {
     }
   };
 
-  // Function to refresh marketplace data (can be called from other components)
-  const refreshMarketplaceData = async () => {
-    try {
-      const response = await api.get("/marketplace/my-listings");
-      setMarketplaceListings(response.data);
-    } catch (error) {
-      console.error("Failed to refresh marketplace data:", error);
-    }
-  };
-
-  const activeGoals = goals.filter((g) => g.status !== "archived");
-  const activeCount = activeGoals.length;
+  const activeGoals = goals.filter((g) => g.status !== "archived" && g.status !== "completed");
+  const completedGoals = goals.filter((g) => g.status === "completed");
+  
   const avgProgress = (() => {
     if (activeGoals.length === 0) return 0;
     const sum = activeGoals.reduce((acc, g) => {
@@ -120,31 +123,41 @@ export default function UserDashboard() {
     return Math.round(sum / activeGoals.length);
   })();
 
-  // Calculate achieved goals (100% progress)
-  const achievedGoals = activeGoals.filter((g) => {
-    const current = Number(g.currentAmount || 0);
-    const target = Number(g.targetAmount || 0);
-    const progress = target > 0 ? Math.round((current / target) * 100) : 0;
-    return progress >= 100;
-  }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)); // Sort by most recent first
+  // Calculate urgent goals (due within 7 days)
+  const urgentGoals = activeGoals.filter(g => {
+    if (!g.dueDate) return false;
+    const daysRemaining = Math.ceil((new Date(g.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
+    return daysRemaining >= 0 && daysRemaining <= 7;
+  });
 
-  // Helper function to format date/time
-  const formatTimeAgo = (date) => {
-    if (!date) return 'Recently';
-    const now = new Date();
-    const updated = new Date(date);
-    const diffInSeconds = Math.floor((now - updated) / 1000);
+  // Calculate overdue goals
+  const overdueGoals = activeGoals.filter(g => {
+    if (!g.dueDate) return false;
+    const daysRemaining = Math.ceil((new Date(g.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
+    return daysRemaining < 0;
+  });
 
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
-    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`;
-    
-    return updated.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
+  // Calculate total amount needed
+  const totalAmountNeeded = activeGoals.reduce((sum, g) => {
+    const remaining = (g.targetAmount || 0) - (g.currentAmount || 0);
+    return sum + Math.max(0, remaining);
+  }, 0);
 
-  const savedPctThisMonth = 0;
-  const recentActivity = [];
+  // Calculate total target
+  const totalTarget = activeGoals.reduce((sum, g) => sum + (g.targetAmount || 0), 0);
+
+  // Calculate total saved toward goals
+  const totalSaved = activeGoals.reduce((sum, g) => sum + (g.currentAmount || 0), 0);
+
+  // Get next milestone goal (closest due date with progress < 100%)
+  const nextMilestone = activeGoals
+    .filter(g => g.dueDate && g.targetAmount > (g.currentAmount || 0))
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+
+  // Auth check - must be after all hooks
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   if (loading) {
     return (
@@ -160,6 +173,7 @@ export default function UserDashboard() {
 
   return (
     <div className="container py-5 dashboard-page user-dashboard">
+      {/* Header - Matching Buyer Dashboard Style */}
       <div className="dashboard-hero">
         <div className="welcome-content">
           <div className="d-flex justify-content-between align-items-start">
@@ -168,459 +182,393 @@ export default function UserDashboard() {
                 Welcome{user?.profile?.name ? `, ${user.profile.name}` : ", hey"}
                 <div className="welcome-icon">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                    <line x1="9" y1="9" x2="9.01" y2="9"/>
-                    <line x1="15" y1="9" x2="15.01" y2="9"/>
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                   </svg>
                 </div>
               </h1>
               <div className="subtitle">
-                Your goals, finances, and marketplace at a glance • Last updated: {lastUpdated.toLocaleTimeString()}
+                Track your goals, manage finances, and achieve your dreams
               </div>
             </div>
             <button 
               className="btn btn-outline-secondary btn-sm"
               onClick={() => fetchUserData(true)}
-              title="Refresh dashboard data"
               disabled={refreshing}
+              title="Refresh dashboard data"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{display: 'inline-block', marginRight: '6px', animation: refreshing ? 'spin 1s linear infinite' : 'none'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{display: 'inline-block', marginRight: '6px'}}>
                 <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
               </svg>
-              Refresh
+              {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
         </div>
       </div>
 
+      {/* Goal Progress Ring */}
       <div className="row g-4 mb-4">
-        {/* Goal Progress */}
-        <div className="col-12 col-lg-6">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex align-items-center gap-2 mb-3">
-                <div className="card-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                    <line x1="9" y1="9" x2="9.01" y2="9"/>
-                    <line x1="15" y1="9" x2="15.01" y2="9"/>
-                  </svg>
+        <div className="col-md-4">
+          <div className="card shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="position-relative d-inline-block mb-3">
+                <svg width="180" height="180" viewBox="0 0 180 180">
+                  {/* Background circle */}
+                  <circle
+                    cx="90"
+                    cy="90"
+                    r="70"
+                    fill="none"
+                    stroke="#e2e8f0"
+                    strokeWidth="12"
+                  />
+                  {/* Progress circle */}
+                  <circle
+                    cx="90"
+                    cy="90"
+                    r="70"
+                    fill="none"
+                    stroke="#161da3"
+                    strokeWidth="12"
+                    strokeDasharray={`${(avgProgress / 100) * 439.8} 439.8`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 90 90)"
+                  />
+                </svg>
+                <div className="position-absolute top-50 start-50 translate-middle text-center">
+                  <div className="h1 mb-0 fw-bold text-primary">{avgProgress}%</div>
+                  <small className="text-muted">Average Progress</small>
                 </div>
-                <h5 className="card-title mb-0">Goal Progress</h5>
               </div>
+              <h6 className="text-muted mb-0">Overall Goal Progress</h6>
+            </div>
+          </div>
+        </div>
+
+        <div className="col-md-8">
+          <div className="row g-3 h-100">
+            <div className="col-6">
+              <div className="card shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="card-icon">
+                      <EmojiEvents fontSize="small" />
+                    </div>
+                    <small className="text-muted">Active Goals</small>
+                  </div>
+                  <div className="h3 mb-0 text-primary">{activeGoals.length}</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6">
+              <div className="card shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="card-icon">
+                      <CheckCircle fontSize="small" />
+                    </div>
+                    <small className="text-muted">Completed</small>
+                  </div>
+                  <div className="h3 mb-0 text-success">{completedGoals.length}</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6">
+              <div className="card shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="card-icon">
+                      <AccountBalanceWallet fontSize="small" />
+                    </div>
+                    <small className="text-muted">Total Saved</small>
+                  </div>
+                  <div className="h4 mb-0 text-info">₹{totalSaved.toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6">
+              <div className="card shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="card-icon">
+                      <TrendingUp fontSize="small" />
+                    </div>
+                    <small className="text-muted">Amount Needed</small>
+                  </div>
+                  <div className="h4 mb-0 text-warning">₹{totalAmountNeeded.toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Urgent Actions Section */}
+      {(urgentGoals.length > 0 || overdueGoals.length > 0 || nextMilestone) && (
+        <div className="row mb-4">
+          <div className="col-12">
+            <div className="card shadow-sm border-warning border-2">
+              <div className="card-body">
+                <div className="d-flex align-items-center gap-2 mb-3">
+                  <Warning className="text-warning" />
+                  <h5 className="mb-0">🔥 Needs Your Attention</h5>
+                </div>
+
+                <div className="row g-3">
+                  {overdueGoals.length > 0 && (
+                    <div className="col-md-4">
+                      <div className="alert alert-danger mb-0">
+                        <div className="fw-bold mb-1">⏰ {overdueGoals.length} Overdue Goal{overdueGoals.length > 1 ? 's' : ''}</div>
+                        <small>These goals have passed their due date</small>
+                        <Link to="/goals" className="btn btn-sm btn-danger mt-2 w-100">
+                          Review Now
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+
+                  {urgentGoals.length > 0 && (
+                    <div className="col-md-4">
+                      <div className="alert alert-warning mb-0">
+                        <div className="fw-bold mb-1">⚡ {urgentGoals.length} Urgent Goal{urgentGoals.length > 1 ? 's' : ''}</div>
+                        <small>Due within 7 days</small>
+                        <Link to="/goals" className="btn btn-sm btn-warning mt-2 w-100">
+                          Take Action
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+
+                  {nextMilestone && (
+                    <div className="col-md-4">
+                      <div className="alert alert-info mb-0">
+                        <div className="fw-bold mb-1">🎯 Next Milestone</div>
+                        <small className="d-block mb-1">{nextMilestone.title}</small>
+                        <small className="text-muted">
+                          ₹{((nextMilestone.targetAmount || 0) - (nextMilestone.currentAmount || 0)).toLocaleString()} needed
+                        </small>
+                        <Link to="/goals" className="btn btn-sm btn-info mt-2 w-100">
+                          View Goal
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content - Goals & Finance */}
+      <div className="row g-4 mb-4">
+        {/* Active Goals Section */}
+        <div className="col-12 col-lg-8">
+          <div className="card shadow-sm h-100">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h5 className="mb-0">
+                  <EmojiEvents className="text-primary me-2" />
+                  Your Active Goals
+                </h5>
+                <Link to="/goals" className="btn btn-sm btn-primary">
+                  <Add fontSize="small" className="me-1" />
+                  New Goal
+                </Link>
+              </div>
+
               {activeGoals.length === 0 ? (
-                <div className="text-center py-4">
-                  <div className="text-muted mb-2">No active goals yet</div>
-                  <small className="text-muted">Create your first goal to get started!</small>
+                <div className="text-center py-5">
+                  <EmojiEvents style={{ fontSize: '64px', opacity: 0.3 }} />
+                  <h6 className="text-muted mt-3">No active goals yet</h6>
+                  <p className="text-muted small mb-3">Start your financial journey by creating your first goal!</p>
+                  <Link to="/goals" className="btn btn-primary">
+                    Create Your First Goal
+                  </Link>
                 </div>
               ) : (
                 <div className="d-grid gap-3">
-                  {activeGoals.slice(0, 3).map((g) => {
+                  {activeGoals.slice(0, 4).map((g) => {
                     const current = Number(g.currentAmount || 0);
                     const target = Number(g.targetAmount || 0);
                     const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+                    const remaining = target - current;
+                    const daysRemaining = g.dueDate ? Math.ceil((new Date(g.dueDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+                    const isOverdue = daysRemaining !== null && daysRemaining < 0;
+                    const isUrgent = daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 7;
+
                     return (
-                      <div key={g._id} className="goal-item">
-                        <div className="d-flex justify-content-between small mb-2">
-                          <div className="fw-semibold">{g.title}</div>
-                          <div className="text-primary fw-bold">{pct}%</div>
+                      <div key={g._id} className={`border rounded p-3 ${isOverdue ? 'border-danger' : isUrgent ? 'border-warning' : ''}`}>
+                        <div className="d-flex justify-content-between align-items-start mb-2">
+                          <div className="flex-grow-1">
+                            <div className="d-flex align-items-center gap-2 mb-1">
+                              <h6 className="mb-0">{g.title}</h6>
+                              {daysRemaining !== null && (
+                                <span className={`badge ${isOverdue ? 'bg-danger' : isUrgent ? 'bg-warning text-dark' : 'bg-info'}`}>
+                                  {isOverdue ? `${Math.abs(daysRemaining)}d overdue` : `${daysRemaining}d left`}
+                                </span>
+                              )}
+                            </div>
+                            {g.description && (
+                              <small className="text-muted d-block mb-2">{g.description.substring(0, 80)}{g.description.length > 80 ? '...' : ''}</small>
+                            )}
+                          </div>
+                          <div className="text-end ms-3">
+                            <div className="fw-bold text-primary">{pct}%</div>
+                            <small className="text-muted">₹{remaining.toLocaleString()} left</small>
+                          </div>
                         </div>
-                        <div className="progress">
-                          <div className="progress-bar" style={{ width: `${pct}%` }} />
+                        
+                        <div className="progress mb-2" style={{ height: '10px' }}>
+                          <div 
+                            className={`progress-bar ${pct >= 75 ? 'bg-success' : pct >= 50 ? 'bg-info' : pct >= 25 ? 'bg-warning' : 'bg-primary'}`}
+                            style={{ width: `${pct}%` }}
+                          ></div>
+                        </div>
+                        
+                        <div className="d-flex justify-content-between align-items-center">
+                          <small className="text-muted">₹{current.toLocaleString()} / ₹{target.toLocaleString()}</small>
+                          {g.dueDate && (
+                            <small className="text-muted">
+                              <CalendarToday fontSize="inherit" className="me-1" />
+                              {new Date(g.dueDate).toLocaleDateString()}
+                            </small>
+                          )}
                         </div>
                       </div>
                     );
                   })}
+
+                  {activeGoals.length > 4 && (
+                    <Link to="/goals" className="btn btn-outline-primary">
+                      View All {activeGoals.length} Goals →
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Income & Expense Summary */}
-        <div className="col-12 col-lg-6">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="2" y="6" width="20" height="12" rx="2"/>
-                      <path d="M6 10h12"/>
-                      <path d="M6 14h12"/>
-                      <circle cx="12" cy="12" r="2"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Income & Expense</h5>
-                </div>
+        {/* Finance Summary & Quick Actions */}
+        <div className="col-12 col-lg-4">
+          <div className="d-grid gap-3">
+            {/* Monthly Finance Card */}
+            <div className="card shadow-sm">
+              <div className="card-body">
+                <h6 className="mb-3">
+                  <AttachMoney className="text-success me-1" />
+                  This Month
+                </h6>
                 
+                <div className="d-grid gap-2">
+                  <div className="d-flex justify-content-between align-items-center p-2 bg-success bg-opacity-10 rounded">
+                    <div className="d-flex align-items-center gap-2">
+                      <TrendingUp fontSize="small" className="text-success" />
+                      <small>Income</small>
+                    </div>
+                    <span className="fw-bold text-success">₹{financeData.monthlyIncome?.toLocaleString() || '0'}</span>
+                  </div>
+
+                  <div className="d-flex justify-content-between align-items-center p-2 bg-danger bg-opacity-10 rounded">
+                    <div className="d-flex align-items-center gap-2">
+                      <TrendingDown fontSize="small" className="text-danger" />
+                      <small>Expenses</small>
+                    </div>
+                    <span className="fw-bold text-danger">₹{financeData.monthlyExpense?.toLocaleString() || '0'}</span>
+                  </div>
+
+                  <div className="d-flex justify-content-between align-items-center p-2 bg-primary bg-opacity-10 rounded">
+                    <div className="d-flex align-items-center gap-2">
+                      <AccountBalanceWallet fontSize="small" className="text-primary" />
+                      <small>Savings</small>
+                    </div>
+                    <span className="fw-bold text-primary">₹{financeData.monthlySavings?.toLocaleString() || '0'}</span>
+                  </div>
+                </div>
+
+                <Link to="/finances" className="btn btn-outline-success btn-sm w-100 mt-3">
+                  View Finances
+                </Link>
               </div>
-              <div className="row g-3">
-                <div className="col">
-                  <div className="small text-muted">This Month Income</div>
-                  <div className="h4 mb-0">
-                    {loading ? (
-                      <div className="spinner-border spinner-border-sm text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                    ) : (
-                      `₹${financeData.monthlyIncome?.toLocaleString() || '0'}`
-                    )}
-                  </div>
-                </div>
-                <div className="col">
-                  <div className="small text-muted">This Month Expense</div>
-                  <div className="h4 mb-0">
-                    {loading ? (
-                      <div className="spinner-border spinner-border-sm text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                    ) : (
-                      `₹${financeData.monthlyExpense?.toLocaleString() || '0'}`
-                    )}
-                  </div>
-                </div>
-                <div className="col">
-                  <div className="small text-muted">Saved</div>
-                  <div className="h4 mb-0">
-                    {loading ? (
-                      <div className="spinner-border spinner-border-sm text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                    ) : (
-                      `₹${financeData.monthlySavings?.toLocaleString() || '0'}`
-                    )}
-                  </div>
-                  <div className="small text-muted">
-                    {financeData.monthlyIncome > 0 ? 'Track your progress' : 'Connect finance to see trends'}
-                  </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="card shadow-sm">
+              <div className="card-body">
+                <h6 className="mb-3">Quick Actions</h6>
+                <div className="d-grid gap-2">
+                  <Link to="/goals" className="btn btn-primary btn-sm">
+                    <Add fontSize="small" className="me-1" />
+                    Create New Goal
+                  </Link>
+                  <Link to="/finances" className="btn btn-success btn-sm">
+                    <TrendingUp fontSize="small" className="me-1" />
+                    Add Income
+                  </Link>
+                  <Link to="/wishlist" className="btn btn-outline-danger btn-sm">
+                    <FavoriteBorder fontSize="small" className="me-1" />
+                    View Wishlist ({wishlist.length})
+                  </Link>
+                  <Link to="/marketplace" className="btn btn-outline-warning btn-sm">
+                    <Storefront fontSize="small" className="me-1" />
+                    Marketplace ({marketplaceListings.length})
+                  </Link>
                 </div>
               </div>
             </div>
+
+            {/* Motivational Card */}
+            {activeGoals.length > 0 && (
+              <div className="card shadow-sm bg-gradient" style={{ 
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white'
+              }}>
+                <div className="card-body text-center">
+                  <div className="mb-2" style={{ fontSize: '2rem' }}>🎯</div>
+                  <h6 className="mb-2">Keep Going!</h6>
+                  <p className="small mb-0 opacity-75">
+                    You're {avgProgress}% closer to achieving your financial goals. Every step counts!
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="row g-4 mb-4">
-        {/* Smart Wishlist Overview */}
-        <div className="col-12 col-lg-6">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Smart Wishlist</h5>
-                </div>
-                <button className="btn btn-sm btn-outline-primary">View Wishlist</button>
-              </div>
-              <div className="text-muted">
-                {loading ? (
-                  <div className="d-flex align-items-center gap-2">
-                    <div className="spinner-border spinner-border-sm text-primary" role="status">
-                      <span className="visually-hidden">Loading...</span>
-                    </div>
-                    Loading wishlist...
-                  </div>
-                ) : wishlist.length === 0 ? (
-                  "No wishlist items yet."
-                ) : (
-                  `${wishlist.length} item${wishlist.length !== 1 ? 's' : ''} in your wishlist`
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Marketplace Listings */}
-        <div className="col-12 col-lg-6">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 3h18v18H3zM9 9h6v6H9z"/>
-                      <path d="M9 1v6M15 1v6M9 17v6M15 17v6M1 9h6M17 9h6M1 15h6M17 15h6"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Marketplace Listings</h5>
-                </div>
-                <a href="/marketplace" className="btn btn-sm btn-outline-primary">Manage</a>
-              </div>
-              
-              {loading ? (
-                <div className="d-flex align-items-center gap-2">
-                  <div className="spinner-border spinner-border-sm text-primary" role="status">
-                    <span className="visually-hidden">Loading...</span>
-                  </div>
-                  Loading listings...
-                </div>
-              ) : marketplaceListings.length === 0 ? (
-                <div className="text-muted">
-                  No marketplace listings yet.
-                  <br />
-                  <small>Start selling items to fund your goals!</small>
-                </div>
-              ) : (
-                <div className="d-grid gap-2">
-                  {marketplaceListings.slice(0, 3).map((listing) => (
-                    <div key={listing._id} className="d-flex align-items-center gap-3 p-2 border rounded">
-                      <div className="flex-shrink-0">
-                        <img
-                          src={
-                            listing.images?.[0]?.url || 
-                            listing.images?.[0] || 
-                            "https://via.placeholder.com/50x50?text=No+Image"
-                          }
-                          alt={listing.title}
-                          className="rounded"
-                          style={{ width: '50px', height: '50px', objectFit: 'cover' }}
-                        />
-                      </div>
-                      <div className="flex-grow-1">
-                        <div className="fw-medium small">{listing.title}</div>
-                        <div className="text-success fw-bold">₹{listing.price?.toLocaleString()}</div>
-                      </div>
-                      <div className="flex-shrink-0">
-                        <span className={`badge ${
-                          listing.status === 'active' ? 'bg-success' : 
-                          listing.status === 'sold' ? 'bg-primary' : 'bg-warning'
-                        }`}>
-                          {listing.status}
-                        </span>
+      {/* Recent Completed Goals */}
+      {completedGoals.length > 0 && (
+        <div className="row mb-4">
+          <div className="col-12">
+            <div className="card shadow-sm">
+              <div className="card-body">
+                <h5 className="mb-3">
+                  <CheckCircle className="text-success me-2" />
+                  Recently Completed Goals
+                </h5>
+                <div className="row g-3">
+                  {completedGoals.slice(0, 3).map((g) => (
+                    <div key={g._id} className="col-md-4">
+                      <div className="border border-success rounded p-3 bg-success bg-opacity-10">
+                        <div className="d-flex align-items-start gap-2">
+                          <CheckCircle className="text-success mt-1" fontSize="small" />
+                          <div className="flex-grow-1">
+                            <h6 className="mb-1">{g.title}</h6>
+                            <div className="text-success fw-bold">₹{(g.targetAmount || 0).toLocaleString()}</div>
+                            <small className="text-muted">
+                              Completed {new Date(g.updatedAt).toLocaleDateString()}
+                            </small>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
-                  {marketplaceListings.length > 3 && (
-                    <div className="text-center mt-2">
-                      <small className="text-muted">
-                        +{marketplaceListings.length - 3} more listings
-                      </small>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Seller Performance Stats */}
-      <div className="row g-4 mb-4">
-        <div className="col-12">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex align-items-center gap-2 mb-4">
-                <div className="card-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 2v20M2 12h20"/>
-                    <rect x="3" y="3" width="18" height="18" rx="2"/>
-                  </svg>
-                </div>
-                <h5 className="card-title mb-0">Selling Performance</h5>
-              </div>
-              <div className="row g-3 text-center">
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">Active Listings</div>
-                  <div className="h4 mb-0 text-success">{sellerStats.activeListings}</div>
-                </div>
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">Sold Items</div>
-                  <div className="h4 mb-0 text-primary">{sellerStats.soldListings}</div>
-                </div>
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">Total Earnings</div>
-                  <div className="h4 mb-0 text-info">₹{(sellerStats.totalEarnings || 0).toLocaleString()}</div>
-                </div>
-                <div className="col-6 col-md-3">
-                  <div className="small text-muted">Pending</div>
-                  <div className="h4 mb-0 text-warning">{sellerStats.pendingListings}</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="row g-4 mb-4">
-        <div className="col-12 col-lg-8">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <div className="card-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 2v20M2 12h20"/>
-                    </svg>
-                  </div>
-                  <h5 className="card-title mb-0">Recent Activity</h5>
-                </div>
-                {todayActivities.length > 0 && (
-                  <span className="badge bg-primary">
-                    {todayActivities.length} activit{todayActivities.length > 1 ? 'ies' : 'y'} today
-                  </span>
-                )}
-              </div>
-
-              {todayActivities.length === 0 ? (
-                <div className="text-center py-4">
-                  <div className="text-muted mb-2">No activity today yet</div>
-                  <small className="text-muted">Create goals, add finances, or list items to see your activity here!</small>
-                </div>
-              ) : (
-                <div className="d-grid gap-3">
-                  {todayActivities.map((activity, index) => {
-                    // Determine color based on activity type
-                    let borderColor = '#0d6efd'; // default blue
-                    let bgColor = '#f0f7ff';
-                    
-                    if (activity.type === 'goal') {
-                      borderColor = '#0d6efd';
-                      bgColor = '#f0f7ff';
-                    } else if (activity.type === 'finance') {
-                      if (activity.action === 'income') {
-                        borderColor = '#28a745';
-                        bgColor = '#f0fff4';
-                      } else {
-                        borderColor = '#dc3545';
-                        bgColor = '#fff5f5';
-                      }
-                    } else if (activity.type === 'marketplace') {
-                      if (activity.action === 'sold') {
-                        borderColor = '#28a745';
-                        bgColor = '#f0fff4';
-                      } else {
-                        borderColor = '#ffc107';
-                        bgColor = '#fffbf0';
-                      }
-                    }
-                    
-                    return (
-                      <div 
-                        key={`${activity.type}-${activity.metadata.goalId || activity.metadata.financeId || activity.metadata.itemId}-${index}`}
-                        className="activity-item p-3 border rounded"
-                        style={{
-                          backgroundColor: bgColor,
-                          borderLeft: `4px solid ${borderColor}`,
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = 'translateX(4px)';
-                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = 'translateX(0)';
-                          e.currentTarget.style.boxShadow = 'none';
-                        }}
-                      >
-                        <div className="d-flex align-items-start gap-3">
-                          {/* Icon */}
-                          <div className="flex-shrink-0">
-                            <div 
-                              className="rounded-circle d-flex align-items-center justify-content-center"
-                              style={{
-                                width: '48px',
-                                height: '48px',
-                                backgroundColor: borderColor,
-                                color: 'white',
-                                fontSize: '24px'
-                              }}
-                            >
-                              {activity.icon}
-                            </div>
-                          </div>
-
-                          {/* Activity Details */}
-                          <div className="flex-grow-1">
-                            <div className="d-flex justify-content-between align-items-start mb-2">
-                              <div>
-                                <h6 className="mb-1 fw-bold" style={{ color: borderColor }}>
-                                  {activity.title}
-                                </h6>
-                                <div className="text-dark">{activity.description}</div>
-                              </div>
-                            </div>
-
-                            <div className="d-flex align-items-center justify-content-between">
-                              <small className="text-muted">
-                                {new Date(activity.timestamp).toLocaleTimeString('en-US', { 
-                                  hour: '2-digit', 
-                                  minute: '2-digit',
-                                  hour12: true 
-                                })}
-                              </small>
-                              
-                              {/* Badge for activity type */}
-                              <span 
-                                className="badge"
-                                style={{
-                                  backgroundColor: borderColor,
-                                  color: 'white',
-                                  fontSize: '0.7rem'
-                                }}
-                              >
-                                {activity.type === 'goal' ? 'Goal' : 
-                                 activity.type === 'finance' ? 'Finance' : 
-                                 'Marketplace'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {todayActivities.length >= 20 && (
-                    <div className="text-center pt-2">
-                      <small className="text-muted">
-                        Showing 20 most recent activities from today
-                      </small>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Personal Stats */}
-        <div className="col-12 col-lg-4">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <h6 className="card-title">Your Progress</h6>
-              <div className="row g-3 text-center">
-                <div className="col-6">
-                  <div className="small text-muted">Active Goals</div>
-                  <div className="h4 mb-0 text-primary">{activeCount}</div>
-                </div>
-                <div className="col-6">
-                  <div className="small text-muted">Avg Progress</div>
-                  <div className="h4 mb-0 text-success">{avgProgress}%</div>
-                </div>
-                <div className="col-6">
-                  <div className="small text-muted">Listings</div>
-                  <div className="h4 mb-0 text-info">{marketplaceListings.length}</div>
-                </div>
-                <div className="col-6">
-                  <div className="small text-muted">Active Sales</div>
-                  <div className="h4 mb-0 text-warning">
-                    {marketplaceListings.filter(l => l.status === 'active').length}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <QuickActions />
+      )}
     </div>
   );
 }

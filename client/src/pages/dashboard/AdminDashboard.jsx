@@ -79,20 +79,28 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="container-xxl py-4 admin-dashboard">
+    <div className="container-fluid py-4" style={{ maxWidth: "1400px" }}>
+      {/* Header */}
+      <div className="mb-4">
+        <h2 className="mb-1 fw-bold">Admin Dashboard</h2>
+        <p className="text-muted mb-0">Monitor system statistics and user activity</p>
+      </div>
 
       {/* Key Metrics */}
       <div className="row g-4 mb-4">
         <div className="col-12 col-md-6 col-lg-3">
-          <div className="card admin-stat-card admin-stat-primary h-100">
+          <div className="card border-0 shadow-sm h-100">
             <div className="card-body">
-              <div className="d-flex justify-content-between">
+              <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <h6 className="card-title">Total Users</h6>
-                  <h2 className="mb-0">{stats.users.total.toLocaleString()}</h2>
+                  <div className="text-muted small mb-2">Total Users</div>
+                  <h2 className="mb-0 fw-bold">{stats.users.total.toLocaleString()}</h2>
+                  <div className="text-success small mt-1">
+                    <span>+{stats.users.newThisWeek} this week</span>
+                  </div>
                 </div>
-                <div className="align-self-center">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <div className="bg-primary bg-opacity-10 p-3 rounded">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary">
                     <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 0 0-7-7z"/>
                   </svg>
                 </div>
@@ -102,15 +110,18 @@ export default function AdminDashboard() {
         </div>
 
         <div className="col-12 col-md-6 col-lg-3">
-          <div className="card admin-stat-card admin-stat-success h-100">
+          <div className="card border-0 shadow-sm h-100">
             <div className="card-body">
-              <div className="d-flex justify-content-between">
+              <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <h6 className="card-title">Active Users</h6>
-                  <h2 className="mb-0">{stats.users.active.toLocaleString()}</h2>
+                  <div className="text-muted small mb-2">Active Users</div>
+                  <h2 className="mb-0 fw-bold text-success">{stats.users.active.toLocaleString()}</h2>
+                  <div className="text-muted small mt-1">
+                    <span>{stats.users.total > 0 ? Math.round((stats.users.active / stats.users.total) * 100) : 0}% of total</span>
+                  </div>
                 </div>
-                <div className="align-self-center">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <div className="bg-success bg-opacity-10 p-3 rounded">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-success">
                     <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                   </svg>
                 </div>
@@ -120,19 +131,20 @@ export default function AdminDashboard() {
         </div>
 
         <div className="col-12 col-md-6 col-lg-3">
-          <div className="card admin-stat-card admin-stat-info h-100">
+          <div className="card border-0 shadow-sm h-100">
             <div className="card-body">
-              <div className="d-flex justify-content-between">
+              <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <h6 className="card-title">Total Goals</h6>
-                  <h2 className="mb-0">{stats.goals.total.toLocaleString()}</h2>
+                  <div className="text-muted small mb-2">Total Goals</div>
+                  <h2 className="mb-0 fw-bold text-info">{stats.goals.total.toLocaleString()}</h2>
+                  <div className="text-muted small mt-1">
+                    <span>{stats.goals.completed} completed</span>
+                  </div>
                 </div>
-                <div className="align-self-center">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <div className="bg-info bg-opacity-10 p-3 rounded">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-info">
                     <circle cx="12" cy="12" r="10"/>
-                    <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                    <line x1="9" y1="9" x2="9.01" y2="9"/>
-                    <line x1="15" y1="9" x2="15.01" y2="9"/>
+                    <path d="M12 6v6l4 2"/>
                   </svg>
                 </div>
               </div>
@@ -141,19 +153,19 @@ export default function AdminDashboard() {
         </div>
 
         <div className="col-12 col-md-6 col-lg-3">
-          <div className="card admin-stat-card admin-stat-warning h-100">
+          <div className="card border-0 shadow-sm h-100">
             <div className="card-body">
-              <div className="d-flex justify-content-between">
+              <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <h6 className="card-title">New This Week</h6>
-                  <h2 className="mb-0">{stats.users.newThisWeek.toLocaleString()}</h2>
+                  <div className="text-muted small mb-2">System Health</div>
+                  <h2 className="mb-0 fw-bold text-warning">{stats.system.health}</h2>
+                  <div className="text-muted small mt-1">
+                    <span>{stats.system.uptime} uptime</span>
+                  </div>
                 </div>
-                <div className="align-self-center">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="2" y="6" width="20" height="12" rx="2"/>
-                    <path d="M6 10h12"/>
-                    <path d="M6 14h12"/>
-                    <circle cx="12" cy="12" r="2"/>
+                <div className="bg-warning bg-opacity-10 p-3 rounded">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-warning">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                   </svg>
                 </div>
               </div>
@@ -162,126 +174,164 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div className="row g-4">
-        {/* System Overview */}
-        <div className="col-12 col-lg-8">
-          <div className="card h-100">
-            <div className="card-header d-flex justify-content-between align-items-center">
-              <h5 className="card-title mb-0">System Overview</h5>
-              <div className="btn-group" role="group">
-                <button className="btn btn-sm btn-outline-primary">Export Data</button>
-                <button className="btn btn-sm btn-primary">Generate Report</button>
-              </div>
+      <div className="row g-4 mb-4">
+        {/* User Roles Breakdown */}
+        <div className="col-12 col-lg-4">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-header bg-white border-bottom">
+              <h6 className="mb-0 fw-semibold">User Roles</h6>
             </div>
             <div className="card-body">
-              <div className="row g-4">
-                <div className="col-md-6">
-                  <div className="d-flex align-items-center">
-                    <div className="flex-shrink-0">
-                      <div className="avatar-lg bg-primary text-white rounded-circle d-flex align-items-center justify-content-center">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                        </svg>
-                      </div>
-                    </div>
-                    <div className="flex-grow-1 ms-3">
-                      <h6 className="mb-1">User Management</h6>
-                      <p className="text-muted mb-0">Manage all system users, roles, and permissions</p>
-                      <a href="/admin/users" className="btn btn-sm btn-outline-primary mt-2">
-                        Go to User Management
-                      </a>
-                    </div>
+              <div className="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="bg-danger bg-opacity-10 p-2 rounded">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-danger">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
                   </div>
+                  <span className="fw-medium">Admins</span>
                 </div>
-                <div className="col-md-6">
-                  <div className="d-flex align-items-center">
-                    <div className="flex-shrink-0">
-                      <div className="avatar-lg bg-success text-white rounded-circle d-flex align-items-center justify-content-center">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10"/>
-                          <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                          <line x1="9" y1="9" x2="9.01" y2="9"/>
-                          <line x1="15" y1="9" x2="15.01" y2="9"/>
-                        </svg>
-                      </div>
-                    </div>
-                    <div className="flex-grow-1 ms-3">
-                      <h6 className="mb-1">Goals Analytics</h6>
-                      <p className="text-muted mb-0">Monitor goal completion rates and user progress</p>
-                      <button className="btn btn-sm btn-outline-success mt-2">
-                        View Analytics
-                      </button>
-                    </div>
+                <span className="badge bg-danger">{stats.users.byRole.admin}</span>
+              </div>
+              <div className="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="bg-primary bg-opacity-10 p-2 rounded">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 6v6l4 2"/>
+                    </svg>
                   </div>
+                  <span className="fw-medium">Goal Setters</span>
                 </div>
-                <div className="col-md-6">
-                  <div className="d-flex align-items-center">
-                    <div className="flex-shrink-0">
-                      <div className="avatar-lg bg-info text-white rounded-circle d-flex align-items-center justify-content-center">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 3h18v18H3zM9 9h6v6H9z"/>
-                          <path d="M9 1v6M15 1v6M9 17v6M15 17v6M1 9h6M17 9h6M1 15h6M17 15h6"/>
-                        </svg>
-                      </div>
-                    </div>
-                    <div className="flex-grow-1 ms-3">
-                      <h6 className="mb-1">Marketplace Control</h6>
-                      <p className="text-muted mb-0">Manage marketplace listings and transactions</p>
-                      <button className="btn btn-sm btn-outline-info mt-2">
-                        Manage Marketplace
-                      </button>
-                    </div>
+                <span className="badge bg-primary">{stats.users.byRole.goalSetter}</span>
+              </div>
+              <div className="d-flex justify-content-between align-items-center">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="bg-success bg-opacity-10 p-2 rounded">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-success">
+                      <path d="M3 3h18v18H3z"/>
+                      <path d="M9 9h6v6H9z"/>
+                    </svg>
                   </div>
+                  <span className="fw-medium">Buyers</span>
                 </div>
-                <div className="col-md-6">
-                  <div className="d-flex align-items-center">
-                    <div className="flex-shrink-0">
-                      <div className="avatar-lg bg-warning text-white rounded-circle d-flex align-items-center justify-content-center">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="2" y="6" width="20" height="12" rx="2"/>
-                          <path d="M6 10h12"/>
-                          <path d="M6 14h12"/>
-                          <circle cx="12" cy="12" r="2"/>
-                        </svg>
-                      </div>
-                    </div>
-                    <div className="flex-grow-1 ms-3">
-                      <h6 className="mb-1">Financial Overview</h6>
-                      <p className="text-muted mb-0">Track revenue, transactions, and financial metrics</p>
-                      <button className="btn btn-sm btn-outline-warning mt-2">
-                        View Financials
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <span className="badge bg-success">{stats.users.byRole.buyer}</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* Auth Providers */}
         <div className="col-12 col-lg-4">
-          <div className="card">
-            <div className="card-header">
-              <h6 className="card-title mb-0">Quick Stats</h6>
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-header bg-white border-bottom">
+              <h6 className="mb-0 fw-semibold">Authentication</h6>
             </div>
             <div className="card-body">
-              <div className="row g-2 text-center">
-                <div className="col-6">
-                  <div className="small text-muted">New This Week</div>
-                  <div className="h5 mb-0 text-success">+{stats.users.newThisWeek}</div>
+              <div className="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="bg-info bg-opacity-10 p-2 rounded">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-info">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0110 0v4"/>
+                    </svg>
+                  </div>
+                  <span className="fw-medium">Local Auth</span>
                 </div>
-                <div className="col-6">
-                  <div className="small text-muted">Goals Completed</div>
-                  <div className="h5 mb-0 text-primary">{stats.goals.completed}</div>
+                <span className="badge bg-info">{stats.users.byProvider.local}</span>
+              </div>
+              <div className="d-flex justify-content-between align-items-center">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="bg-warning bg-opacity-10 p-2 rounded">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-warning">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 2v20M2 12h20"/>
+                    </svg>
+                  </div>
+                  <span className="fw-medium">Google OAuth</span>
                 </div>
-                <div className="col-6">
-                  <div className="small text-muted">Active Goals</div>
-                  <div className="h5 mb-0 text-warning">{stats.goals.active}</div>
+                <span className="badge bg-warning">{stats.users.byProvider.google}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Goals Overview */}
+        <div className="col-12 col-lg-4">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-header bg-white border-bottom">
+              <h6 className="mb-0 fw-semibold">Goals Overview</h6>
+            </div>
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="bg-primary bg-opacity-10 p-2 rounded">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary">
+                      <circle cx="12" cy="12" r="10"/>
+                    </svg>
+                  </div>
+                  <span className="fw-medium">Active Goals</span>
                 </div>
-                <div className="col-6">
-                  <div className="small text-muted">System Uptime</div>
-                  <div className="h5 mb-0 text-info">{stats.system.uptime}</div>
+                <span className="badge bg-primary">{stats.goals.active}</span>
+              </div>
+              <div className="d-flex justify-content-between align-items-center">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="bg-success bg-opacity-10 p-2 rounded">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-success">
+                      <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
+                  <span className="fw-medium">Completed</span>
+                </div>
+                <span className="badge bg-success">{stats.goals.completed}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="row g-4">
+        {/* Quick Actions */}
+        <div className="col-12">
+          <div className="card border-0 shadow-sm">
+            <div className="card-header bg-white border-bottom">
+              <h6 className="mb-0 fw-semibold">Quick Actions</h6>
+            </div>
+            <div className="card-body">
+              <div className="row g-3">
+                <div className="col-md-3">
+                  <a href="/admin/users" className="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                    </svg>
+                    Manage Users
+                  </a>
+                </div>
+                <div className="col-md-3">
+                  <a href="/admin/goals" className="btn btn-outline-success w-100 d-flex align-items-center justify-content-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 6v6l4 2"/>
+                    </svg>
+                    View Goals
+                  </a>
+                </div>
+                <div className="col-md-3">
+                  <button className="btn btn-outline-info w-100 d-flex align-items-center justify-content-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M3 3h18v18H3z"/>
+                      <path d="M9 9h6v6H9z"/>
+                    </svg>
+                    Marketplace
+                  </button>
+                </div>
+                <div className="col-md-3">
+                  <button className="btn btn-outline-warning w-100 d-flex align-items-center justify-content-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 2v20M2 12h20"/>
+                    </svg>
+                    Analytics
+                  </button>
                 </div>
               </div>
             </div>
@@ -289,19 +339,19 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Geographic Analytics Section */}
-      <div className="row g-4 mt-4">
+      <div className="row g-4 mt-1">
+        {/* Geographic Analytics Section */}
         <div className="col-12">
-          <div className="card">
-            <div className="card-header d-flex justify-content-between align-items-center">
-              <h5 className="card-title mb-0">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
+          <div className="card border-0 shadow-sm">
+            <div className="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+              <h6 className="mb-0 fw-semibold d-flex align-items-center gap-2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="10"/>
                   <line x1="2" y1="12" x2="22" y2="12"/>
                   <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
                 Geographic User Distribution
-              </h5>
+              </h6>
               <span className="badge bg-primary">Live Data</span>
             </div>
             <div className="card-body">

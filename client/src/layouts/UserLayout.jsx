@@ -101,24 +101,6 @@ export default function UserLayout() {
             </NavLink>
 
             <NavLink
-              to="/analytics"
-              className={({ isActive }) =>
-                `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`
-              }
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <polyline points="22,12 18,12 15,21 9,3 6,12 2,12" />
-              </svg>
-              Analytics
-            </NavLink>
-            <NavLink
               to="/connections"
               className={({ isActive }) =>
                 `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`

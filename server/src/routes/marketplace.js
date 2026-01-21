@@ -6,11 +6,13 @@ import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import Marketplace from "../models/Marketplace.js";
 import User from "../models/User.js";
+import Goal from "../models/Goal.js";
 import MarketplaceIncome from "../models/MarketplaceIncome.js";
 import Order from "../models/Order.js";
 import MarketplaceFeedback from "../models/MarketplaceFeedback.js";
 import { detectConditionFromFile, getEnhancedPricePrediction } from "../utils/conditionDetection.js";
 import { detectFraud, analyzeSellerBehavior, generateFraudReport } from "../utils/fraudDetection.js";
+import { addConfidenceScores, getConfidenceLabel, getConfidenceColor } from "../utils/itemRecommendation.js";
 const router = Router();
 
 // Configure multer for image uploads
@@ -220,7 +222,7 @@ router.post('/list-item', requireAuth, async (req, res) => {
   try {
     // Convert JWT string ID to MongoDB ObjectId
     const userId = new mongoose.Types.ObjectId(req.user.id);
-    const { title, description, price, category, condition, images, subCategory, brand } = req.body;
+    const { title, description, price, category, condition, images, subCategory, brand, linkedGoal } = req.body;
 
     // Validate required fields
     // Title is now optional - we can auto-generate it
@@ -347,6 +349,7 @@ router.post('/list-item', requireAuth, async (req, res) => {
       brand: brand || 'generic',
       condition: finalCondition,
       status: 'active',
+      linkedGoalBySeller: linkedGoal || null, // Link to seller's goal
       aiScore: aiScore,
       conditionAnalysis: conditionAnalysis ? {
         condition: conditionAnalysis.condition,
@@ -525,7 +528,7 @@ router.delete('/listings/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Browse marketplace items (for buyers only)
+// Browse marketplace items (for buyers only) - Enhanced with search & filters
 router.get("/browse", requireAuth, async (req, res) => {
   try {
     // Check if user is a buyer
@@ -540,9 +543,12 @@ router.get("/browse", requireAuth, async (req, res) => {
     const {
       search,
       category,
+      condition,
       minPrice,
       maxPrice,
-      sort = "newest",
+      location,
+      maxDistance = 50,
+      sortBy = "newest",
       page = 1,
       limit = 12
     } = req.query;
@@ -557,40 +563,66 @@ router.get("/browse", requireAuth, async (req, res) => {
       ]
     };
 
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } }
+    // Search query - search in title, description, category, brand
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+      query.$and = [
+        {
+          $or: [
+            { title: searchRegex },
+            { description: searchRegex },
+            { category: searchRegex },
+            { subCategory: searchRegex },
+            { brand: searchRegex }
+          ]
+        }
       ];
     }
 
-    if (category) {
-      query.category = category;
+    // Category filter
+    if (category && category.trim()) {
+      query.category = category.trim();
     }
 
+    // Condition filter
+    if (condition && condition.trim()) {
+      query.condition = condition.trim();
+    }
+
+    // Price range filter
     if (minPrice || maxPrice) {
       query.price = {};
       if (minPrice) query.price.$gte = parseFloat(minPrice);
       if (maxPrice) query.price.$lte = parseFloat(maxPrice);
     }
 
+    // Location filter (if provided, search in seller's location)
+    if (location && location.trim()) {
+      const locationRegex = { $regex: location.trim(), $options: "i" };
+      // We'll filter by seller location after populating
+    }
+
     // Build sort
     let sortOption = {};
-    switch (sort) {
+    switch (sortBy) {
       case "newest":
         sortOption = { createdAt: -1 };
         break;
       case "oldest":
         sortOption = { createdAt: 1 };
         break;
-      case "price_low":
+      case "price-low":
         sortOption = { price: 1 };
         break;
-      case "price_high":
+      case "price-high":
         sortOption = { price: -1 };
         break;
-      case "popular":
+      case "most-viewed":
         sortOption = { views: -1 };
+        break;
+      case "nearest":
+        // Will sort by distance after calculating
+        sortOption = { createdAt: -1 }; // Default for now
         break;
       default:
         sortOption = { createdAt: -1 };
@@ -598,20 +630,50 @@ router.get("/browse", requireAuth, async (req, res) => {
 
     const items = await Marketplace.find(query)
       .sort(sortOption)
-      .populate("userId", "name email avatar marketplaceStats trustBadge")
-      .select("title description price category condition status images views likes createdAt userId")
+      .populate("userId", "name email avatar marketplaceStats trustBadge location")
+      .select("title description price category subCategory brand condition status images views likes createdAt userId")
       .limit(parseInt(limit) * 1)
       .skip((parseInt(page) - 1) * parseInt(limit));
 
     // Filter out items with null/deleted users
-    const validItems = items.filter(item => item.userId && item.userId._id);
+    let validItems = items.filter(item => item.userId && item.userId._id);
     
-    // Map items with seller info and ratings
+    // Location filter - filter by seller's location
+    if (location && location.trim()) {
+      const locationLower = location.trim().toLowerCase();
+      validItems = validItems.filter(item => {
+        const sellerLocation = item.userId?.location;
+        if (!sellerLocation) return false;
+        
+        return (
+          sellerLocation.city?.toLowerCase().includes(locationLower) ||
+          sellerLocation.state?.toLowerCase().includes(locationLower) ||
+          sellerLocation.country?.toLowerCase().includes(locationLower)
+        );
+      });
+    }
+
+    // Get current user's location for distance calculation
+    const currentUser = await User.findById(userId).select('location');
+    
+    // Map items with seller info, ratings, and distance
     const itemsWithSeller = await Promise.all(validItems.map(async (item) => {
       const itemObj = item.toObject();
       
-      // Get seller rating (with defensive check)
+      // Get seller rating
       const sellerRating = await MarketplaceFeedback.getSellerRating(item.userId._id);
+      
+      // Calculate distance if both users have location
+      let distance = null;
+      if (currentUser?.location?.latitude && currentUser?.location?.longitude &&
+          item.userId?.location?.latitude && item.userId?.location?.longitude) {
+        distance = calculateDistance(
+          currentUser.location.latitude,
+          currentUser.location.longitude,
+          item.userId.location.latitude,
+          item.userId.location.longitude
+        );
+      }
       
       return {
         ...itemObj,
@@ -620,16 +682,70 @@ router.get("/browse", requireAuth, async (req, res) => {
         sellerRating: sellerRating.averageRating,
         sellerTrustBadge: item.userId?.trustBadge?.level || "new",
         totalReviews: sellerRating.totalReviews,
-        marketplaceStats: item.userId?.marketplaceStats
+        marketplaceStats: item.userId?.marketplaceStats,
+        sellerLocation: {
+          city: item.userId?.location?.city || "Unknown",
+          state: item.userId?.location?.state || "Unknown",
+          distance: distance ? Math.round(distance * 10) / 10 : null
+        }
       };
     }));
 
-    res.json(itemsWithSeller);
+    // Filter by max distance if sorting by nearest
+    let filteredItems = itemsWithSeller;
+    if (sortBy === "nearest" && maxDistance) {
+      filteredItems = itemsWithSeller.filter(item => 
+        item.sellerLocation.distance !== null && 
+        item.sellerLocation.distance <= parseFloat(maxDistance)
+      );
+      // Sort by distance
+      filteredItems.sort((a, b) => {
+        if (a.sellerLocation.distance === null) return 1;
+        if (b.sellerLocation.distance === null) return -1;
+        return a.sellerLocation.distance - b.sellerLocation.distance;
+      });
+    }
+
+    // Get total count for pagination
+    const total = await Marketplace.countDocuments(query);
+
+    res.json({
+      items: filteredItems,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+        totalItems: total,
+        itemsPerPage: parseInt(limit)
+      },
+      filters: {
+        search,
+        category,
+        condition,
+        minPrice,
+        maxPrice,
+        location,
+        maxDistance,
+        sortBy
+      }
+    });
   } catch (error) {
     console.error("Failed to browse marketplace items:", error);
     res.status(500).json({ message: "Failed to browse marketplace items" });
   }
 });
+
+// Helper function to calculate distance between two coordinates (Haversine formula)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // Distance in kilometers
+}
 
 // Get marketplace items from nearby goal setters (for buyers only)
 router.get("/nearby-items", requireAuth, async (req, res) => {
@@ -829,6 +945,7 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
           updatedAt: item.updatedAt,
           daysAgo: daysAgo,
           isRecent: isRecent,
+          distance: seller?.distance || 0,
           seller: {
             id: item.userId._id,
             name: item.userId.name,
@@ -839,16 +956,35 @@ router.get("/nearby-items", requireAuth, async (req, res) => {
               city: item.userId.location?.city || '',
               state: item.userId.location?.state || ''
             }
-          }
+          },
+          sellerRating: 0 // Will be populated by confidence scoring
         };
       });
+    
+    // Add confidence scores and recommendations
+    const itemsWithConfidence = addConfidenceScores(formattedItems, parseInt(maxDistance));
+    
+    // Populate seller ratings from User model
+    const itemsWithRatings = await Promise.all(
+      itemsWithConfidence.map(async (item) => {
+        const sellerUser = await User.findById(item.seller.id).select('marketplaceStats trustBadge');
+        return {
+          ...item,
+          sellerRating: sellerUser?.marketplaceStats?.averageRating || 0,
+          sellerReviews: sellerUser?.marketplaceStats?.totalReviews || 0,
+          trustBadge: sellerUser?.trustBadge?.level || 'new',
+          confidenceLabel: getConfidenceLabel(item.confidenceScore),
+          confidenceColor: getConfidenceColor(item.confidenceScore)
+        };
+      })
+    );
     
     // Count goal setters with and without exact location
     const withExactLocation = nearbyGoalSetters.filter(gs => gs.hasExactLocation).length;
     const withoutExactLocation = nearbyGoalSetters.filter(gs => !gs.hasExactLocation).length;
     
     res.json({
-      items: formattedItems,
+      items: itemsWithRatings,
       pagination: {
         current: parseInt(page),
         total: Math.ceil(total / parseInt(limit)),
@@ -1141,17 +1277,82 @@ router.patch('/admin/review-listing/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Helper function to calculate distance between two coordinates (Haversine formula)
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Earth's radius in kilometers
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c; // Distance in kilometers
-}
+// Get single item details by ID
+router.get('/items/:itemId', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ message: 'Invalid item ID format' });
+    }
+    
+    // Increment view count without triggering validation
+    await Marketplace.findByIdAndUpdate(
+      itemId,
+      { $inc: { views: 1 } },
+      { runValidators: false }
+    );
+    
+    // Fetch item with populated user data
+    const item = await Marketplace.findById(itemId)
+      .populate('userId', 'name email phone avatar city state');
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    
+    res.json(item);
+  } catch (error) {
+    console.error('Get item details error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Failed to fetch item details',
+      error: error.message 
+    });
+  }
+});
+
+// Get similar items based on category and price range
+router.get('/items/:itemId/similar', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const limit = parseInt(req.query.limit) || 4;
+    
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ message: 'Invalid item ID format' });
+    }
+    
+    const item = await Marketplace.findById(itemId);
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    
+    // Find similar items: same category, similar price range, exclude current item
+    const priceMin = item.price * 0.7; // 30% lower
+    const priceMax = item.price * 1.3; // 30% higher
+    
+    const similarItems = await Marketplace.find({
+      _id: { $ne: itemId },
+      category: item.category,
+      price: { $gte: priceMin, $lte: priceMax },
+      status: { $nin: ['sold', 'archived', 'pending'] }
+    })
+      .populate('userId', 'name avatar')
+      .limit(limit)
+      .sort({ createdAt: -1 });
+    
+    res.json({ items: similarItems });
+  } catch (error) {
+    console.error('Get similar items error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Failed to fetch similar items',
+      error: error.message 
+    });
+  }
+});
 
 export default router;

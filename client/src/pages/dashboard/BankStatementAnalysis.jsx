@@ -127,7 +127,7 @@ export default function BankStatementAnalysis() {
                 </svg>
                 <h3 className="h4 mb-3 fw-bold text-dark">Upload Your Bank Statement</h3>
                 <p className="text-muted mb-4 lead" style={{ maxWidth: "600px", margin: "0 auto" }}>
-                  Upload your bank statements (PDF or CSV) and our system will automatically extract and categorize all your transactions
+                  Upload your bank statements (CSV format) and our system will automatically extract and categorize all your transactions
                 </p>
                 <button
                   className="btn btn-primary btn-lg px-5 shadow"

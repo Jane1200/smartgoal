@@ -1,21 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext.jsx";
 import { Navigate } from "react-router-dom";
 import api from "@/utils/api.js";
 import { toast } from "react-toastify";
-import {
-  validateForm,
-  validationRules,
-  validateFieldLive,
-} from "@/utils/validations.js";
-import { FormError, FormErrors } from "@/components/FormError.jsx";
 import BankStatementUpload from "@/components/BankStatementUpload.jsx";
+import CashNotesManager from "@/components/CashNotesManager.jsx";
+import TransactionFilters from "@/components/TransactionFilters.jsx";
+import {
+  AccountBalanceWallet,
+  TrendingUp,
+  TrendingDown,
+  Assessment,
+  Receipt,
+  CloudUpload,
+  Money,
+  GetApp,
+} from "@mui/icons-material";
 
 export default function Finances() {
   const authContext = useAuth();
   const user = authContext?.user;
 
-  // All hooks must be called before any conditional returns
+  const [activeTab, setActiveTab] = useState("overview");
   const [financeData, setFinanceData] = useState({
     monthlyIncome: 0,
     monthlyExpense: 0,
@@ -25,180 +31,43 @@ export default function Finances() {
     totalSavings: 0,
     monthlySavingsRate: 0,
     totalSavingsRate: 0,
+    cashInHand: 0,
+    cashAtBank: 0,
+    cashIncome: 0,
+    cashExpense: 0,
+    bankIncome: 0,
+    bankExpense: 0,
   });
   const [incomeEntries, setIncomeEntries] = useState([]);
   const [expenseEntries, setExpenseEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [viewMode, setViewMode] = useState("all-time"); // 'current-month' or 'all-time'
-  const [formErrors, setFormErrors] = useState({});
-  const [liveErrors, setLiveErrors] = useState({
-    income: {},
-    expense: {},
+  
+  // Filter states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState({
+    dateFilter: "all",
+    amountRanges: [],
+    paymentTypes: []
   });
-
-  // Real-time automation states (disabled by default to reduce server load)
-  const [autoRefresh, setAutoRefresh] = useState(false);
-
-  // Form states
-  const [showIncomeForm, setShowIncomeForm] = useState(false);
-  const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const [showBankUpload, setShowBankUpload] = useState(false);
-  const [processedStatements, setProcessedStatements] = useState([]);
-  const [incomeForm, setIncomeForm] = useState({
-    amount: "100",
-    source: "",
-    description: "",
-    date: new Date().toISOString().split("T")[0],
-  });
-  const [expenseForm, setExpenseForm] = useState({
-    amount: "",
-    category: "",
-    description: "",
-    date: new Date().toISOString().split("T")[0],
-  });
-
-  // Get minimum allowed date (account creation date)
-  const getMinDate = () => {
-    if (user?.profile?.createdAt) {
-      return new Date(user.profile.createdAt).toISOString().split("T")[0];
-    }
-    // Fallback to a reasonable past date if createdAt is not available
-    const fallbackDate = new Date();
-    fallbackDate.setFullYear(fallbackDate.getFullYear() - 1);
-    return fallbackDate.toISOString().split("T")[0];
-  };
-
-  // Get maximum allowed date (today)
-  const getMaxDate = () => {
-    return new Date().toISOString().split("T")[0];
-  };
-
-  // Live validation handler for income fields
-  const handleIncomeFieldChange = (field, value) => {
-    setIncomeForm((prev) => ({ ...prev, [field]: value }));
-
-    // Validate field live
-    const rules = {
-      amount: validationRules.finance.incomeAmount,
-      source: validationRules.finance.source,
-      description: validationRules.finance.description,
-      date: validationRules.finance.date,
-    }[field];
-
-    if (rules) {
-      const error = validateFieldLive(value, rules, field);
-      setLiveErrors((prev) => ({
-        ...prev,
-        income: {
-          ...prev.income,
-          [field]: error,
-        },
-      }));
-    }
-  };
-
-  // Live validation handler for expense fields
-  const handleExpenseFieldChange = (field, value) => {
-    setExpenseForm((prev) => ({ ...prev, [field]: value }));
-
-    // Validate field live
-    const rules = {
-      amount: validationRules.finance.expenseAmount,
-      category: validationRules.finance.category,
-      description: validationRules.finance.description,
-      date: validationRules.finance.date,
-    }[field];
-
-    if (rules) {
-      const error = validateFieldLive(value, rules, field);
-      setLiveErrors((prev) => ({
-        ...prev,
-        expense: {
-          ...prev.expense,
-          [field]: error,
-        },
-      }));
-    }
-  };
 
   useEffect(() => {
     fetchFinanceData();
-    fetchProcessedStatements();
-  }, [viewMode]);
-
-  // Real-time auto-refresh with polling (disabled by default to reduce console spam)
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    const interval = setInterval(() => {
-      // Silent refresh - only log errors
-      fetchFinanceData();
-    }, 60000); // Refresh every 60 seconds (reduced from 30)
-
-    return () => clearInterval(interval);
-  }, [autoRefresh, viewMode]);
-
-  // Automatically recalculate totals when entries change
-  useEffect(() => {
-    if (incomeEntries.length > 0 || expenseEntries.length > 0) {
-      const calculatedTotals = calculateTotalsFromEntries(
-        incomeEntries,
-        expenseEntries,
-      );
-      setFinanceData((prev) => ({
-        ...prev,
-        totalIncome: calculatedTotals.totalIncome,
-        totalExpenses: calculatedTotals.totalExpenses,
-        totalSavings: calculatedTotals.totalSavings,
-        monthlyIncome: calculatedTotals.monthlyIncome,
-        monthlyExpense: calculatedTotals.monthlyExpense,
-        monthlySavings: calculatedTotals.monthlySavings,
-        monthlySavingsRate: calculatedTotals.monthlySavingsRate,
-        totalSavingsRate: calculatedTotals.totalSavingsRate,
-      }));
-    }
-  }, [incomeEntries, expenseEntries]);
-
-  // Redirect if not authenticated
-  if (!user?.token) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // Allow both goal_setter and buyer roles to access finances
-  if (
-    user?.profile?.role !== "goal_setter" &&
-    user?.profile?.role !== "buyer"
-  ) {
-    return <Navigate to="/dashboard-redirect" replace />;
-  }
-
-  // Helper function to format source/category display
-  const formatLabel = (text) => {
-    if (!text) return "-";
-    // Convert 'marketplace-sale' to 'Marketplace Sale'
-    return text
-      .split("-")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  };
+  }, []);
 
   const fetchFinanceData = async () => {
     try {
       setLoading(true);
 
-      // Prepare API calls based on view mode
-      const summaryUrl =
-        viewMode === "current-month"
-          ? "/finance/summary"
-          : "/finance/summary?all=true";
+      // Fetch all-time data (no date filtering)
+      const summaryUrl = `/finance/summary`;
+      const incomeUrl = `/finance/income`;
+      const expenseUrl = `/finance/expenses`;
 
-      // Fetch finance summary and entries
       const [summaryResponse, incomeResponse, expenseResponse] =
         await Promise.allSettled([
           api.get(summaryUrl),
-          api.get("/finance/income"),
-          api.get("/finance/expenses"),
+          api.get(incomeUrl),
+          api.get(expenseUrl),
         ]);
 
       let allIncomeEntries = [];
@@ -212,48 +81,18 @@ export default function Finances() {
         allExpenseEntries = expenseResponse.value.data || [];
       }
 
-      // Filter entries based on view mode
-      let incomeEntries = allIncomeEntries;
-      let expenseEntries = allExpenseEntries;
+      setIncomeEntries(allIncomeEntries);
+      setExpenseEntries(allExpenseEntries);
 
-      if (viewMode === "current-month") {
-        const currentDate = new Date();
-        const currentMonth = currentDate.getMonth();
-        const currentYear = currentDate.getFullYear();
-
-        incomeEntries = allIncomeEntries.filter((entry) => {
-          const entryDate = new Date(entry.date);
-          return (
-            entryDate.getMonth() === currentMonth &&
-            entryDate.getFullYear() === currentYear
-          );
-        });
-
-        expenseEntries = allExpenseEntries.filter((entry) => {
-          const entryDate = new Date(entry.date);
-          return (
-            entryDate.getMonth() === currentMonth &&
-            entryDate.getFullYear() === currentYear
-          );
-        });
-      }
-
-      // Set the filtered entries
-      setIncomeEntries(incomeEntries);
-      setExpenseEntries(expenseEntries);
-
-      // Calculate totals from entries (automated calculation)
       const calculatedTotals = calculateTotalsFromEntries(
-        incomeEntries,
-        expenseEntries,
+        allIncomeEntries,
+        allExpenseEntries
       );
 
-      // Use server summary if available, otherwise use calculated totals
       if (summaryResponse.status === "fulfilled") {
         const serverData = summaryResponse.value.data;
         setFinanceData({
           ...serverData,
-          // Override with calculated totals for accuracy
           totalIncome: calculatedTotals.totalIncome,
           totalExpenses: calculatedTotals.totalExpenses,
           totalSavings: calculatedTotals.totalSavings,
@@ -264,8 +103,6 @@ export default function Finances() {
           totalSavingsRate: calculatedTotals.totalSavingsRate,
         });
       } else {
-        console.error("Summary response failed:", summaryResponse.reason);
-        // Use calculated totals as fallback
         setFinanceData(calculatedTotals);
       }
     } catch (error) {
@@ -276,1590 +113,503 @@ export default function Finances() {
     }
   };
 
-  const fetchProcessedStatements = async () => {
-    try {
-      const response = await api.get("/finance/processed-statements?limit=3");
-      if (response.data.success) {
-        setProcessedStatements(response.data.statements || []);
-      }
-    } catch (error) {
-      console.error("Failed to fetch processed statements:", error);
-    }
-  };
-
-  const calculateSavings = () => {
-    const income = parseFloat(incomeForm.amount) || 0;
-    const expense = parseFloat(expenseForm.amount) || 0;
-    return Math.max(0, income - expense);
-  };
-
-  // Get category type for 50/30/20 rule
-  const getCategoryType = (category) => {
-    const needs = ["housing", "food", "transport", "healthcare"];
-    const wants = ["entertainment", "shopping", "travel"];
-    const savings = ["education"];
-
-    if (needs.includes(category))
-      return { type: "Needs", emoji: "🏠", badge: "primary" };
-    if (wants.includes(category))
-      return { type: "Wants", emoji: "🎭", badge: "warning" };
-    if (savings.includes(category))
-      return { type: "Savings", emoji: "📚", badge: "success" };
-    return { type: "Other", emoji: "📌", badge: "secondary" };
-  };
-
-  // Categorize expenses into Needs, Wants, and Savings (50/30/20 rule)
-  const categorizeExpensesByType = (expenseEntries) => {
-    const needs = ["housing", "food", "transport", "healthcare"]; // Essential expenses
-    const wants = ["entertainment", "shopping", "travel"]; // Non-essential expenses
-    const savings = ["education"]; // Investment in future
-
-    const needsExpenses = expenseEntries.filter((entry) =>
-      needs.includes(entry.category),
-    );
-    const wantsExpenses = expenseEntries.filter((entry) =>
-      wants.includes(entry.category),
-    );
-    const savingsExpenses = expenseEntries.filter((entry) =>
-      savings.includes(entry.category),
-    );
-    const otherExpenses = expenseEntries.filter(
-      (entry) => entry.category === "other",
-    );
-
-    const needsTotal = needsExpenses.reduce(
-      (sum, entry) => sum + (entry.amount || 0),
-      0,
-    );
-    const wantsTotal = wantsExpenses.reduce(
-      (sum, entry) => sum + (entry.amount || 0),
-      0,
-    );
-    const savingsTotal = savingsExpenses.reduce(
-      (sum, entry) => sum + (entry.amount || 0),
-      0,
-    );
-    const otherTotal = otherExpenses.reduce(
-      (sum, entry) => sum + (entry.amount || 0),
-      0,
-    );
-
-    return {
-      needs: { total: needsTotal, entries: needsExpenses },
-      wants: { total: wantsTotal, entries: wantsExpenses },
-      savings: { total: savingsTotal, entries: savingsExpenses },
-      other: { total: otherTotal, entries: otherExpenses },
-    };
-  };
-
-  // Calculate totals from entries
   const calculateTotalsFromEntries = (incomeEntries, expenseEntries) => {
-    // Calculate totals based on view mode
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-
-    let totalIncome, totalExpenses, monthlyIncome, monthlyExpense;
-
-    if (viewMode === "current-month") {
-      // In current month view, the entries are already filtered to current month
-      totalIncome = incomeEntries.reduce(
-        (sum, entry) => sum + (entry.amount || 0),
-        0,
-      );
-      totalExpenses = expenseEntries.reduce(
-        (sum, entry) => sum + (entry.amount || 0),
-        0,
-      );
-      monthlyIncome = totalIncome;
-      monthlyExpense = totalExpenses;
-    } else {
-      // In all-time view, calculate totals from all entries
-      totalIncome = incomeEntries.reduce(
-        (sum, entry) => sum + (entry.amount || 0),
-        0,
-      );
-      totalExpenses = expenseEntries.reduce(
-        (sum, entry) => sum + (entry.amount || 0),
-        0,
-      );
-
-      // Calculate monthly values from all entries
-      monthlyIncome = incomeEntries
-        .filter((entry) => {
-          const entryDate = new Date(entry.date);
-          return (
-            entryDate.getMonth() === currentMonth &&
-            entryDate.getFullYear() === currentYear
-          );
-        })
-        .reduce((sum, entry) => sum + (entry.amount || 0), 0);
-
-      monthlyExpense = expenseEntries
-        .filter((entry) => {
-          const entryDate = new Date(entry.date);
-          return (
-            entryDate.getMonth() === currentMonth &&
-            entryDate.getFullYear() === currentYear
-          );
-        })
-        .reduce((sum, entry) => sum + (entry.amount || 0), 0);
-    }
-
-    // Calculate savings
-    const monthlySavings = Math.max(0, monthlyIncome - monthlyExpense);
-    const totalSavings = Math.max(0, totalIncome - totalExpenses);
-
-    // Calculate savings rate
-    const monthlySavingsRate =
-      monthlyIncome > 0 ? (monthlySavings / monthlyIncome) * 100 : 0;
+    const totalIncome = incomeEntries.reduce(
+      (sum, entry) => sum + (entry.amount || 0),
+      0
+    );
+    const totalExpenses = expenseEntries.reduce(
+      (sum, entry) => sum + (entry.amount || 0),
+      0
+    );
+    const totalSavings = totalIncome - totalExpenses;
     const totalSavingsRate =
-      totalIncome > 0 ? (totalSavings / totalIncome) * 100 : 0;
+      totalIncome > 0 ? ((totalSavings / totalIncome) * 100).toFixed(1) : 0;
+
+    // Calculate cash in hand (paymentMethod === "cash")
+    const cashIncome = incomeEntries
+      .filter(entry => entry.paymentMethod === "cash")
+      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    const cashExpense = expenseEntries
+      .filter(entry => entry.paymentMethod === "cash")
+      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    const cashInHand = cashIncome - cashExpense;
+
+    // Calculate cash at bank (paymentMethod === "bank", "card", "upi", or "other")
+    const bankIncome = incomeEntries
+      .filter(entry => entry.paymentMethod !== "cash")
+      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    const bankExpense = expenseEntries
+      .filter(entry => entry.paymentMethod !== "cash")
+      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    const cashAtBank = bankIncome - bankExpense;
 
     return {
       totalIncome,
       totalExpenses,
-      monthlyIncome,
-      monthlyExpense,
-      monthlySavings,
       totalSavings,
-      monthlySavingsRate,
-      totalSavingsRate,
+      monthlyIncome: totalIncome,
+      monthlyExpense: totalExpenses,
+      monthlySavings: totalSavings,
+      monthlySavingsRate: totalSavingsRate,
+      totalSavingsRate: totalSavingsRate,
+      cashInHand,
+      cashAtBank,
+      cashIncome,
+      cashExpense,
+      bankIncome,
+      bankExpense,
     };
   };
 
-  const handleAddIncome = async (e) => {
-    e.preventDefault();
+  // Filter helper functions
+  const getDateRange = (filterType) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    switch (filterType) {
+      case "today":
+        return { start: today, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) };
+      case "this-week": {
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 7);
+        return { start: weekStart, end: weekEnd };
+      }
+      case "this-month": {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        return { start: monthStart, end: monthEnd };
+      }
+      case "this-year": {
+        const yearStart = new Date(now.getFullYear(), 0, 1);
+        const yearEnd = new Date(now.getFullYear(), 11, 31);
+        return { start: yearStart, end: yearEnd };
+      }
+      case "last-30-days": {
+        const start = new Date(today);
+        start.setDate(today.getDate() - 30);
+        return { start, end: now };
+      }
+      case "last-90-days": {
+        const start = new Date(today);
+        start.setDate(today.getDate() - 90);
+        return { start, end: now };
+      }
+      default:
+        return null;
+    }
+  };
 
-    // Validate income form
-    const incomeValidation = validateForm(incomeForm, {
-      amount: validationRules.finance.incomeAmount,
-      source: validationRules.finance.source,
-      description: validationRules.finance.description,
-      date: validationRules.finance.date,
+  const matchesDateFilter = (entry, dateFilter) => {
+    if (dateFilter === "all") return true;
+    
+    const dateRange = getDateRange(dateFilter);
+    if (!dateRange) return true;
+    
+    const entryDate = new Date(entry.date);
+    return entryDate >= dateRange.start && entryDate <= dateRange.end;
+  };
+
+  const matchesAmountFilter = (entry, amountRanges) => {
+    if (amountRanges.length === 0) return true;
+    
+    const amount = entry.amount || 0;
+    return amountRanges.some(range => {
+      if (range === "0-200") return amount <= 200;
+      if (range === "200-500") return amount > 200 && amount <= 500;
+      if (range === "500-1000") return amount > 500 && amount <= 1000;
+      if (range === "1000-5000") return amount > 1000 && amount <= 5000;
+      if (range === "5000-10000") return amount > 5000 && amount <= 10000;
+      if (range === "10000+") return amount > 10000;
+      return false;
     });
-
-    if (!incomeValidation.isValid) {
-      setFormErrors(incomeValidation.errors);
-      setLiveErrors((prev) => ({
-        ...prev,
-        income: incomeValidation.errors,
-      }));
-      toast.error("Please fix the validation errors");
-      return;
-    }
-
-    setFormErrors({});
-    setLiveErrors((prev) => ({ ...prev, income: {} }));
-
-    try {
-      setSaving(true);
-      const response = await api.post("/finance/income", {
-        amount: parseFloat(incomeForm.amount),
-        source: incomeForm.source.trim(),
-        description: incomeForm.description.trim(),
-        date: incomeForm.date,
-      });
-
-      toast.success("Income entry added successfully!");
-      setIncomeForm({
-        amount: "100",
-        source: "",
-        description: "",
-        date: new Date().toISOString().split("T")[0],
-      });
-      setShowIncomeForm(false);
-      fetchFinanceData();
-    } catch (error) {
-      console.error("Failed to add income:", error);
-      const errorMessage =
-        error.response?.data?.message || "Failed to add income entry";
-      toast.error(errorMessage);
-    } finally {
-      setSaving(false);
-    }
   };
 
-  const handleAddExpense = async (e) => {
-    e.preventDefault();
-
-    // Validate expense form
-    const expenseValidation = validateForm(expenseForm, {
-      amount: validationRules.finance.expenseAmount,
-      category: validationRules.finance.category,
-      description: validationRules.finance.description,
-      date: validationRules.finance.date,
-    });
-
-    if (!expenseValidation.isValid) {
-      setFormErrors(expenseValidation.errors);
-      setLiveErrors((prev) => ({
-        ...prev,
-        expense: expenseValidation.errors,
-      }));
-      toast.error("Please fix the validation errors");
-      return;
-    }
-
-    setFormErrors({});
-    setLiveErrors((prev) => ({ ...prev, expense: {} }));
-
-    try {
-      setSaving(true);
-      const response = await api.post("/finance/expenses", {
-        amount: parseFloat(expenseForm.amount),
-        category: expenseForm.category.trim(),
-        description: expenseForm.description.trim(),
-        date: expenseForm.date,
-      });
-
-      toast.success("Expense entry added successfully!");
-      setExpenseForm({
-        amount: "",
-        category: "",
-        description: "",
-        date: new Date().toISOString().split("T")[0],
-      });
-      setShowExpenseForm(false);
-      fetchFinanceData();
-    } catch (error) {
-      console.error("Failed to add expense:", error);
-      const errorMessage =
-        error.response?.data?.message || "Failed to add expense entry";
-      toast.error(errorMessage);
-    } finally {
-      setSaving(false);
-    }
+  const matchesSearchQuery = (entry, query) => {
+    if (!query) return true;
+    
+    const searchLower = query.toLowerCase();
+    const description = (entry.description || entry.source || entry.category || "").toLowerCase();
+    const category = (entry.category || "").toLowerCase();
+    const amount = (entry.amount || 0).toString();
+    
+    return description.includes(searchLower) || 
+           category.includes(searchLower) || 
+           amount.includes(searchLower);
   };
 
-  const handleDeleteIncome = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this income entry?"))
-      return;
+  // Filtered entries using useMemo
+  const filteredIncomeEntries = useMemo(() => {
+    let filtered = incomeEntries;
 
-    try {
-      await api.delete(`/finance/income/${id}`);
-      toast.success("Income entry deleted successfully");
-      fetchFinanceData();
-    } catch (error) {
-      console.error("Failed to delete income:", error);
-      toast.error("Failed to delete income entry");
+    // Apply search
+    if (searchQuery) {
+      filtered = filtered.filter(entry => matchesSearchQuery(entry, searchQuery));
     }
+
+    // Apply date filter
+    if (filters.dateFilter !== "all") {
+      filtered = filtered.filter(entry => matchesDateFilter(entry, filters.dateFilter));
+    }
+
+    // Apply amount filter
+    if (filters.amountRanges.length > 0) {
+      filtered = filtered.filter(entry => matchesAmountFilter(entry, filters.amountRanges));
+    }
+
+    // Apply payment type filter
+    if (filters.paymentTypes.length > 0) {
+      if (filters.paymentTypes.includes("income")) {
+        // Keep all income entries
+      } else {
+        // If income is not selected, filter out all
+        filtered = [];
+      }
+    }
+
+    return filtered;
+  }, [incomeEntries, searchQuery, filters]);
+
+  const filteredExpenseEntries = useMemo(() => {
+    let filtered = expenseEntries;
+
+    // Apply search
+    if (searchQuery) {
+      filtered = filtered.filter(entry => matchesSearchQuery(entry, searchQuery));
+    }
+
+    // Apply date filter
+    if (filters.dateFilter !== "all") {
+      filtered = filtered.filter(entry => matchesDateFilter(entry, filters.dateFilter));
+    }
+
+    // Apply amount filter
+    if (filters.amountRanges.length > 0) {
+      filtered = filtered.filter(entry => matchesAmountFilter(entry, filters.amountRanges));
+    }
+
+    // Apply payment type filter
+    if (filters.paymentTypes.length > 0) {
+      if (filters.paymentTypes.includes("expense")) {
+        // Keep all expense entries
+      } else {
+        // If expense is not selected, filter out all
+        filtered = [];
+      }
+    }
+
+    return filtered;
+  }, [expenseEntries, searchQuery, filters]);
+
+  const handleFilterChange = (newFilters) => {
+    setFilters(newFilters);
   };
 
-  const handleDeleteExpense = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this expense entry?"))
-      return;
-
-    try {
-      await api.delete(`/finance/expenses/${id}`);
-      toast.success("Expense entry deleted successfully");
-      fetchFinanceData();
-    } catch (error) {
-      console.error("Failed to delete expense:", error);
-      toast.error("Failed to delete expense entry");
-    }
+  const handleSearch = (query) => {
+    setSearchQuery(query);
   };
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   if (loading) {
     return (
-      <div className="container-xxl py-4">
+      <div className="container-fluid py-5">
         <div className="text-center">
           <div className="spinner-border text-primary" role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
-          <p className="mt-3 text-muted">Loading your finances...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .finance-card-animate {
-          transition: all 0.3s ease-in-out;
-        }
-        .finance-card-animate:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-      `}</style>
-      <div className="container-xxl py-4">
-        <div className="row">
-          <div className="col-12">
-            <div className="d-flex justify-content-between align-items-center mb-4">
-              <div>
-                <h1 className="h3 mb-1">My Finances</h1>
-                <p className="text-muted mb-0">
-                  Track your income, expenses, and savings
-                </p>
-              </div>
-              <div className="d-flex gap-2 align-items-center">
-                {/* Auto-refresh toggle */}
-                <button
-                  type="button"
-                  className={`btn btn-sm ${autoRefresh ? "btn-success" : "btn-outline-secondary"}`}
-                  onClick={() => setAutoRefresh(!autoRefresh)}
-                  title={
-                    autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"
-                  }
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    {autoRefresh ? (
-                      <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                    ) : (
-                      <path d="M18 6L6 18M6 6l12 12" />
-                    )}
-                  </svg>
-                </button>
+    <div className="container-fluid py-4" style={{ maxWidth: "1400px" }}>
+      {/* Header */}
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div className="d-flex align-items-center gap-3">
+          <div className="bg-primary bg-opacity-10 p-3 rounded-3">
+            <AccountBalanceWallet className="text-primary" style={{ fontSize: "2rem" }} />
+          </div>
+          <div>
+            <h2 className="mb-1 fw-bold">Finances</h2>
+            <p className="text-muted mb-0">Track your income, expenses, and savings</p>
+          </div>
+        </div>
+        
+        {/* Download Report Button */}
+        <button 
+          className="btn btn-primary d-flex align-items-center gap-2"
+          onClick={async () => {
+            try {
+              const response = await api.get('/analytics/generate-monthly-report', { responseType: 'blob' });
+              const blob = new Blob([response.data], { type: 'application/pdf' });
+              const url = window.URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `SmartGoal_Financial_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              window.URL.revokeObjectURL(url);
+              toast.success('Report downloaded successfully!');
+            } catch (error) {
+              console.error('Failed to download report:', error);
+              toast.error('Failed to download report');
+            }
+          }}
+        >
+          <GetApp fontSize="small" />
+          Download Report
+        </button>
+      </div>
 
-                {/* View mode toggle */}
-                <div className="btn-group" role="group">
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${viewMode === "all-time" ? "btn-primary" : "btn-outline-primary"}`}
-                    onClick={() => setViewMode("all-time")}
-                  >
-                    {viewMode === "all-time" && <span className="me-1">✓</span>}
-                    All Time
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${viewMode === "current-month" ? "btn-primary" : "btn-outline-primary"}`}
-                    onClick={() => setViewMode("current-month")}
-                  >
-                    {viewMode === "current-month" && (
-                      <span className="me-1">✓</span>
-                    )}
-                    Current Month
-                  </button>
-                </div>
-              </div>
-            </div>
+      {/* Tab Navigation */}
+      <ul className="nav nav-tabs mb-4">
+        <li className="nav-item">
+          <button
+            className={`nav-link d-flex align-items-center gap-2 ${activeTab === "overview" ? "active" : ""}`}
+            onClick={() => setActiveTab("overview")}
+          >
+            <Assessment fontSize="small" />
+            Overview
+          </button>
+        </li>
+        <li className="nav-item">
+          <button
+            className={`nav-link d-flex align-items-center gap-2 ${activeTab === "transactions" ? "active" : ""}`}
+            onClick={() => setActiveTab("transactions")}
+          >
+            <Receipt fontSize="small" />
+            Transactions
+          </button>
+        </li>
+        <li className="nav-item">
+          <button
+            className={`nav-link d-flex align-items-center gap-2 ${activeTab === "import" ? "active" : ""}`}
+            onClick={() => setActiveTab("import")}
+          >
+            <CloudUpload fontSize="small" />
+            Bank Statement
+          </button>
+        </li>
+        <li className="nav-item">
+          <button
+            className={`nav-link d-flex align-items-center gap-2 ${activeTab === "cash" ? "active" : ""}`}
+            onClick={() => setActiveTab("cash")}
+          >
+            <Money fontSize="small" />
+            Cash Notes
+          </button>
+        </li>
+      </ul>
 
-            {/* Financial Overview */}
-            <div
-              className="row g-4 mb-4"
-              style={{ display: "flex", flexWrap: "nowrap" }}
-            >
-              <div style={{ flex: "0 0 20%" }}>
-                <div className="card text-center finance-card-animate">
-                  <div className="card-body">
-                    <div className="text-success mb-2">
-                      <svg
-                        width="32"
-                        height="32"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <rect x="2" y="6" width="20" height="12" rx="2" />
-                        <path d="M6 10h12" />
-                        <path d="M6 14h12" />
-                        <circle cx="12" cy="12" r="2" />
-                      </svg>
+      {/* Tab Content */}
+      {activeTab === "overview" && (
+        <div>
+          {/* Balance Cards */}
+          <div className="row g-3 mb-4">
+            {/* Total Balance */}
+            <div className="col-lg-3 col-md-6">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="bg-primary bg-opacity-10 p-2 rounded">
+                      <AccountBalanceWallet className="text-primary" fontSize="small" />
                     </div>
-                    <h4 className="text-success">
-                      ₹
-                      {(viewMode === "all-time"
-                        ? financeData.totalIncome
-                        : financeData.monthlyIncome
-                      )?.toLocaleString() || "0"}
-                    </h4>
-                    <p className="text-muted mb-0">
-                      {viewMode === "all-time"
-                        ? "Total Income (All Time)"
-                        : "Current Month Income"}
-                      {viewMode === "current-month" && (
-                        <small className="text-info d-block mt-1">
-                          📅{" "}
-                          {new Date().toLocaleDateString("en-US", {
-                            month: "long",
-                            year: "numeric",
-                          })}
-                        </small>
-                      )}
-                      {viewMode === "all-time" && (
-                        <small className="text-success d-block mt-1">
-                          💰 From {incomeEntries.length} income entries
-                        </small>
-                      )}
-                    </p>
+                    <div className="text-muted small">Total Balance</div>
                   </div>
-                </div>
-              </div>
-              <div style={{ flex: "0 0 20%" }}>
-                <div className="card text-center finance-card-animate">
-                  <div className="card-body">
-                    <div className="text-danger mb-2">
-                      <svg
-                        width="32"
-                        height="32"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <rect x="2" y="6" width="20" height="12" rx="2" />
-                        <path d="M6 10h12" />
-                        <path d="M6 14h12" />
-                        <circle cx="12" cy="12" r="2" />
-                      </svg>
-                    </div>
-                    <h4 className="text-danger">
-                      ₹
-                      {(viewMode === "all-time"
-                        ? financeData.totalExpenses
-                        : financeData.monthlyExpense
-                      )?.toLocaleString() || "0"}
-                    </h4>
-                    <p className="text-muted mb-0">
-                      {viewMode === "all-time"
-                        ? "Total Expenses (All Time)"
-                        : "Current Month Expenses"}
-                      {viewMode === "current-month" && (
-                        <small className="text-info d-block mt-1">
-                          📅{" "}
-                          {new Date().toLocaleDateString("en-US", {
-                            month: "long",
-                            year: "numeric",
-                          })}
-                        </small>
-                      )}
-                      {viewMode === "all-time" && (
-                        <small className="text-danger d-block mt-1">
-                          💸 From {expenseEntries.length} expense entries
-                        </small>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div style={{ flex: "0 0 20%" }}>
-                <div className="card text-center finance-card-animate">
-                  <div className="card-body">
-                    <div className="text-primary mb-2">
-                      <svg
-                        width="32"
-                        height="32"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <rect
-                          x="3"
-                          y="4"
-                          width="18"
-                          height="18"
-                          rx="2"
-                          ry="2"
-                        />
-                        <line x1="16" y1="2" x2="16" y2="6" />
-                        <line x1="8" y1="2" x2="8" y2="6" />
-                        <line x1="3" y1="10" x2="21" y2="10" />
-                      </svg>
-                    </div>
-                    <h4 className="text-primary">
-                      ₹
-                      {(viewMode === "all-time"
-                        ? financeData.totalSavings
-                        : financeData.monthlySavings
-                      )?.toLocaleString() || "0"}
-                    </h4>
-                    <p className="text-muted mb-0">
-                      {viewMode === "all-time"
-                        ? "Total Savings (All Time)"
-                        : "Current Month Savings"}
-                      {viewMode === "current-month" && (
-                        <small className="text-info d-block mt-1">
-                          📅{" "}
-                          {new Date().toLocaleDateString("en-US", {
-                            month: "long",
-                            year: "numeric",
-                          })}
-                        </small>
-                      )}
-                      {viewMode === "all-time" && (
-                        <small className="text-primary d-block mt-1">
-                          💎 Income - Expenses
-                        </small>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div style={{ flex: "0 0 20%" }}>
-                <div className="card text-center finance-card-animate">
-                  <div className="card-body">
-                    <div className="text-info mb-2">
-                      <svg
-                        width="32"
-                        height="32"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M12 6v6l4 2" />
-                      </svg>
-                    </div>
-                    <h4 className="text-info">
-                      ₹{financeData.monthlySavings?.toLocaleString() || "0"}
-                    </h4>
-                    <p className="text-muted mb-0">Current Month Savings</p>
-                    <small className="text-info d-block mt-1">
-                      📅{" "}
-                      {new Date().toLocaleDateString("en-US", {
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </small>
-                  </div>
-                </div>
-              </div>
-              <div style={{ flex: "0 0 20%" }}>
-                <div className="card text-center finance-card-animate">
-                  <div className="card-body">
-                    <div className="text-warning mb-2">
-                      <svg
-                        width="32"
-                        height="32"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                      </svg>
-                    </div>
-                    <h4 className="text-warning">
-                      {(viewMode === "all-time"
-                        ? financeData.totalSavingsRate
-                        : financeData.monthlySavingsRate
-                      )?.toFixed(1) || "0.0"}
-                      %
-                    </h4>
-                    <p className="text-muted mb-0">
-                      {viewMode === "all-time"
-                        ? "Overall Savings Rate"
-                        : "Monthly Savings Rate"}
-                    </p>
-                    <div className="mt-2">
-                      <div className="progress" style={{ height: "6px" }}>
-                        <div
-                          className={`progress-bar ${
-                            ((viewMode === "all-time"
-                              ? financeData.totalSavingsRate
-                              : financeData.monthlySavingsRate) || 0) >= 20
-                              ? "bg-success"
-                              : ((viewMode === "all-time"
-                                    ? financeData.totalSavingsRate
-                                    : financeData.monthlySavingsRate) || 0) >=
-                                  10
-                                ? "bg-warning"
-                                : "bg-danger"
-                          }`}
-                          style={{
-                            width: `${Math.min(100, (viewMode === "all-time" ? financeData.totalSavingsRate : financeData.monthlySavingsRate) || 0)}%`,
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                    <small className="text-muted d-block mt-1">
-                      {((viewMode === "all-time"
-                        ? financeData.totalSavingsRate
-                        : financeData.monthlySavingsRate) || 0) >= 20
-                        ? "Excellent!"
-                        : ((viewMode === "all-time"
-                              ? financeData.totalSavingsRate
-                              : financeData.monthlySavingsRate) || 0) >= 10
-                          ? "Good"
-                          : ((viewMode === "all-time"
-                                ? financeData.totalSavingsRate
-                                : financeData.monthlySavingsRate) || 0) >= 5
-                            ? "Fair"
-                            : "Needs improvement"}
-                    </small>
+                  <h4 className="mb-0 fw-bold">
+                    ₹{financeData.totalSavings.toLocaleString("en-IN")}
+                  </h4>
+                  <div className="text-muted small mt-1">
+                    {financeData.totalSavingsRate}% savings rate
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 50/30/20 Budget Breakdown */}
-            {financeData.monthlyIncome > 0 && (
-              <div className="row g-4 mb-4">
-                <div className="col-12">
-                  <div className="card">
-                    <div className="card-header">
-                      <div className="d-flex align-items-center gap-2">
-                        <svg
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M12 6v6l4 2" />
-                        </svg>
-                        <h5 className="mb-0">50/30/20 Budget Rule Analysis</h5>
-                      </div>
-                      <small className="text-muted">
-                        Recommended: 50% Needs, 30% Wants, 20% Savings
-                      </small>
+            {/* Cash in Hand */}
+            <div className="col-lg-3 col-md-6">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="bg-info bg-opacity-10 p-2 rounded">
+                      <Money className="text-info" fontSize="small" />
                     </div>
-                    <div className="card-body">
-                      {(() => {
-                        const currentDate = new Date();
-                        const currentMonth = currentDate.getMonth();
-                        const currentYear = currentDate.getFullYear();
+                    <div className="text-muted small">Cash in Hand</div>
+                  </div>
+                  <h4 className="mb-0 fw-bold text-info">
+                    ₹{(financeData.cashInHand || 0).toLocaleString("en-IN")}
+                  </h4>
+                  <div className="d-flex justify-content-between mt-1">
+                    <small className="text-success">+₹{(financeData.cashIncome || 0).toLocaleString("en-IN")}</small>
+                    <small className="text-danger">-₹{(financeData.cashExpense || 0).toLocaleString("en-IN")}</small>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                        const currentMonthExpenses = expenseEntries.filter(
-                          (entry) => {
-                            const entryDate = new Date(entry.date);
-                            return (
-                              entryDate.getMonth() === currentMonth &&
-                              entryDate.getFullYear() === currentYear
-                            );
-                          },
-                        );
+            {/* Cash at Bank */}
+            <div className="col-lg-3 col-md-6">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="bg-primary bg-opacity-10 p-2 rounded">
+                      <AccountBalanceWallet className="text-primary" fontSize="small" />
+                    </div>
+                    <div className="text-muted small">Cash at Bank</div>
+                  </div>
+                  <h4 className="mb-0 fw-bold text-primary">
+                    ₹{(financeData.cashAtBank || 0).toLocaleString("en-IN")}
+                  </h4>
+                  <div className="d-flex justify-content-between mt-1">
+                    <small className="text-success">+₹{(financeData.bankIncome || 0).toLocaleString("en-IN")}</small>
+                    <small className="text-danger">-₹{(financeData.bankExpense || 0).toLocaleString("en-IN")}</small>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                        const categorized =
-                          categorizeExpensesByType(currentMonthExpenses);
-                        const monthlyIncome = financeData.monthlyIncome || 0;
-                        const monthlyExpense = financeData.monthlyExpense || 0;
-                        const actualSavings = monthlyIncome - monthlyExpense;
-
-                        const needsPercentage =
-                          monthlyIncome > 0
-                            ? (categorized.needs.total / monthlyIncome) * 100
-                            : 0;
-                        const wantsPercentage =
-                          monthlyIncome > 0
-                            ? (categorized.wants.total / monthlyIncome) * 100
-                            : 0;
-                        const savingsPercentage =
-                          monthlyIncome > 0
-                            ? (actualSavings / monthlyIncome) * 100
-                            : 0;
-
-                        const targetNeeds = monthlyIncome * 0.5;
-                        const targetWants = monthlyIncome * 0.3;
-                        const targetSavings = monthlyIncome * 0.2;
-
-                        return (
-                          <>
-                            <div className="row g-4 mb-4">
-                              {/* Needs */}
-                              <div className="col-md-4">
-                                <div className="card border-primary">
-                                  <div className="card-body">
-                                    <div className="d-flex justify-content-between align-items-center mb-2">
-                                      <h6 className="mb-0">
-                                        🏠 Needs (Essential)
-                                      </h6>
-                                      <span
-                                        className={`badge ${needsPercentage <= 50 ? "bg-success" : "bg-warning"}`}
-                                      >
-                                        {needsPercentage.toFixed(1)}%
-                                      </span>
-                                    </div>
-                                    <div className="mb-2">
-                                      <div className="d-flex justify-content-between small text-muted mb-1">
-                                        <span>
-                                          Current: ₹
-                                          {categorized.needs.total.toLocaleString()}
-                                        </span>
-                                        <span>
-                                          Target: ₹
-                                          {targetNeeds.toLocaleString()}
-                                        </span>
-                                      </div>
-                                      <div
-                                        className="progress"
-                                        style={{ height: "8px" }}
-                                      >
-                                        <div
-                                          className={`progress-bar ${needsPercentage <= 50 ? "bg-success" : "bg-warning"}`}
-                                          style={{
-                                            width: `${Math.min(100, (categorized.needs.total / targetNeeds) * 100)}%`,
-                                          }}
-                                        ></div>
-                                      </div>
-                                    </div>
-                                    <small className="text-muted">
-                                      Housing, Food, Transport, Healthcare
-                                    </small>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Wants */}
-                              <div className="col-md-4">
-                                <div className="card border-info">
-                                  <div className="card-body">
-                                    <div className="d-flex justify-content-between align-items-center mb-2">
-                                      <h6 className="mb-0">
-                                        🎭 Wants (Discretionary)
-                                      </h6>
-                                      <span
-                                        className={`badge ${wantsPercentage <= 30 ? "bg-success" : "bg-warning"}`}
-                                      >
-                                        {wantsPercentage.toFixed(1)}%
-                                      </span>
-                                    </div>
-                                    <div className="mb-2">
-                                      <div className="d-flex justify-content-between small text-muted mb-1">
-                                        <span>
-                                          Current: ₹
-                                          {categorized.wants.total.toLocaleString()}
-                                        </span>
-                                        <span>
-                                          Target: ₹
-                                          {targetWants.toLocaleString()}
-                                        </span>
-                                      </div>
-                                      <div
-                                        className="progress"
-                                        style={{ height: "8px" }}
-                                      >
-                                        <div
-                                          className={`progress-bar ${wantsPercentage <= 30 ? "bg-success" : "bg-warning"}`}
-                                          style={{
-                                            width: `${Math.min(100, (categorized.wants.total / targetWants) * 100)}%`,
-                                          }}
-                                        ></div>
-                                      </div>
-                                    </div>
-                                    <small className="text-muted">
-                                      Entertainment, Shopping, Travel
-                                    </small>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Savings */}
-                              <div className="col-md-4">
-                                <div className="card border-success">
-                                  <div className="card-body">
-                                    <div className="d-flex justify-content-between align-items-center mb-2">
-                                      <h6 className="mb-0">
-                                        💰 Savings & Goals
-                                      </h6>
-                                      <span
-                                        className={`badge ${savingsPercentage >= 20 ? "bg-success" : "bg-danger"}`}
-                                      >
-                                        {savingsPercentage.toFixed(1)}%
-                                      </span>
-                                    </div>
-                                    <div className="mb-2">
-                                      <div className="d-flex justify-content-between small text-muted mb-1">
-                                        <span>
-                                          Current: ₹
-                                          {actualSavings.toLocaleString()}
-                                        </span>
-                                        <span>
-                                          Target: ₹
-                                          {targetSavings.toLocaleString()}
-                                        </span>
-                                      </div>
-                                      <div
-                                        className="progress"
-                                        style={{ height: "8px" }}
-                                      >
-                                        <div
-                                          className={`progress-bar ${savingsPercentage >= 20 ? "bg-success" : "bg-danger"}`}
-                                          style={{
-                                            width: `${Math.min(100, (actualSavings / targetSavings) * 100)}%`,
-                                          }}
-                                        ></div>
-                                      </div>
-                                    </div>
-                                    <small className="text-muted">
-                                      Emergency Fund, Goals, Investments
-                                    </small>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Budget Summary */}
-                            <div className="alert alert-info mb-0">
-                              <div className="d-flex align-items-start gap-2">
-                                <div className="fs-4">💡</div>
-                                <div className="flex-grow-1">
-                                  <h6 className="alert-heading mb-2">
-                                    SmartGoal Budget Planner Insights
-                                  </h6>
-                                  <p className="mb-2 small">
-                                    Based on your monthly income of{" "}
-                                    <strong>
-                                      ₹{monthlyIncome.toLocaleString()}
-                                    </strong>
-                                    , here's how your spending compares to the
-                                    50/30/20 rule:
-                                  </p>
-                                  <ul className="mb-0 small">
-                                    {needsPercentage > 50 && (
-                                      <li>
-                                        Your essential expenses are{" "}
-                                        <strong>
-                                          {(needsPercentage - 50).toFixed(1)}%
-                                        </strong>{" "}
-                                        above the recommended level. Look for
-                                        ways to reduce housing, food, or
-                                        transport costs.
-                                      </li>
-                                    )}
-                                    {wantsPercentage > 30 && (
-                                      <li>
-                                        You're spending{" "}
-                                        <strong>
-                                          ₹
-                                          {(
-                                            categorized.wants.total -
-                                            targetWants
-                                          ).toLocaleString()}
-                                        </strong>{" "}
-                                        more on discretionary items than
-                                        recommended. Cutting back on
-                                        entertainment, shopping, or travel could
-                                        boost your savings.
-                                      </li>
-                                    )}
-                                    {savingsPercentage < 20 && (
-                                      <li>
-                                        To reach the 20% savings target, you
-                                        need to save an additional{" "}
-                                        <strong>
-                                          ₹
-                                          {(
-                                            targetSavings - actualSavings
-                                          ).toLocaleString()}
-                                        </strong>{" "}
-                                        per month. This will help you achieve
-                                        your financial goals faster!
-                                      </li>
-                                    )}
-                                    {needsPercentage <= 50 &&
-                                      wantsPercentage <= 30 &&
-                                      savingsPercentage >= 20 && (
-                                        <li>
-                                          Excellent! You're following the
-                                          50/30/20 rule perfectly. Keep up the
-                                          great financial discipline!
-                                        </li>
-                                      )}
-                                  </ul>
-                                </div>
-                              </div>
-                            </div>
-                          </>
-                        );
-                      })()}
+            {/* Overall Income/Expense */}
+            <div className="col-lg-3 col-md-6">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <div className="bg-success bg-opacity-10 p-2 rounded">
+                      <Assessment className="text-success" fontSize="small" />
+                    </div>
+                    <div className="text-muted small">Overall</div>
+                  </div>
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <div className="text-success fw-semibold">₹{financeData.totalIncome.toLocaleString("en-IN")}</div>
+                      <small className="text-muted">Income</small>
+                    </div>
+                    <div className="text-end">
+                      <div className="text-danger fw-semibold">₹{financeData.totalExpenses.toLocaleString("en-IN")}</div>
+                      <small className="text-muted">Expense</small>
                     </div>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
+          </div>
 
-            {/* Income Section */}
-            <div className="row g-4 mb-4">
-              <div className="col-12">
-                {/* Bank Statement Upload Section */}
-                {showBankUpload ? (
-                  <div className="mb-4">
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <h5 className="mb-0 text-dark fw-semibold">📄 Upload Bank Statement</h5>
-                      <button
-                        className="btn btn-sm btn-outline-secondary"
-                        onClick={() => setShowBankUpload(false)}
-                      >
-                        ← Back to Manual Entry
-                      </button>
-                    </div>
-                    <BankStatementUpload
-                      onImportComplete={(results) => {
-                        fetchFinanceData();
-                        fetchProcessedStatements();
-                        toast.success(`Successfully imported ${results?.successful || 0} transactions!`);
-                        setShowBankUpload(false);
-                      }}
-                    />
-                    
-                    {/* Recently Processed Statements */}
-                    {processedStatements.length > 0 && (
-                      <div className="card mt-4 shadow-sm border-0">
-                        <div className="card-body bg-light p-4">
-                          <h6 className="text-dark fw-semibold mb-3">📁 Recently Processed Statements</h6>
-                          <div className="list-group list-group-flush">
-                            {processedStatements.map((stmt) => (
-                              <div
-                                key={stmt._id}
-                                className="list-group-item bg-white border rounded mb-2 p-3"
-                              >
-                                <div className="d-flex justify-content-between align-items-center">
-                                  <div>
-                                    <h6 className="mb-1 fw-semibold text-dark">
-                                      <svg
-                                        width="16"
-                                        height="16"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        className="me-2 text-primary"
-                                        style={{ display: "inline-block", verticalAlign: "middle" }}
-                                      >
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                        <polyline points="14 2 14 8 20 8" />
-                                      </svg>
-                                      {stmt.filename}
-                                    </h6>
-                                    <p className="text-muted small mb-0">
-                                      📅 Processed on {new Date(stmt.processedAt).toLocaleDateString()} •{" "}
-                                      <span className="badge bg-primary rounded-pill">
-                                        {stmt.transactionsCount} transactions
-                                      </span>
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+        </div>
+      )}
+
+      {activeTab === "transactions" && (
+        <>
+          {/* Transaction Filters */}
+          <TransactionFilters 
+            onFilterChange={handleFilterChange}
+            onSearch={handleSearch}
+          />
+
+          <div className="row g-4">
+          {/* Income Section */}
+          <div className="col-md-6">
+            <div className="card border-0 shadow-sm">
+              <div className="card-header bg-white border-bottom">
+                <div className="d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center gap-2">
+                    <TrendingUp className="text-success" />
+                    <h5 className="mb-0">Income</h5>
+                  </div>
+                  <span className="badge bg-success">{filteredIncomeEntries.length} of {incomeEntries.length}</span>
+                </div>
+              </div>
+              <div className="card-body" style={{ maxHeight: "600px", overflowY: "auto" }}>
+                {filteredIncomeEntries.length === 0 ? (
+                  <div className="text-center py-5 text-muted">
+                    <p>{incomeEntries.length === 0 ? "No income entries for this period" : "No income entries match your filters"}</p>
                   </div>
                 ) : (
-                  <div className="card">
-                    <div className="card-header d-flex justify-content-between align-items-center">
-                      <h5 className="mb-0">Income Entries</h5>
-                      <div className="d-flex gap-2">
-                        <button
-                          className="btn btn-primary btn-sm"
-                          onClick={() => setShowBankUpload(true)}
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
-                          </svg>
-                          Upload Statement
-                        </button>
-                        <button
-                          className="btn btn-success btn-sm"
-                          onClick={() => setShowIncomeForm(true)}
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          >
-                            <path d="M12 5v14M5 12h14" />
-                          </svg>
-                          Add Income
-                        </button>
-                      </div>
-                    </div>
-                    <div className="card-body">
-                      {incomeEntries.length === 0 ? (
-                        <div className="text-center py-4">
-                          <div className="text-muted mb-2">
-                            No income entries yet
+                  <div className="list-group list-group-flush">
+                    {filteredIncomeEntries.map((entry) => (
+                      <div key={entry._id} className="list-group-item px-0">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div className="flex-grow-1">
+                            <div className="fw-semibold">{entry.description || entry.source}</div>
+                            <small className="text-muted">
+                              {new Date(entry.date).toLocaleDateString("en-IN")}
+                            </small>
                           </div>
-                          <small className="text-muted">
-                            Start tracking your income sources
-                          </small>
+                          <div className="text-success fw-bold">
+                            +₹{entry.amount.toLocaleString("en-IN")}
+                          </div>
                         </div>
-                      ) : (
-                      <div className="table-responsive">
-                        <table className="table table-hover">
-                          <thead>
-                            <tr>
-                              <th>Sl.no</th>
-                              <th>Date</th>
-                              <th>Source</th>
-                              <th>Description</th>
-                              <th>Amount</th>
-                              <th>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {incomeEntries.map((entry, index) => (
-                              <tr key={entry._id}>
-                                <td>{index + 1}</td>
-                                <td>
-                                  {new Date(entry.date).toLocaleDateString()}
-                                </td>
-                                <td>{formatLabel(entry.source)}</td>
-                                <td>{entry.description || "-"}</td>
-                                <td className="text-success fw-bold">
-                                  ₹{entry.amount?.toLocaleString()}
-                                </td>
-                                <td>
-                                  <button
-                                    className="btn btn-sm btn-outline-danger"
-                                    onClick={() =>
-                                      handleDeleteIncome(entry._id)
-                                    }
-                                  >
-                                    Delete
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
                       </div>
-                    )}
+                    ))}
                   </div>
-                </div>
                 )}
               </div>
             </div>
+          </div>
 
-            {/* Expense Section */}
-            <div className="row g-4 mb-4">
-              <div className="col-12">
-                <div className="card">
-                  <div className="card-header d-flex justify-content-between align-items-center">
-                    <h5 className="mb-0">Expense Entries</h5>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => setShowExpenseForm(true)}
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                      Add Expense
-                    </button>
+          {/* Expense Section */}
+          <div className="col-md-6">
+            <div className="card border-0 shadow-sm">
+              <div className="card-header bg-white border-bottom">
+                <div className="d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center gap-2">
+                    <TrendingDown className="text-danger" />
+                    <h5 className="mb-0">Expenses</h5>
                   </div>
-                  <div className="card-body">
-                    {expenseEntries.length === 0 ? (
-                      <div className="text-center py-4">
-                        <div className="text-muted mb-2">
-                          No expense entries yet
-                        </div>
-                        <small className="text-muted">
-                          Start tracking your expenses
-                        </small>
-                      </div>
-                    ) : (
-                      <div className="table-responsive">
-                        <table className="table table-hover">
-                          <thead>
-                            <tr>
-                              <th>Sl.no</th>
-                              <th>Date</th>
-                              <th>Category</th>
-                              <th>Type</th>
-                              <th>Description</th>
-                              <th>Amount</th>
-                              <th>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {expenseEntries.map((entry, index) => {
-                              const categoryType = getCategoryType(
-                                entry.category,
-                              );
-                              return (
-                                <tr key={entry._id}>
-                                  <td>{index + 1}</td>
-                                  <td>
-                                    {new Date(entry.date).toLocaleDateString()}
-                                  </td>
-                                  <td>
-                                    <small>
-                                      {formatLabel(
-                                        entry.category.replace("_", " "),
-                                      )}
-                                    </small>
-                                  </td>
-                                  <td>
-                                    <span
-                                      className={`badge bg-${categoryType.badge}`}
-                                    >
-                                      {categoryType.emoji} {categoryType.type}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    <small>{entry.description || "-"}</small>
-                                  </td>
-                                  <td className="text-danger fw-bold">
-                                    ₹{entry.amount?.toLocaleString()}
-                                  </td>
-                                  <td>
-                                    <button
-                                      className="btn btn-sm btn-outline-danger"
-                                      onClick={() =>
-                                        handleDeleteExpense(entry._id)
-                                      }
-                                    >
-                                      Delete
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
+                  <span className="badge bg-danger">{filteredExpenseEntries.length} of {expenseEntries.length}</span>
                 </div>
+              </div>
+              <div className="card-body" style={{ maxHeight: "600px", overflowY: "auto" }}>
+                {filteredExpenseEntries.length === 0 ? (
+                  <div className="text-center py-5 text-muted">
+                    <p>{expenseEntries.length === 0 ? "No expense entries for this period" : "No expense entries match your filters"}</p>
+                  </div>
+                ) : (
+                  <div className="list-group list-group-flush">
+                    {filteredExpenseEntries.map((entry) => (
+                      <div key={entry._id} className="list-group-item px-0">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div className="flex-grow-1">
+                            <div className="fw-semibold">{entry.description || entry.category}</div>
+                            <small className="text-muted">
+                              {new Date(entry.date).toLocaleDateString("en-IN")} • {entry.category}
+                            </small>
+                          </div>
+                          <div className="text-danger fw-bold">
+                            -₹{entry.amount.toLocaleString("en-IN")}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Income Form Modal */}
-            {showIncomeForm && (
-              <div
-                className="modal show d-block"
-                style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-              >
-                <div className="modal-dialog">
-                  <div className="modal-content">
-                    <div className="modal-header">
-                      <h5 className="modal-title">Add Income Entry</h5>
-                      <button
-                        type="button"
-                        className="btn-close"
-                        onClick={() => setShowIncomeForm(false)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          fontSize: "1.5rem",
-                          fontWeight: "bold",
-                          color: "#6c757d",
-                          cursor: "pointer",
-                          padding: "0.5rem",
-                          lineHeight: "1",
-                          width: "2rem",
-                          height: "2rem",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                        title="Close"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <form onSubmit={handleAddIncome}>
-                      <div className="modal-body">
-                        <FormErrors errors={formErrors} className="mb-3" />
-                        <div className="row g-3">
-                          <div className="col-md-6">
-                            <label
-                              htmlFor="incomeAmount"
-                              className="form-label"
-                            >
-                              Amount (₹) *
-                            </label>
-                            <input
-                              type="number"
-                              id="incomeAmount"
-                              className={`form-control ${liveErrors.income.amount ? "is-invalid" : ""}`}
-                              value={incomeForm.amount}
-                              onChange={(e) =>
-                                handleIncomeFieldChange(
-                                  "amount",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="100"
-                              min="2"
-                              max="100000"
-                              step="0.01"
-                              required
-                            />
-                            {liveErrors.income.amount && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.income.amount}
-                              </div>
-                            )}
-                            <small className="text-muted d-block mt-1">
-                              ₹2 to ₹1,00,000
-                            </small>
-                          </div>
-                          <div className="col-md-6">
-                            <label
-                              htmlFor="incomeSource"
-                              className="form-label"
-                            >
-                              Source *
-                            </label>
-                            <select
-                              id="incomeSource"
-                              className={`form-select ${liveErrors.income.source ? "is-invalid" : ""}`}
-                              value={incomeForm.source}
-                              onChange={(e) =>
-                                handleIncomeFieldChange(
-                                  "source",
-                                  e.target.value,
-                                )
-                              }
-                              required
-                            >
-                              <option value="">Select Source</option>
-                              <option value="salary">Salary</option>
-                              <option value="freelance">Freelance</option>
-                              <option value="business">Business</option>
-                              <option value="investment">Investment</option>
-                              <option value="rental">Rental Income</option>
-                              <option value="marketplace-sale">
-                                Marketplace Sale
-                              </option>
-                              <option value="other">Other</option>
-                            </select>
-                            {liveErrors.income.source && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.income.source}
-                              </div>
-                            )}
-                          </div>
-                          <div className="col-md-6">
-                            <label htmlFor="incomeDate" className="form-label">
-                              Date *
-                            </label>
-                            <input
-                              type="date"
-                              id="incomeDate"
-                              className={`form-control ${liveErrors.income.date ? "is-invalid" : ""}`}
-                              value={incomeForm.date}
-                              onChange={(e) =>
-                                handleIncomeFieldChange("date", e.target.value)
-                              }
-                              min={getMinDate()}
-                              max={getMaxDate()}
-                              required
-                            />
-                            {liveErrors.income.date && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.income.date}
-                              </div>
-                            )}
-                            <small className="text-muted d-block mt-1">
-                              📅 From account creation to today
-                            </small>
-                          </div>
-                          <div className="col-12">
-                            <label
-                              htmlFor="incomeDescription"
-                              className="form-label"
-                            >
-                              Description (Optional)
-                            </label>
-                            <textarea
-                              id="incomeDescription"
-                              className={`form-control ${liveErrors.income.description ? "is-invalid" : ""}`}
-                              rows="3"
-                              value={incomeForm.description}
-                              onChange={(e) =>
-                                handleIncomeFieldChange(
-                                  "description",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Additional details about this income..."
-                              maxLength="100"
-                            />
-                            {liveErrors.income.description && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.income.description}
-                              </div>
-                            )}
-                            <small className="text-muted d-block mt-1">
-                              {incomeForm.description.length}/100 characters •
-                              No repetitive characters or suspicious words
-                            </small>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="modal-footer">
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => setShowIncomeForm(false)}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          className="btn btn-success"
-                          disabled={saving}
-                        >
-                          {saving ? (
-                            <>
-                              <span
-                                className="spinner-border spinner-border-sm me-2"
-                                role="status"
-                              ></span>
-                              Adding...
-                            </>
-                          ) : (
-                            "Add Income"
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Expense Form Modal */}
-            {showExpenseForm && (
-              <div
-                className="modal show d-block"
-                style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-              >
-                <div className="modal-dialog">
-                  <div className="modal-content">
-                    <div className="modal-header">
-                      <h5 className="modal-title">Add Expense Entry</h5>
-                      <button
-                        type="button"
-                        className="btn-close"
-                        onClick={() => setShowExpenseForm(false)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          fontSize: "1.5rem",
-                          fontWeight: "bold",
-                          color: "#6c757d",
-                          cursor: "pointer",
-                          padding: "0.5rem",
-                          lineHeight: "1",
-                          width: "2rem",
-                          height: "2rem",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                        title="Close"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <form onSubmit={handleAddExpense}>
-                      <div className="modal-body">
-                        <div className="row g-3">
-                          <div className="col-md-6">
-                            <label
-                              htmlFor="expenseAmount"
-                              className="form-label"
-                            >
-                              Amount (₹) *
-                            </label>
-                            <input
-                              type="number"
-                              id="expenseAmount"
-                              className={`form-control ${liveErrors.expense.amount ? "is-invalid" : ""}`}
-                              value={expenseForm.amount}
-                              onChange={(e) =>
-                                handleExpenseFieldChange(
-                                  "amount",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="2500"
-                              min="2"
-                              max="100000"
-                              step="0.01"
-                              required
-                            />
-                            {liveErrors.expense.amount && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.expense.amount}
-                              </div>
-                            )}
-                            <small className="text-muted d-block mt-1">
-                              ₹2 to ₹1,00,000
-                            </small>
-                          </div>
-                          <div className="col-md-6">
-                            <label
-                              htmlFor="expenseCategory"
-                              className="form-label"
-                            >
-                              Category *
-                            </label>
-                            <select
-                              id="expenseCategory"
-                              className={`form-select ${liveErrors.expense.category ? "is-invalid" : ""}`}
-                              value={expenseForm.category}
-                              onChange={(e) =>
-                                handleExpenseFieldChange(
-                                  "category",
-                                  e.target.value,
-                                )
-                              }
-                              required
-                            >
-                              <option value="">Select Category</option>
-                              <optgroup label="🏠 Needs (Essential - 50%)">
-                                <option value="housing">
-                                  Housing & Utilities
-                                </option>
-                                <option value="food">Food & Dining</option>
-                                <option value="transport">
-                                  Transportation
-                                </option>
-                                <option value="healthcare">Healthcare</option>
-                              </optgroup>
-                              <optgroup label="🎭 Wants (Discretionary - 30%)">
-                                <option value="entertainment">
-                                  Entertainment
-                                </option>
-                                <option value="shopping">Shopping</option>
-                                <option value="travel">Travel</option>
-                              </optgroup>
-                              <optgroup label="📚 Savings & Investment (20%)">
-                                <option value="education">Education</option>
-                              </optgroup>
-                              <optgroup label="Other">
-                                <option value="other">Other</option>
-                              </optgroup>
-                            </select>
-                            {liveErrors.expense.category && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.expense.category}
-                              </div>
-                            )}
-                            <small className="text-muted d-block mt-1">
-                              Choose the category that best fits your expense
-                            </small>
-                          </div>
-                          <div className="col-md-6">
-                            <label htmlFor="expenseDate" className="form-label">
-                              Date *
-                            </label>
-                            <input
-                              type="date"
-                              id="expenseDate"
-                              className={`form-control ${liveErrors.expense.date ? "is-invalid" : ""}`}
-                              value={expenseForm.date}
-                              onChange={(e) =>
-                                handleExpenseFieldChange("date", e.target.value)
-                              }
-                              min={getMinDate()}
-                              max={getMaxDate()}
-                              required
-                            />
-                            {liveErrors.expense.date && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.expense.date}
-                              </div>
-                            )}
-                            <small className="text-muted d-block mt-1">
-                              📅 From account creation to today
-                            </small>
-                          </div>
-                          <div className="col-12">
-                            <label
-                              htmlFor="expenseDescription"
-                              className="form-label"
-                            >
-                              Description (Optional)
-                            </label>
-                            <textarea
-                              id="expenseDescription"
-                              className={`form-control ${liveErrors.expense.description ? "is-invalid" : ""}`}
-                              rows="3"
-                              value={expenseForm.description}
-                              onChange={(e) =>
-                                handleExpenseFieldChange(
-                                  "description",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Additional details about this expense..."
-                              maxLength="100"
-                            />
-                            {liveErrors.expense.description && (
-                              <div className="invalid-feedback d-block">
-                                {liveErrors.expense.description}
-                              </div>
-                            )}
-                            <small className="text-muted d-block mt-1">
-                              {expenseForm.description.length}/100 characters •
-                              No repetitive characters or suspicious words
-                            </small>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="modal-footer">
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => setShowExpenseForm(false)}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          className="btn btn-danger"
-                          disabled={saving}
-                        >
-                          {saving ? (
-                            <>
-                              <span
-                                className="spinner-border spinner-border-sm me-2"
-                                role="status"
-                              ></span>
-                              Adding...
-                            </>
-                          ) : (
-                            "Add Expense"
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
-      </div>
-    </>
+        </>
+      )}
+
+      {activeTab === "import" && (
+        <div className="row">
+          <div className="col-lg-8 mx-auto">
+            <BankStatementUpload onImportComplete={fetchFinanceData} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === "cash" && (
+        <div className="row">
+          <div className="col-lg-10 mx-auto">
+            <CashNotesManager onConvert={fetchFinanceData} />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,15 +1,11 @@
-# KNN Pricing Service - Python ML Microservice
+# SmartGoal ML Service - Python Microservice
 
 ## 🎯 Overview
 
-This is a Python Flask microservice that provides **KNN (K-Nearest Neighbors)** based price predictions for resale items in SmartGoal.
+This is a Python Flask microservice that provides ML-powered features for SmartGoal:
 
-### **How It Works:**
-
-1. **Training Data**: Pre-loaded with 20 sample products
-2. **KNN Algorithm**: Finds 5 most similar products
-3. **Price Prediction**: Suggests optimal price based on similar items
-4. **Confidence Score**: Higher confidence when similar items are very close
+- **Buyer-Seller Matching**: Location-based matching using distance calculations
+- **Condition Detection**: Computer vision-based product condition analysis
 
 ---
 
@@ -58,105 +54,102 @@ GET http://localhost:5001/
 **Response:**
 ```json
 {
-  "service": "SmartGoal KNN Pricing Service",
+  "service": "SmartGoal ML Service",
   "status": "running",
-  "model_trained": true,
-  "training_samples": 20
+  "version": "1.0.0",
+  "features": ["buyer_seller_matching", "condition_detection"]
 }
 ```
 
-### **2. Predict Price**
+### **2. Buyer-Seller Matching**
 
 ```bash
-POST http://localhost:5001/predict
+POST http://localhost:5001/match/sellers
 Content-Type: application/json
 ```
 
 **Request:**
 ```json
 {
-  "title": "iPhone 12 64GB",
-  "category": "electronics",
-  "condition": "excellent",
-  "location": "Mumbai",
-  "originalPrice": 65000,
-  "ageMonths": 24,
-  "brand": "Apple"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "predicted_price": 32000,
-  "average_price": 31500,
-  "median_price": 32000,
-  "price_range": {
-    "min": 28000,
-    "max": 35000
-  },
-  "similar_products": [
+  "sellers": [
     {
-      "title": "iPhone 12 128GB",
-      "price": 35000,
-      "condition": "good",
-      "location": "Mumbai",
-      "similarity": 0.92
+      "sellerId": "seller123",
+      "productId": "prod456",
+      "productTitle": "iPhone 12",
+      "productPrice": 30000,
+      "productCategory": "electronics",
+      "productCondition": "excellent",
+      "latitude": 19.0760,
+      "longitude": 72.8777,
+      "location": "Mumbai"
     }
   ],
-  "confidence": 85,
-  "k_neighbors": 5
-}
-```
-
-### **3. Add Training Data**
-
-```bash
-POST http://localhost:5001/train
-Content-Type: application/json
-```
-
-**Request:**
-```json
-{
-  "title": "iPhone 13 Pro",
-  "category": "electronics",
-  "condition": "excellent",
-  "location": "Delhi",
-  "originalPrice": 120000,
-  "sellingPrice": 85000,
-  "ageMonths": 12,
-  "brand": "Apple"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Product added to training data",
-  "training_result": {
-    "success": true,
-    "samples": 21
+  "buyer": {
+    "latitude": 19.0896,
+    "longitude": 72.8656,
+    "budgetMin": 25000,
+    "budgetMax": 35000,
+    "preferredCategory": "electronics",
+    "preferredCondition": "excellent",
+    "maxDistance": 10
   }
 }
 ```
 
-### **4. Model Statistics**
-
-```bash
-GET http://localhost:5001/stats
-```
-
 **Response:**
 ```json
 {
-  "model_trained": true,
-  "training_samples": 20,
-  "k_neighbors": 5,
-  "categories": ["electronics", "sports", "fashion"],
-  "locations": ["Mumbai", "Delhi", "Bangalore"]
+  "success": true,
+  "matches": [
+    {
+      "sellerId": "seller123",
+      "productId": "prod456",
+      "productTitle": "iPhone 12",
+      "productPrice": 30000,
+      "distance": 2.5,
+      "matchScore": 85,
+      "recommended": true
+    }
+  ],
+  "totalMatches": 1,
+  "recommendedMatches": 1
+}
+```
+
+---
+
+## 👁️ Condition Detection (Computer Vision)
+
+Analyzes product images to detect condition and quality.
+
+### **Endpoints**
+
+```bash
+POST /condition/detect   # Detect condition from image
+POST /condition/train    # Train condition model
+```
+
+### **Detect Condition**
+```json
+{
+  "imagePath": "/path/to/uploaded/image.jpg"
+}
+```
+
+### **Response**
+```json
+{
+  "success": true,
+  "condition": "good",
+  "confidence": 85.5,
+  "tampered": false,
+  "features": {
+    "sharpness": 850.2,
+    "color_variance": 120.5,
+    "edge_density": 0.15,
+    "brightness": 128.0,
+    "contrast": 65.3
+  }
 }
 ```
 
@@ -170,61 +163,20 @@ GET http://localhost:5001/stats
 # Health check
 curl http://localhost:5001/health
 
-# Price prediction
-curl -X POST http://localhost:5001/predict \
+# Buyer-seller matching
+curl -X POST http://localhost:5001/match/sellers \
   -H "Content-Type: application/json" \
   -d '{
-    "category": "electronics",
-    "condition": "excellent",
-    "originalPrice": 65000,
-    "ageMonths": 24,
-    "location": "Mumbai",
-    "brand": "Apple"
+    "sellers": [...],
+    "buyer": {...}
   }'
 ```
 
 ### Test with Postman:
 
 1. Import the endpoints
-2. Send POST request to `/predict`
-3. Check response
-
----
-
-## 🎓 KNN Algorithm Details
-
-### **Features Used:**
-
-1. **Category** (electronics, sports, fashion, books, other)
-2. **Condition** (new, like-new, excellent, good, fair, poor)
-3. **Location** (Mumbai, Delhi, Bangalore, etc.)
-4. **Brand** (Apple, Samsung, Nike, etc.)
-5. **Original Price** (numeric)
-6. **Age in Months** (numeric)
-
-### **Distance Metric:**
-
-- **Euclidean distance** after feature scaling
-- Closer items have more weight (`weights='distance'`)
-
-### **Output:**
-
-- **Predicted Price**: Weighted average of K neighbors
-- **Price Range**: Min/max from similar items
-- **Confidence**: Based on neighbor distances
-
----
-
-## 📊 Training Data
-
-Located in `sample_data.json` with 20 pre-loaded products:
-
-- **Electronics**: iPhones, Samsung, OnePlus, laptops
-- **Sports**: Nike shoes, Adidas
-- **Fashion**: Tommy Hilfiger, Levi's
-- **Accessories**: Headphones, smartwatches
-
-You can add more data via `/train` endpoint or edit the JSON file directly.
+2. Send POST requests to test each feature
+3. Check responses
 
 ---
 
@@ -255,10 +207,6 @@ Change port in `.env`:
 PORT=5002
 ```
 
-### **Issue: Model not trained**
-
-Check `sample_data.json` exists and has data.
-
 ---
 
 ## 📈 Production Deployment
@@ -284,18 +232,18 @@ CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "app:app"]
 
 ## 🎯 Performance
 
-- **Response Time**: < 100ms
-- **K=5**: Good balance of accuracy and speed
+- **Response Time**: < 200ms
 - **Scalable**: Can handle 100+ requests/second
+- **Lightweight**: Minimal memory footprint
 
 ---
 
 ## 📚 Dependencies
 
 - **Flask**: Web framework
-- **scikit-learn**: KNN algorithm
+- **scikit-learn**: ML algorithms
 - **numpy**: Numerical operations
-- **pandas**: Data manipulation
+- **opencv-python**: Image processing
 
 ---
 
@@ -303,53 +251,15 @@ CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "app:app"]
 
 See `server/src/routes/ml-pricing.js` for Node.js integration.
 
----
-
-## 🛡️ Phishing/Fake Link Detection (Naïve Bayes)
-
-This service now includes a Naïve Bayes classifier for detecting suspicious or phishing URLs.
-
-### Endpoints
-
-```bash
-POST /phishing/train     # Train with labeled samples
-POST /phishing/predict   # Predict for a single URL
-POST /phishing/evaluate  # Evaluate on labeled samples
-```
-
-#### Train
-```json
-{
-  "samples": [
-    { "url": "http://paypal.com.security-check-login.xyz", "label": "phish" },
-    { "url": "https://accounts.google.com", "label": "legit" }
-  ]
-}
-```
-
-#### Predict
-```json
-{ "url": "http://secure-update.bank-example.com-login.ru" }
-```
-
-#### Response
-```json
-{
-  "success": true,
-  "label": "phish",
-  "probabilities": { "legit": 0.12, "phish": 0.88 },
-  "suspicionScore": 0.88,
-  "normalizedUrl": "secure-update.bank-example.com-login.ru"
-}
-```
-
-Node integration available at `server/src/routes/ml-phishing.js` mounted under `/api/ml-phishing`.
+Node integration available at:
+- `/api/ml-pricing` - Buyer-seller matching
 
 ---
 
 **Ready to use!** 🎉
 
 Start the service and test it with your SmartGoal app!
+
 
 
 

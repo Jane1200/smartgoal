@@ -3,7 +3,7 @@ import User from "../models/User.js";
 import Goal from "../models/Goal.js";
 import Purchase from "../models/Purchase.js";
 import Marketplace from "../models/Marketplace.js";
-import Finance from "../models/Finance.js";
+// Finance import removed - admins should NOT access user financial data
 import { requireAdmin } from "../middleware/admin.js";
 
 const router = Router();
@@ -444,18 +444,17 @@ router.get("/users/:id/activity", requireAdmin, async (req, res) => {
     const recentGoals = await Goal.find({ userId })
       .sort({ updatedAt: -1 })
       .limit(20)
-      .select('title status updatedAt targetAmount currentAmount');
+      .select('title status updatedAt');
     
-    // Format as activity entries
+    // Format as activity entries (NO FINANCIAL AMOUNTS for privacy)
     const activities = recentGoals.map(goal => ({
       action: `Goal ${goal.status === 'completed' ? 'completed' : 'updated'}`,
       details: goal.title,
       timestamp: goal.updatedAt,
       metadata: {
         goalId: goal._id,
-        status: goal.status,
-        targetAmount: goal.targetAmount,
-        currentAmount: goal.currentAmount
+        status: goal.status
+        // targetAmount and currentAmount removed for privacy
       }
     }));
     
@@ -575,10 +574,11 @@ router.get("/goals", requireAdmin, async (req, res) => {
       }))
     );
 
-    // Format goals with additional calculated fields
+    // Format goals with additional calculated fields (NO FINANCIAL AMOUNTS)
     const formattedGoals = goals
       .filter(goal => goal.userId) // Filter out goals with deleted users
       .map(goal => {
+        // Calculate progress percentage without exposing amounts
         const progressPercentage = goal.targetAmount && goal.targetAmount > 0 
           ? Math.round((goal.currentAmount / goal.targetAmount) * 100)
           : 0;
@@ -607,9 +607,8 @@ router.get("/goals", requireAdmin, async (req, res) => {
           id: goal._id,
           title: goal.title,
           description: goal.description,
-          targetAmount: goal.targetAmount,
-          currentAmount: goal.currentAmount,
-          progressPercentage: Math.min(progressPercentage, 100),
+          // targetAmount and currentAmount removed for privacy
+          progressPercentage: Math.min(progressPercentage, 100), // Only show percentage, not amounts
           dueDate: goal.dueDate,
           status: goal.status,
           isOverdue: isOverdue,
@@ -690,15 +689,19 @@ router.get("/goals/stats", requireAdmin, async (req, res) => {
       g.status === 'completed' && new Date(g.updatedAt) >= sevenDaysAgo
     ).length;
     
-    // Progress analytics (only valid goals)
+    // Progress analytics (aggregated only, no individual amounts)
     const goalsWithAmounts = validGoals.filter(g => 
       g.targetAmount && g.targetAmount > 0 && 
       (g.status === 'planned' || g.status === 'in_progress')
     );
     
-    const totalTargetAmount = goalsWithAmounts.reduce((sum, goal) => sum + (goal.targetAmount || 0), 0);
-    const totalCurrentAmount = goalsWithAmounts.reduce((sum, goal) => sum + (goal.currentAmount || 0), 0);
-    const averageProgress = totalTargetAmount > 0 ? (totalCurrentAmount / totalTargetAmount) * 100 : 0;
+    // Calculate average progress percentage only (no total amounts for privacy)
+    const progressPercentages = goalsWithAmounts.map(g => 
+      g.targetAmount > 0 ? (g.currentAmount / g.targetAmount) * 100 : 0
+    );
+    const averageProgress = progressPercentages.length > 0
+      ? progressPercentages.reduce((sum, p) => sum + p, 0) / progressPercentages.length
+      : 0;
     
     // User engagement (only valid goals)
     const usersWithGoals = [...new Set(validGoals.map(g => g.userId._id.toString()))].length;
@@ -734,9 +737,9 @@ router.get("/goals/stats", requireAdmin, async (req, res) => {
         completedThisWeek: goalsCompletedThisWeek
       },
       progress: {
-        totalTargetAmount: totalTargetAmount,
-        totalCurrentAmount: totalCurrentAmount,
-        averageProgress: Math.round(averageProgress * 100) / 100
+        // Only show average progress percentage, not financial amounts
+        averageProgress: Math.round(averageProgress * 100) / 100,
+        goalsWithProgress: goalsWithAmounts.length
       },
       engagement: {
         usersWithGoals: usersWithGoals,
@@ -883,43 +886,45 @@ router.get("/marketplace/listings", requireAdmin, async (req, res) => {
     const total = await Marketplace.countDocuments(query);
     
     // Format listings with additional calculated fields
-    const formattedListings = listings.map(listing => {
-      const daysListed = Math.ceil((new Date() - new Date(listing.createdAt)) / (1000 * 60 * 60 * 24));
-      const isOldListing = daysListed > 30;
-      
-      return {
-        id: listing._id,
-        title: listing.title,
-        description: listing.description,
-        price: listing.price,
-        category: listing.category,
-        condition: listing.condition,
-        status: listing.status,
-        views: listing.views,
-        likes: listing.likes,
-        featured: listing.featured,
-        daysListed: daysListed,
-        isOldListing: isOldListing,
-        createdAt: listing.createdAt,
-        updatedAt: listing.updatedAt,
-        soldAt: listing.soldAt,
-        seller: {
-          id: listing.userId._id,
-          name: listing.userId.name,
-          email: listing.userId.email,
-          role: listing.userId.role || (listing.userId.roles && listing.userId.roles[0]) || "goal_setter",
-          roles: listing.userId.roles || [listing.userId.role || "goal_setter"]
-        },
-        buyer: listing.buyerId ? {
-          id: listing.buyerId._id,
-          name: listing.buyerId.name,
-          email: listing.buyerId.email,
-          role: listing.buyerId.role || (listing.buyerId.roles && listing.buyerId.roles[0]) || "buyer",
-          roles: listing.buyerId.roles || [listing.buyerId.role || "buyer"]
-        } : null,
-        images: listing.images
-      };
-    });
+    const formattedListings = listings
+      .filter(listing => listing.userId) // Filter out listings with deleted users
+      .map(listing => {
+        const daysListed = Math.ceil((new Date() - new Date(listing.createdAt)) / (1000 * 60 * 60 * 24));
+        const isOldListing = daysListed > 30;
+        
+        return {
+          id: listing._id,
+          title: listing.title,
+          description: listing.description,
+          price: listing.price,
+          category: listing.category,
+          condition: listing.condition,
+          status: listing.status,
+          views: listing.views,
+          likes: listing.likes,
+          featured: listing.featured,
+          daysListed: daysListed,
+          isOldListing: isOldListing,
+          createdAt: listing.createdAt,
+          updatedAt: listing.updatedAt,
+          soldAt: listing.soldAt,
+          seller: listing.userId ? {
+            id: listing.userId._id,
+            name: listing.userId.name,
+            email: listing.userId.email,
+            role: listing.userId.role || (listing.userId.roles && listing.userId.roles[0]) || "goal_setter",
+            roles: listing.userId.roles || [listing.userId.role || "goal_setter"]
+          } : null,
+          buyer: listing.buyerId ? {
+            id: listing.buyerId._id,
+            name: listing.buyerId.name,
+            email: listing.buyerId.email,
+            role: listing.buyerId.role || (listing.buyerId.roles && listing.buyerId.roles[0]) || "buyer",
+            roles: listing.buyerId.roles || [listing.buyerId.role || "buyer"]
+          } : null,
+          images: listing.images
+        };
+      });
     
     res.json({
       listings: formattedListings,
@@ -1234,354 +1239,13 @@ router.patch("/marketplace/purchases/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// Get all financial records for admin overview
-router.get("/finance/records", requireAdmin, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 50;
-    const page = parseInt(req.query.page) || 1;
-    const skip = (page - 1) * limit;
-    const type = req.query.type;
-    const source = req.query.source;
-    const category = req.query.category;
-    const search = req.query.search;
-    const sortBy = req.query.sortBy || 'date';
-    const sortOrder = req.query.sortOrder || 'desc';
-    const month = req.query.month;
-    const year = req.query.year;
-    
-    // Build query
-    let query = {};
-    if (type && type !== "all") {
-      query.type = type;
-    }
-    if (source && source !== "all") {
-      query.source = source;
-    }
-    if (category && category !== "all") {
-      query.category = category;
-    }
-    if (search) {
-      query.$or = [
-        { description: { $regex: search, $options: "i" } }
-      ];
-    }
-    if (month && year) {
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0);
-      query.date = { $gte: startDate, $lte: endDate };
-    }
-    
-    // Build sort object
-    const sort = {};
-    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-    
-    // Get financial records with user details
-    const records = await Finance.find(query)
-      .populate('userId', 'name email role')
-      .sort(sort)
-      .skip(skip)
-      .limit(limit);
-    
-    const total = await Finance.countDocuments(query);
-    
-    // Format records with additional calculated fields
-    const formattedRecords = records.map(record => {
-      const daysAgo = Math.ceil((new Date() - new Date(record.date)) / (1000 * 60 * 60 * 24));
-      const isRecent = daysAgo <= 7;
-      
-      return {
-        id: record._id,
-        type: record.type,
-        amount: record.amount,
-        source: record.source,
-        category: record.category,
-        description: record.description,
-        date: record.date,
-        tags: record.tags,
-        recurring: record.recurring,
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt,
-        daysAgo: daysAgo,
-        isRecent: isRecent,
-        user: {
-          id: record.userId._id,
-          name: record.userId.name,
-          email: record.userId.email,
-          role: record.userId.role
-        }
-      };
-    });
-    
-    res.json({
-      records: formattedRecords,
-      pagination: {
-        current: page,
-        total: Math.ceil(total / limit),
-        count: total,
-        limit
-      },
-      summary: {
-        total: total,
-        income: await Finance.countDocuments({ ...query, type: 'income' }),
-        expense: await Finance.countDocuments({ ...query, type: 'expense' }),
-        totalIncome: await Finance.aggregate([
-          { $match: { ...query, type: 'income' } },
-          { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]).then(result => result[0]?.total || 0),
-        totalExpense: await Finance.aggregate([
-          { $match: { ...query, type: 'expense' } },
-          { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]).then(result => result[0]?.total || 0)
-      }
-    });
-  } catch (error) {
-    console.error("Admin finance records error:", error);
-    res.status(500).json({ message: "Failed to fetch financial records" });
-  }
-});
-
-// Get financial statistics for admin dashboard
-router.get("/finance/stats", requireAdmin, async (req, res) => {
-  try {
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-    
-    // Basic counts
-    const totalRecords = await Finance.countDocuments();
-    const totalIncomeRecords = await Finance.countDocuments({ type: 'income' });
-    const totalExpenseRecords = await Finance.countDocuments({ type: 'expense' });
-    
-    // Recent activity
-    const recordsThisWeek = await Finance.countDocuments({ 
-      createdAt: { $gte: sevenDaysAgo } 
-    });
-    const recordsThisMonth = await Finance.countDocuments({
-      date: { 
-        $gte: new Date(currentYear, currentMonth - 1, 1),
-        $lte: new Date(currentYear, currentMonth, 0)
-      }
-    });
-    
-    // Financial totals
-    const totalIncome = await Finance.aggregate([
-      { $match: { type: 'income' } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]).then(result => result[0]?.total || 0);
-    
-    const totalExpense = await Finance.aggregate([
-      { $match: { type: 'expense' } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]).then(result => result[0]?.total || 0);
-    
-    // Monthly totals
-    const monthlyIncome = await Finance.aggregate([
-      { 
-        $match: { 
-          type: 'income',
-          date: { 
-            $gte: new Date(currentYear, currentMonth - 1, 1),
-            $lte: new Date(currentYear, currentMonth, 0)
-          }
-        } 
-      },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]).then(result => result[0]?.total || 0);
-    
-    const monthlyExpense = await Finance.aggregate([
-      { 
-        $match: { 
-          type: 'expense',
-          date: { 
-            $gte: new Date(currentYear, currentMonth - 1, 1),
-            $lte: new Date(currentYear, currentMonth, 0)
-          }
-        } 
-      },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]).then(result => result[0]?.total || 0);
-    
-    const monthlySavings = monthlyIncome - monthlyExpense;
-    
-    // User engagement
-    const usersWithFinance = await Finance.distinct('userId');
-    const activeUsersWithFinance = await Finance.distinct('userId', {
-      updatedAt: { $gte: thirtyDaysAgo }
-    });
-    
-    // Source breakdown for income
-    const incomeSources = await Finance.aggregate([
-      { $match: { type: 'income' } },
-      { $group: { _id: '$source', total: { $sum: '$amount' }, count: { $sum: 1 } } },
-      { $sort: { total: -1 } }
-    ]);
-    
-    // Category breakdown for expenses
-    const expenseCategories = await Finance.aggregate([
-      { $match: { type: 'expense' } },
-      { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } },
-      { $sort: { total: -1 } }
-    ]);
-    
-    // Monthly trends (last 6 months)
-    const monthlyTrends = await Finance.aggregate([
-      {
-        $match: {
-          date: { $gte: new Date(now.getFullYear(), now.getMonth() - 5, 1) }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$date' },
-            month: { $month: '$date' },
-            type: '$type'
-          },
-          total: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
-    ]);
-    
-    res.json({
-      overview: {
-        totalRecords: totalRecords,
-        totalIncomeRecords: totalIncomeRecords,
-        totalExpenseRecords: totalExpenseRecords,
-        totalIncome: totalIncome,
-        totalExpense: totalExpense,
-        netSavings: totalIncome - totalExpense
-      },
-      monthly: {
-        income: monthlyIncome,
-        expense: monthlyExpense,
-        savings: monthlySavings,
-        records: recordsThisMonth
-      },
-      recentActivity: {
-        recordsThisWeek: recordsThisWeek,
-        recordsThisMonth: recordsThisMonth
-      },
-      engagement: {
-        usersWithFinance: usersWithFinance.length,
-        activeUsersWithFinance: activeUsersWithFinance.length
-      },
-      breakdown: {
-        incomeSources: incomeSources,
-        expenseCategories: expenseCategories
-      },
-      trends: monthlyTrends
-    });
-  } catch (error) {
-    console.error("Admin finance stats error:", error);
-    res.status(500).json({ message: "Failed to fetch financial statistics" });
-  }
-});
-
-// Get user financial summary for admin
-router.get("/finance/users/:userId/summary", requireAdmin, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const { month, year, all } = req.query;
-    
-    // Get user info
-    const user = await User.findById(userId, 'name email role');
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    
-    let summary;
-    
-    if (all === 'true') {
-      summary = await Finance.getUserFinanceSummary(userId);
-    } else {
-      const currentDate = new Date();
-      const targetMonth = month ? parseInt(month) : currentDate.getMonth() + 1;
-      const targetYear = year ? parseInt(year) : currentDate.getFullYear();
-      
-      summary = await Finance.getUserFinanceSummary(userId, {
-        month: targetMonth,
-        year: targetYear
-      });
-    }
-    
-    // Calculate totals
-    let totalIncome = 0;
-    let totalExpense = 0;
-    let incomeCount = 0;
-    let expenseCount = 0;
-    
-    summary.forEach(item => {
-      if (item._id === 'income') {
-        totalIncome = item.total;
-        incomeCount = item.count;
-      } else if (item._id === 'expense') {
-        totalExpense = item.total;
-        expenseCount = item.count;
-      }
-    });
-    
-    const netSavings = totalIncome - totalExpense;
-    
-    // Get recent transactions
-    const recentTransactions = await Finance.find({ userId })
-      .sort({ date: -1 })
-      .limit(10);
-    
-    res.json({
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      },
-      summary: {
-        totalIncome,
-        totalExpense,
-        netSavings,
-        incomeCount,
-        expenseCount,
-        viewMode: all === 'true' ? 'all-time' : 'current-month'
-      },
-      recentTransactions: recentTransactions
-    });
-  } catch (error) {
-    console.error("Admin user finance summary error:", error);
-    res.status(500).json({ message: "Failed to fetch user financial summary" });
-  }
-});
-
-// Delete financial record (admin only)
-router.delete("/finance/records/:id", requireAdmin, async (req, res) => {
-  try {
-    const recordId = req.params.id;
-    
-    const record = await Finance.findById(recordId).populate('userId', 'name email role');
-    if (!record) {
-      return res.status(404).json({ message: "Financial record not found" });
-    }
-    
-    await Finance.findByIdAndDelete(recordId);
-    
-    res.json({
-      message: "Financial record deleted successfully",
-      deletedRecord: {
-        id: record._id,
-        type: record.type,
-        amount: record.amount,
-        description: record.description,
-        userId: record.userId._id,
-        userName: record.userId.name
-      }
-    });
-  } catch (error) {
-    console.error("Delete financial record error:", error);
-    res.status(500).json({ message: "Failed to delete financial record" });
-  }
-});
+// ============================================
+// PRIVACY NOTICE: Financial data routes removed
+// ============================================
+// Admin should NOT have access to individual user financial data
+// including income, expenses, transactions, bank statements, etc.
+// This protects user privacy and complies with data protection laws.
+// ============================================
 
 // Get comprehensive system analytics
 router.get("/analytics/system", requireAdmin, async (req, res) => {
@@ -1929,7 +1593,7 @@ router.post("/users", requireAdmin, async (req, res) => {
       : (role ? [role] : ['goal_setter']);
 
     // Validate roles
-    const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+    const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
     const invalidRoles = userRoles.filter(r => !allowedRoles.includes(r));
     if (invalidRoles.length > 0) {
       return res.status(400).json({ 
@@ -2092,7 +1756,7 @@ router.put("/users/:userId", requireAdmin, async (req, res) => {
 
     // Update roles if provided
     if (roles && Array.isArray(roles) && roles.length > 0) {
-      const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+      const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
       const invalidRoles = roles.filter(r => !allowedRoles.includes(r));
       
       if (invalidRoles.length > 0) {
@@ -2105,7 +1769,7 @@ router.put("/users/:userId", requireAdmin, async (req, res) => {
       user.role = user.roles[0]; // Set primary role
     } else if (role) {
       // Handle single role update for backward compatibility
-      const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+      const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
       if (!allowedRoles.includes(role)) {
         return res.status(400).json({ message: 'Invalid role' });
       }
@@ -2221,7 +1885,7 @@ router.patch("/users/:userId/roles", requireAdmin, async (req, res) => {
     const { roles } = req.body;
 
     // Validate roles
-    const allowedRoles = ['goal_setter', 'buyer', 'admin'];
+    const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
     if (!Array.isArray(roles) || roles.length === 0) {
       return res.status(400).json({ message: 'Roles must be a non-empty array' });
     }
