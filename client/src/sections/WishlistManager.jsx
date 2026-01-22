@@ -28,6 +28,13 @@ export default function WishlistManager() {
   };
 
   async function createGoalFromWishlist(item) {
+    const priceValue = typeof item.price === "number"
+      ? item.price
+      : Number(String(item.price ?? "").replace(/[^\d.]/g, ""));
+    if (!Number.isFinite(priceValue) || priceValue <= 0) {
+      toast.error("Please add a valid price before creating a goal.");
+      return;
+    }
     // Sanitize title - remove extra colons and clean up
     let cleanTitle = (item.title || item.itemName || "Wishlist Item")
       .replace(/\s*:\s*Amazon\..*$/i, '') // Remove ": Amazon.in: Electronics" etc
@@ -57,7 +64,7 @@ export default function WishlistManager() {
     const payload = {
       title: cleanTitle,
       description: cleanDescription || `Wishlist item: ${cleanTitle}`,
-      targetAmount: item.price ?? 0,
+      targetAmount: priceValue,
       currentAmount: 0,
       category: mapWishlistPriorityToGoalCategory(item.priority),
       status: "planned",

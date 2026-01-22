@@ -50,6 +50,11 @@ export default function GoalsManager({
     // If there's an error from the validator, it means the text is suspicious
     return error !== '';
   };
+
+  const isValidBasicText = (text) => {
+    if (!text) return false;
+    return /^[a-zA-Z0-9\s\-_.,!?():]+$/.test(text.trim());
+  };
   
   // Function to count characters
   const getCharacterCount = (text) => {
@@ -139,6 +144,13 @@ export default function GoalsManager({
         errors.customCategory = "Custom category must be at least 3 characters";
       } else if (form.customCategory.trim().length > 30) {
         errors.customCategory = "Custom category cannot exceed 30 characters";
+      } else if (!isValidBasicText(form.customCategory)) {
+        errors.customCategory = "Only letters, numbers, spaces, and basic punctuation allowed";
+      } else {
+        const categoryError = validateMeaningfulTextSync('text_field', form.customCategory.trim());
+        if (categoryError) {
+          errors.customCategory = categoryError;
+        }
       }
     }
     
@@ -390,9 +402,24 @@ export default function GoalsManager({
                   value={form.customCategory}
                   maxLength={30}
                   onChange={(e) => {
-                    setForm({ ...form, customCategory: e.target.value });
-                    if (formErrors.customCategory) {
+                    const newCategory = e.target.value;
+                    setForm({ ...form, customCategory: newCategory });
+                    const trimmed = newCategory.trim();
+                    if (!trimmed) {
                       setFormErrors({ ...formErrors, customCategory: null });
+                    } else if (trimmed.length < 3) {
+                      setFormErrors({ ...formErrors, customCategory: "Custom category must be at least 3 characters" });
+                    } else if (trimmed.length > 30) {
+                      setFormErrors({ ...formErrors, customCategory: "Custom category cannot exceed 30 characters" });
+                    } else if (!isValidBasicText(trimmed)) {
+                      setFormErrors({ ...formErrors, customCategory: "Only letters, numbers, spaces, and basic punctuation allowed" });
+                    } else {
+                      const meaningError = validateMeaningfulTextSync('text_field', trimmed);
+                      if (meaningError) {
+                        setFormErrors({ ...formErrors, customCategory: meaningError });
+                      } else {
+                        setFormErrors({ ...formErrors, customCategory: null });
+                      }
                     }
                   }}
                   disabled={!isGoalCreationEnabled() && !isEdit}

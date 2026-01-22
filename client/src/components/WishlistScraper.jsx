@@ -8,6 +8,8 @@ export default function WishlistScraper({ onItemAdded }) {
   const [scrapedData, setScrapedData] = useState(null);
   const [editingData, setEditingData] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [checkingSafety, setCheckingSafety] = useState(false);
+  const [urlSafety, setUrlSafety] = useState(null);
 
   const supportedSites = [
     "amazon.in",
@@ -15,6 +17,27 @@ export default function WishlistScraper({ onItemAdded }) {
     "myntra.com",
     "nykaa.com"
   ];
+
+  const checkUrlSafety = async (rawUrl) => {
+    if (!rawUrl || !rawUrl.trim()) return null;
+    const normalizedUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    try {
+      setCheckingSafety(true);
+      const { data } = await api.post("/wishlist/url-safety", { url: normalizedUrl });
+      setUrlSafety(data);
+      return data;
+    } catch (error) {
+      console.error("URL safety check failed:", error);
+      setUrlSafety({
+        success: false,
+        riskLevel: "unknown",
+        message: "Could not verify URL safety. Please double-check the link.",
+      });
+      return null;
+    } finally {
+      setCheckingSafety(false);
+    }
+  };
 
   const scrapeProduct = async (e) => {
     e.preventDefault();
@@ -27,6 +50,15 @@ export default function WishlistScraper({ onItemAdded }) {
     if (!isSupportedSite(url)) {
       toast.error(`❌ Unsupported site! Only these sites are supported: ${supportedSites.join(", ")}`);
       return;
+    }
+
+    const safety = await checkUrlSafety(url);
+    if (safety?.riskLevel === "high") {
+      toast.error("🚨 This URL looks unsafe. Please use a trusted link.");
+      return;
+    }
+    if (safety?.riskLevel === "medium") {
+      toast.warning("⚠️ This URL looks suspicious. Proceed with caution.");
     }
 
     setScraping(true);
@@ -180,33 +212,7 @@ export default function WishlistScraper({ onItemAdded }) {
       const { data } = await api.post("/wishlist", payload);
 
       if (data && data._id) {
-        try {
-          // Map wishlist priority to goal priority (default to medium if not set)
-          const priorityMap = { high: 2, medium: 3, low: 4 };
-          const goalPriority = priorityMap[data.priority] || 3;
-          
-          const goalPayload = {
-            title: data.title,
-            description: data.description,
-            targetAmount: data.price ?? 0,
-            currentAmount: 0,
-            category: "discretionary", // Wishlist items are discretionary wants
-            priority: goalPriority,
-            status: "planned",
-            dueDate: data.dueDate || undefined,
-            sourceWishlistId: data._id // Link the goal to this wishlist item
-          };
-          
-          console.log("Creating goal from scraper with payload:", goalPayload);
-          await api.post("/goals", goalPayload);
-          toast.success("Added to wishlist and created goal!");
-        } catch (goalError) {
-          console.error("Goal creation from scraper failed:", goalError);
-          console.error("Goal creation error response:", goalError.response?.data);
-          const errorMsg = goalError.response?.data?.message || "Unknown error";
-          toast.error(`Wishlist saved, but goal creation failed: ${errorMsg}`);
-        }
-
+        toast.success("Added to wishlist successfully!");
         setScrapedData(null);
         setEditingData(null);
         setUrl("");
@@ -236,6 +242,32 @@ export default function WishlistScraper({ onItemAdded }) {
     return supportedSites.some(site => url.includes(site));
   };
 
+  const safetyBadge = () => {
+    if (!urlSafety || checkingSafety) return null;
+    const riskLevel = urlSafety.riskLevel || "unknown";
+    const classMap = {
+      safe: "text-success",
+      low: "text-info",
+      medium: "text-warning",
+      high: "text-danger",
+      unknown: "text-muted"
+    };
+    const labelMap = {
+      safe: "Safe URL",
+      low: "Low Risk",
+      medium: "Suspicious",
+      high: "High Risk",
+      unknown: "Not Verified"
+    };
+
+    return (
+      <div className={`small mt-2 ${classMap[riskLevel] || "text-muted"}`}>
+        <strong>{labelMap[riskLevel] || "Not Verified"}:</strong>{" "}
+        {urlSafety.message || "Check the URL before proceeding."}
+      </div>
+    );
+  };
+
   return (
     <div className="wishlist-scraper">
       <div className="scraper-header">
@@ -251,7 +283,15 @@ export default function WishlistScraper({ onItemAdded }) {
             className="form-control"
             placeholder="https://amazon.in/product-url or https://flipkart.com/product-url"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setUrlSafety(null);
+            }}
+            onBlur={() => {
+              if (url.trim() && isSupportedSite(url)) {
+                checkUrlSafety(url);
+              }
+            }}
             required
           />
           <button
@@ -279,6 +319,14 @@ export default function WishlistScraper({ onItemAdded }) {
             )}
           </button>
         </div>
+
+        {checkingSafety && (
+          <div className="ps-3 border-start border-2">
+            <small className="text-muted">Checking URL safety...</small>
+          </div>
+        )}
+
+        {safetyBadge()}
 
         {url && !isSupportedSite(url) && (
           <div className="ps-3 border-start border-2">

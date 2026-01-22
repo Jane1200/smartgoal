@@ -59,6 +59,130 @@ function extractNumberFromString(text) {
   return Number.isFinite(num) ? num : null;
 }
 
+function analyzeUrlSafety(rawUrl) {
+  const result = {
+    success: true,
+    score: 0,
+    riskLevel: "safe",
+    message: "URL looks safe to use.",
+    reasons: []
+  };
+
+  let url;
+  try {
+    const normalized = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    url = new URL(normalized);
+  } catch {
+    return {
+      success: false,
+      score: 100,
+      riskLevel: "high",
+      message: "Invalid URL format. Please check the link.",
+      reasons: ["Invalid URL format"]
+    };
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  const fullUrl = url.toString().toLowerCase();
+  const path = url.pathname.toLowerCase();
+  const protocol = url.protocol;
+
+  const trustedDomains = [
+    "amazon.in",
+    "flipkart.com",
+    "myntra.com",
+    "nykaa.com"
+  ];
+
+  if (trustedDomains.some(domain => hostname === domain || hostname.endsWith(`.${domain}`))) {
+    return {
+      success: true,
+      score: 5,
+      riskLevel: "safe",
+      message: "Trusted domain detected. URL looks safe.",
+      reasons: ["Trusted e-commerce domain"]
+    };
+  }
+
+  const suspiciousTlds = ["zip", "top", "xyz", "ru", "cn", "tk", "ml", "ga", "gq", "cf"];
+  const suspiciousKeywords = [
+    "login", "verify", "secure", "update", "confirm", "account", "bank", "free", "giveaway",
+    "prize", "win", "bonus", "urgent", "password", "reset", "security", "payment", "wallet"
+  ];
+
+  if (protocol !== "https:") {
+    result.score += 10;
+    result.reasons.push("Not using HTTPS");
+  }
+
+  if (fullUrl.includes("@")) {
+    result.score += 20;
+    result.reasons.push("Contains '@' in URL");
+  }
+
+  if (hostname.includes("xn--")) {
+    result.score += 25;
+    result.reasons.push("Punycode domain detected");
+  }
+
+  const subdomainCount = hostname.split(".").length - 2;
+  if (subdomainCount >= 3) {
+    result.score += 15;
+    result.reasons.push("Excessive subdomains");
+  }
+
+  const hyphenCount = (hostname.match(/-/g) || []).length;
+  if (hyphenCount >= 3) {
+    result.score += 8;
+    result.reasons.push("Too many hyphens in domain");
+  }
+
+  const digitsInHost = (hostname.match(/\d/g) || []).length;
+  if (digitsInHost >= 6) {
+    result.score += 10;
+    result.reasons.push("Suspicious number-heavy domain");
+  }
+
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+    result.score += 35;
+    result.reasons.push("IP address used instead of domain");
+  }
+
+  if (fullUrl.length > 120) {
+    result.score += 10;
+    result.reasons.push("Very long URL");
+  }
+  if (fullUrl.length > 200) {
+    result.score += 15;
+    result.reasons.push("Extremely long URL");
+  }
+
+  const tld = hostname.split(".").pop();
+  if (tld && suspiciousTlds.includes(tld)) {
+    result.score += 20;
+    result.reasons.push("Suspicious top-level domain");
+  }
+
+  const keywordHits = suspiciousKeywords.filter((k) => hostname.includes(k) || path.includes(k));
+  if (keywordHits.length > 0) {
+    result.score += Math.min(30, keywordHits.length * 8);
+    result.reasons.push(`Suspicious keywords: ${keywordHits.join(", ")}`);
+  }
+
+  if (result.score >= 60) {
+    result.riskLevel = "high";
+    result.message = "High risk URL detected. This link may be unsafe.";
+  } else if (result.score >= 40) {
+    result.riskLevel = "medium";
+    result.message = "Potentially risky URL. Use caution.";
+  } else if (result.score >= 20) {
+    result.riskLevel = "low";
+    result.message = "Low risk URL, but still verify the source.";
+  }
+
+  return result;
+}
+
 /* ---------------------------
    parseHtmlContent: improved image checks (data-src, data-lazy)
    --------------------------- */
@@ -1039,6 +1163,36 @@ router.post(
     } catch (error) {
       console.error("Unexpected scrape error:", error);
       return res.status(500).json({ success: false, message: "Unexpected server error during scraping", error: String(error) });
+    }
+  }
+);
+
+// URL safety check (ML-like risk scoring)
+router.post(
+  "/url-safety",
+  [
+    body("url")
+      .trim()
+      .customSanitizer((value) => {
+        if (!value) return value;
+        return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+      })
+      .isURL({ require_protocol: true })
+      .isLength({ max: 2048 }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: "Invalid URL", errors: errors.array() });
+      }
+
+      const { url } = req.body;
+      const safety = analyzeUrlSafety(url);
+      res.json(safety);
+    } catch (error) {
+      console.error("URL safety check error:", error);
+      res.status(500).json({ message: "Failed to evaluate URL safety" });
     }
   }
 );
