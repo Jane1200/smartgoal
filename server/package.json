@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "build": "echo 'No build step'",
     "migrate:roles": "node src/scripts/migrateUserRoles.js",
     "rollback:roles": "node src/scripts/rollbackUserRoles.js",
     "init:admin": "node src/scripts/initAdmin.js"
