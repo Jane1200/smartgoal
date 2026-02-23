@@ -5,16 +5,11 @@ import WishlistScraper from "@/components/WishlistScraper.jsx";
 import { FavoriteBorder, Info } from "@mui/icons-material";
 
 export default function WishlistManager() {
-  const handleItemAdded = async (newItem) => {
-    // Automatically create a goal from the wishlist item
-    try {
-      console.log('🎯 Creating goal from wishlist item:', newItem);
-      await createGoalFromWishlist(newItem);
-      toast.success("Goal created successfully! Check 'All Goals' tab to view it.");
-    } catch (goalError) {
-      console.error('❌ Failed to create goal from wishlist:', goalError);
-      toast.error("Failed to create goal. Please try again.");
-    }
+  const handleItemAdded = (newItem) => {
+    // Wishlist items are already stored as goals on the backend.
+    // Avoid creating a duplicate goal entry here.
+    console.log('✅ Wishlist item created:', newItem);
+    toast.success("Wishlist item added. Check 'All Goals' to view it.");
   };
 
   // Map wishlist priority to goal category
@@ -28,9 +23,10 @@ export default function WishlistManager() {
   };
 
   async function createGoalFromWishlist(item) {
-    const priceValue = typeof item.price === "number"
-      ? item.price
-      : Number(String(item.price ?? "").replace(/[^\d.]/g, ""));
+    const rawPrice = item.price ?? item.targetAmount;
+    const priceValue = typeof rawPrice === "number"
+      ? rawPrice
+      : Number(String(rawPrice ?? "").replace(/[^\d.]/g, ""));
     if (!Number.isFinite(priceValue) || priceValue <= 0) {
       toast.error("Please add a valid price before creating a goal.");
       return;
@@ -155,7 +151,7 @@ export default function WishlistManager() {
         }
       `}</style>
 
-      <div className="container-fluid" style={{ maxWidth: "900px" }}>
+      <div className="container-fluid" style={{ maxWidth: "960px" }}>
         <div className="card wishlist-form-card">
           <div className="card-body p-4">
             <div className="wishlist-header">
@@ -174,9 +170,9 @@ export default function WishlistManager() {
                 How it works
               </h6>
               <ul>
-                <li>Paste a product URL from Amazon, Flipkart, or other supported sites</li>
-                <li>We'll automatically extract the product details (title, price, image)</li>
-                <li>A goal will be created instantly and appear in your "All Goals" tab</li>
+                <li>Paste a product URL from Amazon, Flipkart, Myntra or Nykaa</li>
+                <li>We&apos;ll extract product details and instantly compare prices across top retailers</li>
+                <li>A savings goal will be created and appear in your &quot;All Goals&quot; tab</li>
                 <li>Track your progress and allocate savings towards your wishlist items</li>
               </ul>
             </div>

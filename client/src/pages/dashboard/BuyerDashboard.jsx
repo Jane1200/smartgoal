@@ -578,7 +578,7 @@ export default function BuyerDashboard() {
             </p>
             <button 
               className="btn btn-light btn-lg"
-              onClick={() => navigate("/profile")}
+              onClick={() => navigate("/buyer-profile")}
               style={{ 
                 borderRadius: '12px',
                 fontWeight: '600',

@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/monthly-report",
+      "schedule": "0 9 1 * *"
+    }
+  ],
+  "env": {
+    "VERCEL": "1"
+  }
+}

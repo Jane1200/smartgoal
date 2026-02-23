@@ -103,7 +103,7 @@ export default function BankStatementUpload({ onImportComplete }) {
       });
 
       if (response.data.success) {
-        const { results } = response.data;
+        const { results, duplicateInfo } = response.data;
         
         if (results.successful > 0) {
           toast.success(`✅ Imported ${results.successful} transaction(s) successfully!`);
@@ -117,6 +117,13 @@ export default function BankStatementUpload({ onImportComplete }) {
         if (results.skipped > 0) {
           toast.warning(`⚠️ ${results.skipped} transaction(s) skipped (invalid data).`);
         }
+
+        if (duplicateInfo?.duplicates > 0) {
+          toast.info(
+            `🔍 ${duplicateInfo.duplicates} duplicate transaction(s) were skipped`,
+            { autoClose: 5000 }
+          );
+        }
         
         setFile(null);
         setExtractedTransactions([]);
@@ -126,6 +133,8 @@ export default function BankStatementUpload({ onImportComplete }) {
         if (onImportComplete) {
           onImportComplete(response.data.results);
         }
+      } else if (response.data.duplicateInfo?.duplicates > 0) {
+        toast.info("All transactions were duplicates. Nothing imported.");
       }
     } catch (error) {
       console.error("Import error:", error);

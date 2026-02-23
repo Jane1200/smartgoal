@@ -71,6 +71,56 @@ export default function GoalsManager({
 
   const isEdit = useMemo(() => Boolean(editingId), [editingId]);
 
+  const displayGoals = useMemo(() => {
+    if (!Array.isArray(goals) || goals.length === 0) {
+      return goals;
+    }
+
+    const totalSavings = Math.max(0, financeData?.totalSavings || 0);
+    let remaining = totalSavings;
+    const allocatableGoals = sortGoalsByPriority(
+      goals.filter(
+        (g) =>
+          g.status !== "archived" &&
+          g.targetAmount &&
+          g.targetAmount > 0 &&
+          !g.isWishlistItem &&
+          g.category !== "wishlist"
+      )
+    );
+
+    const allocationMap = new Map();
+    for (const goal of allocatableGoals) {
+      if (remaining <= 0) {
+        allocationMap.set(goal._id, 0);
+        continue;
+      }
+      const allocated = Math.min(goal.targetAmount, remaining);
+      allocationMap.set(goal._id, allocated);
+      remaining -= allocated;
+    }
+
+    return goals.map((goal) => {
+      if (!allocationMap.has(goal._id)) {
+        return goal;
+      }
+
+      const allocated = allocationMap.get(goal._id);
+      const normalizedStatus =
+        allocated >= goal.targetAmount
+          ? "completed"
+          : allocated > 0
+            ? "in_progress"
+            : "planned";
+
+      return {
+        ...goal,
+        currentAmount: allocated,
+        status: goal.status === "archived" ? goal.status : normalizedStatus,
+      };
+    });
+  }, [goals, financeData]);
+
   // Calculate current amount from total savings (income-expenses)
   const calculateCurrentAmount = () => {
     return Math.max(0, financeData.totalSavings || 0);
@@ -105,6 +155,7 @@ export default function GoalsManager({
 
   function startEdit(goal) {
     setEditingId(goal._id);
+    const normalizedStatus = goal.status === "achieved" ? "completed" : goal.status;
     
     // Check if the category is a predefined one or custom
     const isPredefinedCategory = Object.keys(GOAL_CATEGORIES).includes(goal.category);
@@ -114,7 +165,7 @@ export default function GoalsManager({
       description: goal.description || "",
       targetAmount: goal.targetAmount ?? "",
       dueDate: goal.dueDate ? goal.dueDate.substring(0, 10) : "",
-      status: goal.status || "planned",
+      status: normalizedStatus || "planned",
       category: isPredefinedCategory ? goal.category : "custom",
       customCategory: isPredefinedCategory ? "" : goal.category,
       priority: goal.priority || 3,
@@ -265,19 +316,52 @@ export default function GoalsManager({
   }
 
   async function completeGoal(goal) {
-    if (!window.confirm(
-      `Complete "${goal.title}"?\n\n` +
-      `This will:\n` +
-      `✓ Mark the goal as completed\n` +
-      `✓ Create an expense entry for ₹${goal.targetAmount}\n` +
-      `✓ Deduct ₹${goal.targetAmount} from your savings\n\n` +
-      `This action represents actually spending the money on this goal.`
-    )) {
+    const availableAmount = Math.max(0, goal.currentAmount ?? goal.targetAmount ?? 0);
+    if (availableAmount <= 0) {
+      toast.error("No available funds to spend for this goal.");
       return;
     }
-    
+
+    const rawAmount = window.prompt(
+      `How much did you actually spend from "${goal.title}"?\n` +
+      `Max available: ₹${availableAmount.toLocaleString()}`,
+      `${Math.round(availableAmount)}`
+    );
+
+    if (rawAmount === null) {
+      return;
+    }
+
+    const spentAmount = Number(rawAmount);
+    if (!Number.isFinite(spentAmount) || spentAmount <= 0) {
+      toast.error("Please enter a valid amount greater than 0.");
+      return;
+    }
+
+    if (spentAmount > availableAmount) {
+      toast.error(`Amount cannot exceed ₹${availableAmount.toLocaleString()}.`);
+      return;
+    }
+
+    const remainingAmount = Math.max(0, availableAmount - spentAmount);
+    const confirmMessage = remainingAmount > 0
+      ? `Spend ₹${spentAmount.toLocaleString()} from "${goal.title}"?\n\n` +
+        `This will:\n` +
+        `✓ Create an expense entry for ₹${spentAmount.toLocaleString()}\n` +
+        `✓ Keep the goal open with ₹${remainingAmount.toLocaleString()} still reserved\n\n` +
+        `This does NOT close the goal.`
+      : `Spend ₹${spentAmount.toLocaleString()} and complete "${goal.title}"?\n\n` +
+        `This will:\n` +
+        `✓ Create an expense entry for ₹${spentAmount.toLocaleString()}\n` +
+        `✓ Mark the goal as completed\n\n` +
+        `This action represents actually spending the full goal amount.`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
     try {
-      const { data } = await api.post(`/goals/${goal._id}/complete`);
+      const { data } = await api.post(`/goals/${goal._id}/complete`, { spentAmount });
       toast.success(data.message);
       // Reload goals and finance data
       await loadGoals();
@@ -298,7 +382,6 @@ export default function GoalsManager({
   // Get status badge color
   function getStatusBadgeClass(status) {
     switch (status) {
-      case "achieved": return "bg-success";
       case "completed": return "bg-success";
       case "in_progress": return "bg-info";
       case "planned": return "bg-secondary";
@@ -595,7 +678,6 @@ export default function GoalsManager({
                   >
                     <option value="planned">📋 Planned</option>
                     <option value="in_progress">🚀 In Progress</option>
-                    <option value="achieved">✅ Achieved</option>
                     <option value="completed">✓ Completed</option>
                     <option value="archived">📦 Archived</option>
                   </select>
@@ -660,14 +742,14 @@ export default function GoalsManager({
           <div className="card shadow-sm">
           <div className="card-body">
             {/* Goals Summary */}
-            {!loading && goals.length > 0 && (
+            {!loading && displayGoals.length > 0 && (
               <div className="row g-3 mb-4">
                 <div className="col-md-4">
                   <div className="card bg-primary bg-opacity-10 border-primary">
                     <div className="card-body py-3">
                       <div className="small text-muted mb-1">Active Goals</div>
                       <div className="h4 mb-0 text-primary">
-                        {goals.filter(g => g.status !== 'completed' && g.status !== 'archived').length}
+                        {displayGoals.filter(g => g.status !== 'completed' && g.status !== 'archived').length}
                       </div>
                     </div>
                   </div>
@@ -677,7 +759,7 @@ export default function GoalsManager({
                     <div className="card-body py-3">
                       <div className="small text-muted mb-1">Total Target</div>
                       <div className="h4 mb-0 text-success">
-                        ₹{goals.reduce((sum, g) => sum + (g.targetAmount || 0), 0).toLocaleString()}
+                        ₹{displayGoals.reduce((sum, g) => sum + (g.targetAmount || 0), 0).toLocaleString()}
                       </div>
                     </div>
                   </div>
@@ -685,12 +767,15 @@ export default function GoalsManager({
                 <div className="col-md-4">
                   <div className="card bg-warning bg-opacity-10 border-warning">
                     <div className="card-body py-3">
-                      <div className="small text-muted mb-1">Amount Needed</div>
+                      <div className="small text-muted mb-1">Remaining to Targets</div>
                       <div className="h4 mb-0 text-warning">
-                        ₹{goals.reduce((sum, g) => {
+                        ₹{displayGoals.reduce((sum, g) => {
                           const remaining = (g.targetAmount || 0) - (g.currentAmount || 0);
                           return sum + Math.max(0, remaining);
                         }, 0).toLocaleString()}
+                      </div>
+                      <div className="small text-muted mt-1">
+                        Sum of (target − saved) across active goals
                       </div>
                     </div>
                   </div>
@@ -704,7 +789,7 @@ export default function GoalsManager({
                   <span className="visually-hidden">Loading...</span>
                 </div>
               </div>
-            ) : goals.length === 0 ? (
+            ) : displayGoals.length === 0 ? (
               <div className="text-center py-5">
                 <div className="text-muted mb-3">
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" className="text-muted">
@@ -719,7 +804,8 @@ export default function GoalsManager({
               </div>
             ) : (
               <div className="list-group list-group-flush">
-                {sortGoalsByPriority(goals).map((g) => {
+                {sortGoalsByPriority(displayGoals).map((g) => {
+                  const normalizedStatus = g.status === "achieved" ? "completed" : g.status;
                   const categoryInfo = getCategoryInfo(g.category || 'other');
                   const priorityInfo = getPriorityInfo(g.priority || 3);
                   const progress = getProgressPercentage(g);
@@ -740,12 +826,12 @@ export default function GoalsManager({
                           <span className={`badge bg-${priorityInfo.color}`} title={`Priority: ${priorityInfo.label}`}>
                             {priorityInfo.badge} {priorityInfo.label}
                           </span>
-                          <span className={`badge ${getStatusBadgeClass(g.status)}`}>
-                            {g.status.replace('_', ' ')}
+                          <span className={`badge ${getStatusBadgeClass(normalizedStatus)}`}>
+                            {normalizedStatus.replace('_', ' ')}
                           </span>
                           
                           {/* Days Remaining Badge */}
-                          {daysRemaining !== null && g.status !== 'completed' && g.status !== 'archived' && (
+                          {daysRemaining !== null && normalizedStatus !== 'completed' && normalizedStatus !== 'archived' && (
                             <span className={`badge ${isOverdue ? 'bg-danger' : isUrgent ? 'bg-warning text-dark' : 'bg-info'}`}>
                               {isOverdue ? (
                                 <>⏰ Overdue by {Math.abs(daysRemaining)} days</>
@@ -785,7 +871,7 @@ export default function GoalsManager({
                             </div>
                             
                             {/* Monthly Target */}
-                            {monthlyTarget > 0 && g.status !== 'completed' && g.status !== 'archived' && (
+                            {monthlyTarget > 0 && normalizedStatus !== 'completed' && normalizedStatus !== 'archived' && (
                               <div className="alert alert-info py-2 px-3 mt-2 mb-0 small">
                                 <strong>💰 Monthly Target:</strong> Save ₹{monthlyTarget.toLocaleString()}/month to reach this goal on time
                               </div>
@@ -816,16 +902,16 @@ export default function GoalsManager({
                       </div>
                       
                       <div className="d-flex gap-1">
-                        {g.status === 'achieved' && (
+                        {normalizedStatus === 'completed' && (
                           <button 
                             className="btn btn-sm btn-success" 
                             onClick={() => completeGoal(g)}
-                            title="Complete goal and deduct from savings"
+                            title="Spend from goal funds"
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
                               <polyline points="20,6 9,17 4,12"/>
                             </svg>
-                            Complete
+                            Spend
                           </button>
                         )}
                         <button 

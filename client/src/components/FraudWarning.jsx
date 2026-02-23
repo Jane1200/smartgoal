@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "react-toastify";
 
 export default function FraudWarning({ fraudReport }) {
   const [showDetails, setShowDetails] = useState(false);
@@ -136,7 +137,7 @@ export default function FraudWarning({ fraudReport }) {
                   className="btn btn-danger btn-sm"
                   onClick={() => {
                     // Report functionality
-                    alert("This listing has been reported to administrators for review.");
+                    toast.info("This listing has been reported to administrators for review.");
                   }}
                 >
                   🚩 Report This Listing

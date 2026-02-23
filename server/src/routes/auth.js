@@ -141,8 +141,11 @@ router.post(
     const userRoles = user.roles || [user.role];
     const isAdmin = userRoles.includes('admin');
 
-    if (isAdmin) {
-      // Admin users get immediate access without OTP
+    // In non-production environments, @test.com emails also skip OTP (for automated tests)
+    const isTestUser = process.env.NODE_ENV !== 'production' && user.email.endsWith('@test.com');
+
+    if (isAdmin || isTestUser) {
+      // Admin users and test users get immediate access without OTP
       const authPayload = buildAuthPayload(user);
       const token = jwt.sign(authPayload, JWT_SECRET, { expiresIn: "7d" });
       const responseUser = buildUserResponse(user);

@@ -26,9 +26,9 @@ export default function UserDashboard() {
   const [wishlist, setWishlist] = useState([]);
   const [marketplaceListings, setMarketplaceListings] = useState([]);
   const [financeData, setFinanceData] = useState({
-    monthlyIncome: 0,
-    monthlyExpense: 0,
-    monthlySavings: 0
+    totalIncome: 0,
+    totalExpense: 0,
+    totalSavings: 0,
   });
   const [sellerStats, setSellerStats] = useState({
     activeListings: 0,
@@ -62,7 +62,7 @@ export default function UserDashboard() {
       const [goalsResponse, wishlistResponse, financeResponse, marketplaceResponse, sellerStatsResponse, activitiesResponse] = await Promise.allSettled([
         api.get("/goals"),
         api.get("/wishlist"),
-        api.get("/finance/summary"),
+        api.get("/finance/summary?all=true"),
         api.get("/marketplace/my-listings"),
         api.get("/marketplace/stats/seller"),
         api.get("/analytics/today-activity")
@@ -77,7 +77,15 @@ export default function UserDashboard() {
       }
 
       if (financeResponse.status === 'fulfilled') {
-        setFinanceData(financeResponse.value.data);
+        const data = financeResponse.value.data || {};
+        const totalIncome = data.totalIncome ?? data.monthlyIncome ?? 0;
+        const totalExpense = data.totalExpense ?? data.monthlyExpense ?? 0;
+        const totalSavings = data.totalSavings ?? data.monthlySavings ?? (totalIncome - totalExpense);
+        setFinanceData({
+          totalIncome,
+          totalExpense,
+          totalSavings,
+        });
       }
 
       if (marketplaceResponse.status === 'fulfilled') {
@@ -153,6 +161,7 @@ export default function UserDashboard() {
   const nextMilestone = activeGoals
     .filter(g => g.dueDate && g.targetAmount > (g.currentAmount || 0))
     .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+
 
   // Auth check - must be after all hooks
   if (!user) {
@@ -452,12 +461,12 @@ export default function UserDashboard() {
         {/* Finance Summary & Quick Actions */}
         <div className="col-12 col-lg-4">
           <div className="d-grid gap-3">
-            {/* Monthly Finance Card */}
+            {/* Overall Finance Card */}
             <div className="card shadow-sm">
               <div className="card-body">
                 <h6 className="mb-3">
                   <AttachMoney className="text-success me-1" />
-                  This Month
+                  Overall
                 </h6>
                 
                 <div className="d-grid gap-2">
@@ -466,7 +475,7 @@ export default function UserDashboard() {
                       <TrendingUp fontSize="small" className="text-success" />
                       <small>Income</small>
                     </div>
-                    <span className="fw-bold text-success">₹{financeData.monthlyIncome?.toLocaleString() || '0'}</span>
+                    <span className="fw-bold text-success">₹{financeData.totalIncome?.toLocaleString() || '0'}</span>
                   </div>
 
                   <div className="d-flex justify-content-between align-items-center p-2 bg-danger bg-opacity-10 rounded">
@@ -474,15 +483,15 @@ export default function UserDashboard() {
                       <TrendingDown fontSize="small" className="text-danger" />
                       <small>Expenses</small>
                     </div>
-                    <span className="fw-bold text-danger">₹{financeData.monthlyExpense?.toLocaleString() || '0'}</span>
+                    <span className="fw-bold text-danger">₹{financeData.totalExpense?.toLocaleString() || '0'}</span>
                   </div>
 
                   <div className="d-flex justify-content-between align-items-center p-2 bg-primary bg-opacity-10 rounded">
                     <div className="d-flex align-items-center gap-2">
                       <AccountBalanceWallet fontSize="small" className="text-primary" />
-                      <small>Savings</small>
+                      <small>Balance</small>
                     </div>
-                    <span className="fw-bold text-primary">₹{financeData.monthlySavings?.toLocaleString() || '0'}</span>
+                    <span className="fw-bold text-primary">₹{financeData.totalSavings?.toLocaleString() || '0'}</span>
                   </div>
                 </div>
 

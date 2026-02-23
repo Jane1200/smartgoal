@@ -23,7 +23,7 @@ export default function NotificationBell() {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/notifications?limit=10");
+      const response = await api.get("/notifications?limit=1&includeRead=false");
       if (response.data.success) {
         setNotifications(response.data.notifications);
         setUnreadCount(response.data.unreadCount);
@@ -55,18 +55,6 @@ export default function NotificationBell() {
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (error) {
       console.error("Error marking notification as read:", error);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      await api.put("/notifications/mark-all-read");
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-      setUnreadCount(0);
-      toast.success("All notifications marked as read");
-    } catch (error) {
-      console.error("Error marking all as read:", error);
-      toast.error("Failed to mark all as read");
     }
   };
 
@@ -175,15 +163,10 @@ export default function NotificationBell() {
           >
             {/* Header */}
             <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
-              <h6 className="mb-0 fw-bold">Notifications</h6>
-              {unreadCount > 0 && (
-                <button
-                  className="btn btn-sm btn-link text-decoration-none"
-                  onClick={markAllAsRead}
-                >
-                  Mark all read
-                </button>
-              )}
+              <h6 className="mb-0 fw-bold">Current Notification</h6>
+              <span className="text-muted small">
+                {unreadCount > 0 ? "Unread" : "All caught up"}
+              </span>
             </div>
 
             {/* Notifications List */}
@@ -195,11 +178,11 @@ export default function NotificationBell() {
               </div>
             ) : notifications.length === 0 ? (
               <div className="text-center text-muted p-4">
-                <p className="mb-0">No notifications</p>
+                <p className="mb-0">No new notifications</p>
               </div>
             ) : (
               <div>
-                {notifications.map((notification) => (
+                {notifications.slice(0, 1).map((notification) => (
                   <div
                     key={notification._id}
                     className={`p-3 border-bottom ${
@@ -271,17 +254,6 @@ export default function NotificationBell() {
               </div>
             )}
 
-            {/* Footer */}
-            {notifications.length > 0 && (
-              <div className="p-2 border-top text-center">
-                <a
-                  href="/notifications"
-                  className="btn btn-sm btn-link text-decoration-none"
-                >
-                  View all notifications
-                </a>
-              </div>
-            )}
           </div>
         </>
       )}

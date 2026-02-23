@@ -1,0 +1,1 @@
+"""Automated validation pipeline module."""

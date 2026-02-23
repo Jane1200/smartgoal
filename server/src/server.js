@@ -19,15 +19,18 @@ import notificationRoutes from "./routes/notifications.js";
 import mlPricingRoutes from './routes/ml-pricing.js';
 import cashNotesRoutes from "./routes/cashNotes.js";
 import emailTestRoutes from "./routes/emailTest.js";
-import evaluatorRoutes from "./routes/evaluator.js";
 import reportsRoutes from "./routes/reports.js";
 import activityLogsRoutes from "./routes/activityLogs.js";
 import systemSettingsRoutes from "./routes/systemSettings.js";
+import cronRoutes from "./routes/cron.js";
 import { startMonthlyReportJob } from "./jobs/monthlyReportJob.js";
 
 const app = express();
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+  : ["http://localhost:5173", "http://localhost:5174"];
 app.use(express.json());
-app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5174"], credentials: true }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 app.get("/api/health", (_, res) => res.json({ ok: true }));
 
@@ -48,7 +51,6 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/auto-transfer", autoTransferRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/evaluator", evaluatorRoutes);
 
 app.use('/api/ml-pricing', mlPricingRoutes);
 app.use("/api/cash-notes", cashNotesRoutes);
@@ -56,15 +58,20 @@ app.use("/api/email-test", emailTestRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/activity-logs", activityLogsRoutes);
 app.use("/api/system-settings", systemSettingsRoutes);
+app.use("/api/cron", cronRoutes);
 
-const port = process.env.PORT || 5000;
-connectDB(process.env.MONGO_URI).then(() => {
-  app.listen(port, () => {
-    console.log(`✅ API listening on http://localhost:${port}`);
-    
-    // Start scheduled jobs
-    console.log("\n📅 Starting scheduled jobs...");
-    startMonthlyReportJob();
-    console.log("✅ All jobs initialized\n");
+// Export app for Vercel serverless
+export { app };
+
+const isVercel = process.env.VERCEL === "1";
+if (!isVercel) {
+  const port = process.env.PORT || 5000;
+  connectDB(process.env.MONGO_URI).then(() => {
+    app.listen(port, () => {
+      console.log(`✅ API listening on http://localhost:${port}`);
+      console.log("\n📅 Starting scheduled jobs...");
+      startMonthlyReportJob();
+      console.log("✅ All jobs initialized\n");
+    });
   });
-});
+}

@@ -14,9 +14,16 @@ import fs from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { getSuggestionsForReview } from "../utils/expenseCategorizer.js";
 import { extractTransactionsFromFile } from "../utils/extractTransactionsFromFile.js";
+import { parseReceipt } from "../utils/receiptParser.js";
+import { extractTextFromImage } from "../utils/ocrExtractor.js";
 import { filterDuplicateTransactions } from "../utils/duplicateDetector.js";
 import { checkBudgetBreaches } from "../utils/notificationService.js";
-import { wouldExceedLimit, checkExpenseLimit } from "../utils/expenseChecker.js";
+import {
+  wouldExceedCategoryBudget,
+  wouldExceedLimit,
+  checkCategoryBudgetStatus,
+  checkExpenseLimit
+} from "../utils/expenseChecker.js";
 import { validateExpenseBalance, validateBatchExpenses } from "../utils/balanceValidator.js";
 
 const router = Router();
@@ -468,7 +475,7 @@ router.post("/income", requireAuth, async (req, res) => {
 router.post("/expenses", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { amount, category, description, date } = req.body;
+    const { amount, category, description, date, paymentMethod } = req.body;
 
     // Validate required fields
     if (!amount || !category) {
@@ -501,6 +508,18 @@ router.post("/expenses", requireAuth, async (req, res) => {
       }
     }
 
+    const allowedPaymentMethods = ["cash", "upi", "bank", "card", "other"];
+    const resolvedPaymentMethod =
+      paymentMethod && allowedPaymentMethods.includes(paymentMethod)
+        ? paymentMethod
+        : "other";
+
+    if (paymentMethod && !allowedPaymentMethods.includes(paymentMethod)) {
+      return res.status(400).json({
+        message: "Invalid payment method",
+      });
+    }
+
     // Validate date
     const dateValidation = await validateFinanceDate(date, userId);
     if (!dateValidation.valid) {
@@ -510,7 +529,7 @@ router.post("/expenses", requireAuth, async (req, res) => {
     }
 
     // Validate balance - ensure expense doesn't exceed income
-    const balanceCheck = await validateExpenseBalance(userId, amountNum, 'other');
+    const balanceCheck = await validateExpenseBalance(userId, amountNum, resolvedPaymentMethod);
     if (!balanceCheck.valid) {
       return res.status(400).json({ 
         message: balanceCheck.message,
@@ -522,6 +541,11 @@ router.post("/expenses", requireAuth, async (req, res) => {
 
     // Check if this expense would exceed the monthly limit
     const limitCheck = await wouldExceedLimit(userId, parseFloat(amount));
+    const categoryLimitCheck = await wouldExceedCategoryBudget(
+      userId,
+      category,
+      parseFloat(amount)
+    );
     
     // Create new expense entry
     const expense = new Finance({
@@ -531,7 +555,7 @@ router.post("/expenses", requireAuth, async (req, res) => {
       category,
       description: description || "",
       date: dateValidation.date,
-      paymentMethod: "other", // default for manual entries
+      paymentMethod: resolvedPaymentMethod,
     });
 
     await expense.save();
@@ -557,6 +581,27 @@ router.post("/expenses", requireAuth, async (req, res) => {
         message: `You have ₹${limitCheck.remaining.toFixed(2)} remaining in your monthly budget`,
         projectedTotal: limitCheck.projectedTotal,
         limit: limitCheck.limit
+      };
+    }
+
+    if (categoryLimitCheck.hasBudget && categoryLimitCheck.wouldExceed) {
+      response.categoryLimitWarning = {
+        exceeded: true,
+        category: categoryLimitCheck.category,
+        message: `Warning: This expense exceeds your ${categoryLimitCheck.category} budget by ₹${categoryLimitCheck.exceededBy.toFixed(2)}`,
+        projectedTotal: categoryLimitCheck.projectedTotal,
+        limit: categoryLimitCheck.limit
+      };
+    } else if (
+      categoryLimitCheck.hasBudget &&
+      categoryLimitCheck.remaining < categoryLimitCheck.limit * 0.2
+    ) {
+      response.categoryLimitWarning = {
+        exceeded: false,
+        category: categoryLimitCheck.category,
+        message: `You have ₹${categoryLimitCheck.remaining.toFixed(2)} left in your ${categoryLimitCheck.category} budget`,
+        projectedTotal: categoryLimitCheck.projectedTotal,
+        limit: categoryLimitCheck.limit
       };
     }
 
@@ -681,6 +726,28 @@ router.post("/expenses", requireAuth, async (req, res) => {
               );
             }
           }
+        }
+
+        // Check for category budget alerts
+        const categoryStatus = await checkCategoryBudgetStatus(userId, category);
+        if (categoryStatus.hasBudget && categoryStatus.shouldAlert) {
+          await Notification.createCategoryBudgetAlert(
+            userId,
+            categoryStatus.category,
+            categoryStatus.alertLevel,
+            categoryStatus.alertMessage,
+            {
+              limit: categoryStatus.limit,
+              totalExpenses: categoryStatus.totalExpenses,
+              percentageUsed: categoryStatus.percentageUsed,
+              remaining: categoryStatus.remaining
+            }
+          );
+
+          await User.updateOne(
+            { _id: userId, "categoryBudgets.category": categoryStatus.category },
+            { $set: { "categoryBudgets.$.lastAlertDate": new Date() } }
+          );
         }
 
         // Check for high spending category
@@ -1358,6 +1425,17 @@ router.post("/batch-import", requireAuth, async (req, res) => {
 
     console.log(`📥 Importing ${transactions.length} transactions for user: ${req.user.id}`);
 
+    const duplicateCheck = await filterDuplicateTransactions(req.user.id, transactions);
+    const transactionsToImport = duplicateCheck.newTransactions;
+
+    if (transactionsToImport.length === 0) {
+      return res.json({
+        success: false,
+        message: "All transactions are duplicates. Nothing to import.",
+        duplicateInfo: duplicateCheck.stats
+      });
+    }
+
     // Determine payment method for these transactions
     let paymentMethod = "other"; // default for bank statements
     if (req.file?.mimetype?.includes("image")) {
@@ -1365,7 +1443,7 @@ router.post("/batch-import", requireAuth, async (req, res) => {
     }
 
     // Validate batch expenses to ensure they don't exceed income
-    const batchValidation = await validateBatchExpenses(req.user.id, transactions, paymentMethod);
+    const batchValidation = await validateBatchExpenses(req.user.id, transactionsToImport, paymentMethod);
     if (!batchValidation.valid) {
       return res.status(400).json({
         success: false,
@@ -1380,6 +1458,7 @@ router.post("/batch-import", requireAuth, async (req, res) => {
       successful: 0,
       failed: 0,
       skipped: 0,
+      duplicates: duplicateCheck.stats.duplicates,
       errors: [],
     };
 
@@ -1405,7 +1484,7 @@ router.post("/batch-import", requireAuth, async (req, res) => {
       "other",
     ];
 
-    for (const transaction of transactions) {
+    for (const transaction of transactionsToImport) {
       try {
         // Validate transaction data
         if (!transaction.amount || transaction.amount <= 0) {
@@ -1555,8 +1634,9 @@ router.post("/batch-import", requireAuth, async (req, res) => {
 
     res.json({
       success: true,
-      message: `Imported ${results.successful} out of ${transactions.length} transactions`,
+      message: `Imported ${results.successful} out of ${transactionsToImport.length} new transaction(s)`,
       results,
+      duplicateInfo: duplicateCheck.stats,
     });
   } catch (error) {
     console.error("Batch import error:", error);
@@ -1591,6 +1671,58 @@ router.get("/processed-statements", requireAuth, async (req, res) => {
       message: "Failed to fetch processed statements",
       error: error.message,
     });
+  }
+});
+
+// ── Receipt / Bill Scanner ────────────────────────────────────────────────────
+const receiptStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/receipts/';
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `receipt-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`);
+  },
+});
+
+const receiptUpload = multer({
+  storage: receiptStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed for receipts'));
+  },
+});
+
+// POST /finance/scan-receipt — OCR + parse receipt image
+router.post('/scan-receipt', requireAuth, receiptUpload.single('receipt'), async (req, res) => {
+  const filePath = req.file?.path;
+  if (!filePath) {
+    return res.status(400).json({ success: false, message: 'No image uploaded' });
+  }
+
+  try {
+    const ocrText = await extractTextFromImage(filePath);
+
+    if (!ocrText || ocrText.trim().length < 10) {
+      await fs.unlink(filePath).catch(() => {});
+      return res.status(422).json({
+        success: false,
+        message: 'Could not read text from the image. Please try a clearer photo.',
+      });
+    }
+
+    const parsed = parseReceipt(ocrText);
+
+    // Clean up uploaded file — we no longer need it
+    await fs.unlink(filePath).catch(() => {});
+
+    return res.json({ success: true, ...parsed });
+  } catch (err) {
+    await fs.unlink(filePath).catch(() => {});
+    console.error('Receipt scan error:', err);
+    return res.status(500).json({ success: false, message: 'Scanning failed: ' + err.message });
   }
 });
 

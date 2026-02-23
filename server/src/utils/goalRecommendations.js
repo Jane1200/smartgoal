@@ -22,7 +22,7 @@ export async function generateGoalRecommendations(userId) {
     const [incomeEntries, expenseEntries, existingGoals] = await Promise.all([
       Finance.find({ userId, type: 'income' }).lean(),
       Finance.find({ userId, type: 'expense' }).lean(),
-      Goal.find({ userId, status: { $nin: ['completed', 'archived'] } }).lean()
+      Goal.find({ userId, status: { $ne: 'archived' } }).lean()
     ]);
 
     // Calculate financial metrics
@@ -54,7 +54,11 @@ export async function generateGoalRecommendations(userId) {
     });
 
     // Check existing goal categories
-    const existingGoalCategories = new Set(existingGoals.map(g => g.category));
+    const existingGoalCategories = new Set(
+      existingGoals
+        .map(g => g.category)
+        .filter(Boolean)
+    );
 
     console.log(`📊 Financial Summary:
       - Monthly Income: ₹${monthlyIncome}

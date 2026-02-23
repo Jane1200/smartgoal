@@ -3,6 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import mongoose from "mongoose";
+import axios from "axios";
 import { requireAuth } from "../middleware/auth.js";
 import Marketplace from "../models/Marketplace.js";
 import User from "../models/User.js";
@@ -10,7 +11,6 @@ import Goal from "../models/Goal.js";
 import MarketplaceIncome from "../models/MarketplaceIncome.js";
 import Order from "../models/Order.js";
 import MarketplaceFeedback from "../models/MarketplaceFeedback.js";
-import { detectConditionFromFile, getEnhancedPricePrediction } from "../utils/conditionDetection.js";
 import { detectFraud, analyzeSellerBehavior, generateFraudReport } from "../utils/fraudDetection.js";
 import { addConfidenceScores, getConfidenceLabel, getConfidenceColor } from "../utils/itemRecommendation.js";
 const router = Router();
@@ -88,87 +88,114 @@ router.post('/upload-images', requireAuth, upload.array('images', 10), (req, res
   }
 });
 
-// NEW ENDPOINT: Estimate price from CV analysis (called after image upload)
-router.post('/estimate-price-cv', requireAuth, async (req, res) => {
-  try {
-    const { imagePath, category, subCategory, brand, title } = req.body;
+// ── AI Price Estimation & Defect Detection ────────────────────────────────────
+// Calls the trained ML service (resale_price_estimation/api.py on port 5002).
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5002';
 
-    if (!imagePath) {
-      return res.status(400).json({ 
+function mlConnErr(err) {
+  return err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT';
+}
+
+// ── NEW: Scan image for defects + estimate price (no original price needed) ──
+// Sends the server-side file path as JSON — avoids needing the form-data package.
+router.post('/scan-defects', requireAuth, upload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No image uploaded. Use form field "image".' });
+  }
+
+  const category         = (req.body.category || 'phone').toLowerCase();
+  const brand            = req.body.brand || 'Other';
+  const absoluteImgPath  = path.resolve(req.file.path);
+
+  try {
+    const mlRes = await axios.post(
+      `${ML_SERVICE_URL}/scan-defects`,
+      { image_path: absoluteImgPath, category, brand },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+    );
+
+    const d = mlRes.data;
+    return res.json({
+      success:     true,
+      condition:   d.condition,
+      defects:     d.defects || [],
+      alertLevel:  d.alert_level || 'success',
+      hasDefects:  d.has_defects || false,
+      isAnomaly:   d.is_anomaly || false,
+      price:       d.price,
+      priceSource: d.price_source || 'dataset_median',
+      summary:     d.summary || '',
+      breakdown:   d.breakdown || {},
+      modelUsed:   'ml_trained',
+    });
+
+  } catch (err) {
+    if (mlConnErr(err)) {
+      return res.status(503).json({
         success: false,
-        message: 'Image path is required' 
+        message: 'AI service is not running.',
+        hint: 'Start it with: cd resale_price_estimation && python api.py',
       });
     }
-
-    // Get full path to uploaded image
-    const fullImagePath = path.join(process.cwd(), imagePath);
-    
-    console.log(`\n🤖 CV PRICE ESTIMATION REQUEST:`);
-    console.log(`   📸 Image: ${imagePath}`);
-    console.log(`   📦 Category: ${category}, SubCategory: ${subCategory}`);
-    console.log(`   🏷️ Brand: ${brand}`);
-
-    // Get enhanced price prediction with condition detection
-    const pricingData = {
-      title: title || `${brand} ${subCategory}`,
-      category: category || 'electronics',
-      subCategory: subCategory || 'other',
-      brand: brand || 'generic',
-      location: req.user.profile?.location || 'India'
-    };
-
-    const predictionResult = await getEnhancedPricePrediction(pricingData, fullImagePath);
-
-    if (predictionResult.success) {
-      console.log(`✅ CV estimation successful: ₹${predictionResult.predicted_price}`);
-      
-      res.json({
-        success: true,
-        predicted_price: predictionResult.predicted_price,
-        ai_score: predictionResult.ai_score,
-        condition_detected: predictionResult.cv_insights?.condition || 'good',
-        confidence: predictionResult.cv_insights?.confidence || 70,
-        cv_insights: predictionResult.cv_insights,
-        pricing_breakdown: predictionResult.pricing_breakdown
-      });
-    } else {
-      throw new Error(predictionResult.message || 'CV pricing failed');
-    }
-  } catch (error) {
-    console.error('❌ CV price estimation error:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Failed to estimate price from image',
-      error: error.message 
-    });
+    console.error('Defect scan error:', err.message);
+    return res.status(500).json({ success: false, message: 'Defect scan failed: ' + err.message });
   }
 });
 
-// Detect condition from uploaded image
-router.post('/detect-condition', requireAuth, upload.single('image'), async (req, res) => {
+// ── Legacy: estimate-price (original price + metadata) ───────────────────────
+router.post('/estimate-price', requireAuth, async (req, res) => {
+  const {
+    imagePath,
+    brand = 'Other',
+    category = 'phone',
+    originalPrice,
+    purchaseDate,
+  } = req.body;
+
+  const op = parseFloat(originalPrice) || 0;
+
+  let ageMonths = 12;
+  if (purchaseDate) {
+    const purchased = new Date(purchaseDate);
+    if (!isNaN(purchased)) {
+      ageMonths = Math.max(1, Math.floor((Date.now() - purchased.getTime()) / (1000 * 60 * 60 * 24 * 30)));
+    }
+  }
+
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No image file provided' });
+    const mlRes = await axios.post(
+      `${ML_SERVICE_URL}/estimate`,
+      { brand, category, original_price: op, age_months: ageMonths, image_path: imagePath || null },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 20000 }
+    );
+
+    const d = mlRes.data;
+    if (!d?.price?.amount) {
+      return res.status(502).json({ success: false, message: 'ML service returned an unexpected response.' });
     }
 
-    // Get full path to uploaded image
-    const imagePath = path.join(process.cwd(), 'uploads/marketplace', req.file.filename);
-    
-    // Detect condition using computer vision
-    const conditionResult = await detectConditionFromFile(imagePath);
-    
-    res.json({
-      message: 'Condition detected successfully',
-      ...conditionResult
+    return res.json({
+      success:   true,
+      condition: d.condition || { label: 'unknown', score: 60 },
+      defects:   d.condition?.defects || [],
+      price:     d.price,
+      breakdown: d.breakdown || {},
+      modelUsed: 'ml_trained',
     });
-  } catch (error) {
-    console.error('Condition detection error:', error);
-    res.status(500).json({ 
-      message: 'Failed to detect condition',
-      error: error.message 
-    });
+
+  } catch (err) {
+    if (mlConnErr(err)) {
+      return res.status(503).json({
+        success: false,
+        message: 'AI service is not running. Start it with: cd resale_price_estimation && python api.py',
+        hint: 'Run the Python ML service on port 5002 to enable AI price estimation.',
+      });
+    }
+    console.error('Price estimation error:', err.message);
+    return res.status(500).json({ success: false, message: 'Price estimation failed: ' + err.message });
   }
 });
+
 // Get featured marketplace items (public but filters out user's own items if authenticated)
 router.get('/featured', async (req, res) => {
   try {
@@ -222,149 +249,33 @@ router.post('/list-item', requireAuth, async (req, res) => {
   try {
     // Convert JWT string ID to MongoDB ObjectId
     const userId = new mongoose.Types.ObjectId(req.user.id);
-    const { title, description, price, category, condition, images, subCategory, brand, linkedGoal } = req.body;
+    const { title, description, price, category, condition, images, subCategory, brand, linkedGoal, originalPrice } = req.body;
 
-    // Validate required fields
-    // Title is now optional - we can auto-generate it
-    if (!images || images.length === 0) {
-      return res.status(400).json({ 
-        message: 'At least one image is required for automatic CV pricing' 
-      });
+    if (!title || !description || !price || !category || !condition) {
+      return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // Validate images array format
-    if (!Array.isArray(images)) {
-      return res.status(400).json({ 
-        message: 'Images must be an array' 
-      });
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ message: 'At least one image is required' });
     }
 
-    let finalPrice = null;
-    let conditionAnalysis = null;
-    let aiScore = null;
-    let autoPriced = true;
-    
-    // ALWAYS use computer vision for AUTOMATIC price estimation - NO MANUAL PRICING
-    try {
-      // Get the first image for condition analysis
-      const firstImageUrl = images[0];
-      const filename = typeof firstImageUrl === 'string' ? firstImageUrl.split('/').pop() : 'image';
-      const imagePath = path.join(process.cwd(), 'uploads/marketplace', filename);
-      
-      // Automatically generate title if not provided
-      const autoTitle = title || `${brand || 'Resale'} ${subCategory || 'Item'} ${Date.now()}`;
-      
-      // Get enhanced CV price prediction - NO originalPrice or purchaseDate needed
-      const pricingData = {
-        title: autoTitle,
-        category: category || 'electronics',
-        subCategory: subCategory || 'other',
-        brand: brand || 'generic',
-        location: req.user.profile?.location || 'India'
-        // NO originalPrice or purchaseDate - CV estimates directly from condition
-      };
-      
-      console.log(`\n🤖 AUTOMATIC CV PRICING INITIATED for: ${autoTitle}`);
-      console.log(`   📦 Category: ${pricingData.category}, SubCategory: ${pricingData.subCategory}`);
-      console.log(`   🏷️ Brand: ${pricingData.brand}, Location: ${pricingData.location}`);
-      
-      console.log(`\n🤖 AUTOMATIC CV PRICING INITIATED for: ${autoTitle}`);
-      console.log(`   📦 Category: ${pricingData.category}, SubCategory: ${pricingData.subCategory}`);
-      console.log(`   🏷️ Brand: ${pricingData.brand}, Location: ${pricingData.location}`);
-      
-      const predictionResult = await getEnhancedPricePrediction(pricingData, imagePath);
-      
-      if (predictionResult.success) {
-        finalPrice = predictionResult.predicted_price;
-        aiScore = predictionResult.ai_score;
-        
-        // Extract condition analysis from cv_insights or condition_result
-        conditionAnalysis = predictionResult.cv_insights || predictionResult.condition_result || {};
-        
-        // Log comprehensive pricing breakdown
-        console.log(`\n✅ AUTOMATIC CV PRICING SUCCESSFUL:`);
-        console.log(`   💰 Estimated Price: ₹${finalPrice}`);
-        console.log(`   📊 AI Score: ${aiScore || 'N/A'}/100`);
-        console.log(`   🔍 Detected Condition: ${conditionAnalysis.condition || 'unknown'}`);
-        console.log(`   ✅ Confidence: ${conditionAnalysis.confidence ? conditionAnalysis.confidence.toFixed(1) + '%' : 'N/A'}`);
-        
-        if (conditionAnalysis.features) {
-          console.log(`   📸 Image Quality Metrics:`);
-          console.log(`      - Sharpness: ${conditionAnalysis.features.sharpness || 'N/A'}`);
-          console.log(`      - Contrast: ${conditionAnalysis.features.contrast || 'N/A'}`);
-          console.log(`      - Brightness: ${conditionAnalysis.features.brightness || 'N/A'}`);
-          console.log(`      - Edge Density: ${conditionAnalysis.features.edge_density || 'N/A'}`);
-        }
-        
-        if (predictionResult.pricing_breakdown) {
-          console.log(`   💡 Price Breakdown:`);
-          console.log(`      - Base Market Price: ₹${predictionResult.pricing_breakdown.base_market_price || 'N/A'}`);
-          console.log(`      - Brand Adjusted: ₹${predictionResult.pricing_breakdown.brand_adjusted || 'N/A'}`);
-          console.log(`      - Location Adjusted: ₹${predictionResult.pricing_breakdown.location_adjusted || 'N/A'}`);
-          console.log(`      - Final (Condition Applied): ₹${predictionResult.pricing_breakdown.condition_adjusted || finalPrice}`);
-        }
-        
-        // Add tampered image warning if detected
-        if (conditionAnalysis.tampered) {
-          console.warn(`   🚨 WARNING: Tampered/edited image detected - pricing may be less accurate`);
-        }
-      } else {
-        throw new Error(predictionResult.message || 'CV pricing failed');
-      }
-    } catch (pricingError) {
-      console.error('❌ Automatic CV pricing failed:', pricingError.message);
-      console.error('   Stack:', pricingError.stack);
-      
-      // If automatic pricing completely fails, reject the listing
-      // We don't want fallback pricing - CV is required
-      return res.status(500).json({
-        message: 'Failed to estimate price from image. Please try uploading a clearer image.',
-        error: pricingError.message,
-        suggestion: 'Ensure image is well-lit, in focus, and shows the product clearly'
-      });
+    const numPrice = parseFloat(price);
+    if (Number.isNaN(numPrice) || numPrice <= 0) {
+      return res.status(400).json({ message: 'Price must be a valid amount' });
     }
 
-    // Validate we got a valid price from CV
-    const numPrice = parseFloat(finalPrice);
-    if (isNaN(numPrice) || numPrice <= 0) {
-      return res.status(500).json({ 
-        message: 'Failed to generate valid price estimate. Please try a different image.',
-        details: 'Computer vision could not accurately assess the product condition'
-      });
-    }
-
-    // Use CV-detected condition, fallback to provided or default
-    const finalCondition = (conditionAnalysis?.condition) || condition || 'good';
-
-    // Create new marketplace listing with CV-estimated price
     const newListing = new Marketplace({
       userId,
-      title: (title || `${brand || 'Resale'} ${subCategory || 'Item'}`).trim(),
-      description: (description || 'Quality resale item with AI-verified condition').trim(),
+      title: title.trim(),
+      description: description.trim(),
       price: numPrice,
-      originalPrice: undefined, // Not needed for CV-only pricing
-      purchaseDate: undefined,  // Not needed for CV-only pricing
+      originalPrice: Number.isFinite(Number(originalPrice)) ? Number(originalPrice) : undefined,
       category: category || 'electronics',
       subCategory: subCategory || 'other',
       brand: brand || 'generic',
-      condition: finalCondition,
+      condition: condition || 'good',
       status: 'active',
-      linkedGoalBySeller: linkedGoal || null, // Link to seller's goal
-      aiScore: aiScore,
-      conditionAnalysis: conditionAnalysis ? {
-        condition: conditionAnalysis.condition,
-        confidence: conditionAnalysis.confidence,
-        tampered: conditionAnalysis.tampered || false,
-        features: conditionAnalysis.features || {}
-      } : undefined,
-      autoPriced: true, // Always true - CV automatic pricing
-      priceBreakdown: predictionResult?.pricing_breakdown ? {
-        basePrice: predictionResult.pricing_breakdown.base_market_price || numPrice,
-        brandAdjusted: predictionResult.pricing_breakdown.brand_adjusted || numPrice,
-        locationAdjusted: predictionResult.pricing_breakdown.location_adjusted || numPrice,
-        conditionAdjusted: predictionResult.pricing_breakdown.condition_adjusted || numPrice,
-        finalPrice: numPrice
-      } : undefined,
+      linkedGoalBySeller: linkedGoal || null,
       images: images.map(url => {
         const filename = typeof url === 'string' ? url.split('/').pop() : 'image';
         return {
@@ -422,21 +333,12 @@ router.post('/list-item', requireAuth, async (req, res) => {
 
     console.log(`\n✅ LISTING CREATED SUCCESSFULLY:`);
     console.log(`   📝 Title: ${savedListing.title}`);
-    console.log(`   💰 Auto-Estimated Price: ₹${savedListing.price}`);
-    console.log(`   📊 AI Score: ${savedListing.aiScore}/100`);
+    console.log(`   💰 Price: ₹${savedListing.price}`);
     console.log(`   🔍 Condition: ${savedListing.condition}`);
 
     res.json({
-      message: 'Item listed successfully with automatic CV price estimation',
-      listing: savedListing,
-      conditionAnalysis,
-      autoPriced: true,
-      aiScore: savedListing.aiScore,
-      estimatedPrice: finalPrice,
-      priceConfidence: predictionResult?.confidence || conditionAnalysis?.confidence || 70,
-      priceBreakdown: predictionResult?.pricing_breakdown || null,
-      pricingMethod: 'cv_automatic',
-      message_detail: `Price automatically estimated at ₹${finalPrice} based on ${finalCondition} condition detected from image analysis`
+      message: 'Item listed successfully',
+      listing: savedListing
     });
   } catch (error) {
     console.error('List item error:', error.message);

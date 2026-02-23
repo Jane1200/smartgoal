@@ -48,6 +48,31 @@ function calculateEmergencyFundTarget(monthlyExpense) {
   return monthlyExpense * 3; // 3 months of expenses
 }
 
+function getPriorityForIncomeDrop(goal) {
+  const categoryPriority = {
+    emergency_fund: 1,
+    debt_repayment: 1,
+    essential_purchase: 2,
+    education: 3,
+    investment: 4,
+    discretionary: 5,
+    other: 4,
+    wishlist: 5
+  };
+
+  const basePriority = categoryPriority[goal.category] || 4;
+  if (!goal.dueDate) {
+    return basePriority;
+  }
+
+  const daysRemaining = Math.ceil((new Date(goal.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
+  if (daysRemaining > 0 && daysRemaining <= 30) {
+    return Math.max(1, basePriority - 1);
+  }
+
+  return basePriority;
+}
+
 // List goals for current user
 router.get("/", async (req, res) => {
   try {
@@ -93,6 +118,49 @@ router.get("/", async (req, res) => {
         }
       });
       
+      // Detect income drop over last 30 days vs previous 30 days
+      const last30Start = new Date();
+      last30Start.setDate(last30Start.getDate() - 30);
+      const prev30Start = new Date();
+      prev30Start.setDate(prev30Start.getDate() - 60);
+
+      const recentIncomeEntries = await Finance.find({
+        userId,
+        type: "income",
+        date: { $gte: prev30Start }
+      }).lean();
+
+      const incomeLast30 = recentIncomeEntries
+        .filter((entry) => new Date(entry.date) >= last30Start)
+        .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+
+      const incomePrev30 = recentIncomeEntries
+        .filter((entry) => new Date(entry.date) < last30Start)
+        .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+
+      const incomeDropPercent =
+        incomePrev30 > 0 ? ((incomePrev30 - incomeLast30) / incomePrev30) * 100 : 0;
+
+      if (incomeDropPercent >= 20 && goals.length > 0) {
+        const reprioritizePromises = goals.map(async (goal) => {
+          if (goal.status === "archived") {
+            return goal;
+          }
+          const newPriority = getPriorityForIncomeDrop(goal);
+          if (goal.priority !== newPriority) {
+            const updated = await Goal.findByIdAndUpdate(
+              goal._id,
+              { priority: newPriority },
+              { new: true }
+            );
+            return updated || goal;
+          }
+          return goal;
+        });
+        goals = await Promise.all(reprioritizePromises);
+        console.log(`🔁 Income dropped ${incomeDropPercent.toFixed(0)}%, priorities updated.`);
+      }
+
       // Calculate savings using 50/30/20 rule
       // 20% of income should go to savings/goals
       const recommendedMonthlySavings = monthlyIncome * 0.20;
@@ -106,8 +174,8 @@ router.get("/", async (req, res) => {
       
       // If user has savings, allocate them to goals based on priority and category
       if (savingsForGoals > 0 && goals.length > 0) {
-        // Filter active goals (not completed or archived)
-        const activeGoals = goals.filter(g => g.status !== 'completed' && g.status !== 'archived');
+        // Filter goals that can be allocated (exclude archived only)
+        const activeGoals = goals.filter(g => g.status !== 'archived');
         
         if (activeGoals.length > 0) {
           // Sort by priority (1 = critical first, then by category importance)
@@ -134,11 +202,8 @@ router.get("/", async (req, res) => {
           
           console.log(`📊 Active Goals: ${activeGoals.length}, Total Target Needed: ₹${totalTargetNeeded.toFixed(2)}`);
           
-          // REALISTIC ALLOCATION: Only allocate NEW savings (not already allocated)
-          const totalAllocatedToGoals = activeGoals.reduce((sum, g) => sum + (g.currentAmount || 0), 0);
-          const newSavingsToAllocate = Math.max(0, savingsForGoals - totalAllocatedToGoals);
-          
-          console.log(`💵 Total Savings: ₹${savingsForGoals.toFixed(2)}, Already Allocated: ₹${totalAllocatedToGoals.toFixed(2)}, New to Allocate: ₹${newSavingsToAllocate.toFixed(2)}`);
+          // REALISTIC ALLOCATION: Reallocate from scratch based on actual savings
+          console.log(`💵 Total Savings: ₹${savingsForGoals.toFixed(2)} (reallocating across goals)`);
           
           // Sort goals by priority (1 = highest priority)
           const prioritySortedGoals = [...activeGoals].sort((a, b) => {
@@ -148,8 +213,8 @@ router.get("/", async (req, res) => {
             return new Date(a.dueDate) - new Date(b.dueDate);
           });
           
-          // Allocate NEW savings to goals based on priority
-          let remainingSavings = newSavingsToAllocate;
+          // Allocate savings to goals based on priority (full reallocation)
+          let remainingSavings = savingsForGoals;
           
           // Allocate savings to goals using PRIORITY-BASED allocation
           goals = await Promise.all(goals.map(async (goal) => {
@@ -157,7 +222,7 @@ router.get("/", async (req, res) => {
               return goal;
             }
             
-            const targetNeeded = goal.targetAmount - (goal.currentAmount || 0);
+            const targetNeeded = goal.targetAmount;
             
             // Calculate allocation for this goal
             let allocation = 0;
@@ -170,9 +235,10 @@ router.get("/", async (req, res) => {
                 remainingSavings -= allocation;
               }
             }
-            
-            const newCurrentAmount = (goal.currentAmount || 0) + allocation;
-            const progress = (newCurrentAmount / goal.targetAmount) * 100;
+
+            const newCurrentAmount = allocation;
+            const progress =
+              goal.targetAmount > 0 ? (newCurrentAmount / goal.targetAmount) * 100 : 0;
             
             console.log(`  Goal: "${goal.title}" - Allocated: ₹${allocation.toFixed(2)}, New Current: ₹${newCurrentAmount.toFixed(2)}/${goal.targetAmount} (${progress.toFixed(0)}%)`);
             
@@ -180,32 +246,38 @@ router.get("/", async (req, res) => {
             let newStatus = goal.status;
             let statusChanged = false;
             
-            if (progress >= 100 && goal.status !== 'achieved') {
-              // 100% progress → achieved
-              newStatus = 'achieved';
-              statusChanged = true;
-              console.log(`  ✅ Goal "${goal.title}" automatically marked as ACHIEVED (100% progress)!`);
-            } else if (progress > 0 && progress < 100 && goal.status === 'planned') {
-              // 1-99% progress and currently planned → in_progress
-              newStatus = 'in_progress';
-              statusChanged = true;
-              console.log(`  🚀 Goal "${goal.title}" automatically marked as IN PROGRESS (${progress.toFixed(0)}% progress)!`);
-            } else if (progress === 0 && goal.status === 'in_progress' && newCurrentAmount === 0) {
-              // 0% progress and currently in_progress → back to planned
-              newStatus = 'planned';
-              statusChanged = true;
-              console.log(`  ⏸️ Goal "${goal.title}" automatically marked as PLANNED (0% progress)!`);
+            if (progress >= 100) {
+              // 100% progress → completed
+              if (goal.status !== 'completed') {
+                newStatus = 'completed';
+                statusChanged = true;
+                console.log(`  ✅ Goal "${goal.title}" automatically marked as COMPLETED (100% progress)!`);
+              }
+            } else if (progress > 0) {
+              // 1-99% progress → in_progress
+              if (goal.status !== 'in_progress') {
+                newStatus = 'in_progress';
+                statusChanged = true;
+                console.log(`  🚀 Goal "${goal.title}" automatically marked as IN PROGRESS (${progress.toFixed(0)}% progress)!`);
+              }
+            } else if (newCurrentAmount === 0) {
+              // 0% progress → planned
+              if (goal.status !== 'planned') {
+                newStatus = 'planned';
+                statusChanged = true;
+                console.log(`  ⏸️ Goal "${goal.title}" automatically marked as PLANNED (0% progress)!`);
+              }
             }
             
             // Check if currentAmount changed significantly (more than ₹1 difference)
             const amountChanged = Math.abs(newCurrentAmount - (goal.currentAmount || 0)) > 1;
             
-            // Update database if status changed, amount changed, or goal reached 100%
-            if (statusChanged || amountChanged || progress >= 100) {
+            // Update database if status or amount changed
+            if (statusChanged || amountChanged) {
               try {
                 const updateData = { 
                   status: newStatus,
-                  currentAmount: progress >= 100 ? goal.targetAmount : newCurrentAmount
+                  currentAmount: newCurrentAmount
                 };
                 
                 const updatedGoal = await Goal.findByIdAndUpdate(
@@ -513,7 +585,7 @@ router.post(
     body("targetAmount").optional().isFloat({ min: 0 }),
     body("currentAmount").optional().isFloat({ min: 0 }),
     body("dueDate").optional().isISO8601(),
-    body("status").optional().isIn(["planned", "in_progress", "completed", "archived", "achieved"]),
+    body("status").optional().isIn(["planned", "in_progress", "completed", "archived"]),
     body("category").optional().isIn(["emergency_fund", "debt_repayment", "essential_purchase", "education", "investment", "discretionary", "other"]),
     body("priority").optional().isInt({ min: 1, max: 5 }),
     body("timePeriod").optional().isIn(["short-term", "long-term"]),
@@ -698,7 +770,7 @@ router.put(
     body("targetAmount").optional().isFloat({ min: 0 }),
     body("currentAmount").optional().isFloat({ min: 0 }),
     body("dueDate").optional().isISO8601(),
-    body("status").optional().isIn(["planned", "in_progress", "completed", "archived", "achieved"]),
+    body("status").optional().isIn(["planned", "in_progress", "completed", "archived"]),
     body("category").optional().isIn(["emergency_fund", "debt_repayment", "essential_purchase", "education", "investment", "discretionary", "other"]),
     body("priority").optional().isInt({ min: 1, max: 5 }),
     body("timePeriod").optional().isIn(["short-term", "long-term"]),
@@ -738,11 +810,16 @@ router.delete(
 // Complete goal - Mark as completed and create expense entry to deduct from savings
 router.post(
   "/:id/complete",
-  [param("id").isMongoId()],
+  [
+    param("id").isMongoId(),
+    body("spentAmount").optional().isFloat({ min: 0 })
+  ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ message: "Invalid id" });
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ message: "Invalid request data", errors: errors.array() });
+      }
 
       const userId = req.user.id;
       const goal = await Goal.findOne({ _id: req.params.id, userId });
@@ -752,34 +829,66 @@ router.post(
       }
 
       // Check if goal is achieved (100% progress)
-      if (goal.status !== 'achieved' && goal.currentAmount < goal.targetAmount) {
+      if (goal.status !== 'completed' && goal.currentAmount < goal.targetAmount) {
         return res.status(400).json({ 
-          message: "Goal must be at 100% progress (achieved status) before completing",
-          currentProgress: ((goal.currentAmount / goal.targetAmount) * 100).toFixed(1)
+          message: "Goal must be at 100% progress (completed status) before completing",
+          currentProgress: goal.targetAmount > 0
+            ? ((goal.currentAmount / goal.targetAmount) * 100).toFixed(1)
+            : "0.0"
         });
       }
 
-      // Create expense entry to deduct the goal amount from savings
+      const availableAmount = Math.max(0, goal.currentAmount ?? goal.targetAmount ?? 0);
+      const requestedAmount = req.body?.spentAmount;
+      const parsedAmount = requestedAmount === undefined ? undefined : Number(requestedAmount);
+      const spentAmount = Number.isFinite(parsedAmount) ? parsedAmount : goal.targetAmount;
+
+      if (spentAmount <= 0) {
+        return res.status(400).json({ message: "Spent amount must be greater than 0" });
+      }
+
+      if (spentAmount > availableAmount) {
+        return res.status(400).json({ 
+          message: `Spent amount cannot exceed available goal funds (₹${availableAmount})`,
+          availableAmount
+        });
+      }
+
+      // Create expense entry to deduct the spent amount from savings
       const expenseEntry = await Finance.create({
         userId,
         type: 'expense',
-        amount: goal.targetAmount,
+        amount: spentAmount,
         category: 'other',
-        description: `Goal Completed: ${goal.title}`,
+        description: `Goal Spend: ${goal.title}`,
         date: new Date(),
         tags: ['goal-completion', goal.category]
       });
 
-      // Mark goal as completed
-      goal.status = 'completed';
-      goal.currentAmount = goal.targetAmount; // Ensure it's exactly the target
+      const newCurrentAmount = Math.max(0, (goal.currentAmount || 0) - spentAmount);
+      let newStatus = goal.status;
+
+      if (newCurrentAmount <= 0) {
+        newStatus = 'completed';
+      } else if (newCurrentAmount < goal.targetAmount) {
+        newStatus = 'in_progress';
+      }
+
+      // Update goal based on remaining reserved amount
+      goal.status = newStatus;
+      goal.currentAmount = newCurrentAmount;
       await goal.save();
 
-      console.log(`✅ Goal "${goal.title}" completed! Expense entry created for ₹${goal.targetAmount}`);
+      console.log(`✅ Goal "${goal.title}" spend recorded: ₹${spentAmount}. Remaining reserved: ₹${newCurrentAmount}`);
+
+      const remainingAmount = Math.max(0, availableAmount - spentAmount);
+      const message = remainingAmount > 0
+        ? `₹${spentAmount} spent from "${goal.title}". ₹${remainingAmount} remains reserved.`
+        : `Goal "${goal.title}" completed! ₹${spentAmount} deducted from savings.`;
 
       res.json({
         success: true,
-        message: `Goal "${goal.title}" completed! ₹${goal.targetAmount} deducted from savings.`,
+        message,
         goal,
         expenseEntry: {
           id: expenseEntry._id,
@@ -1263,10 +1372,12 @@ router.post("/allocate-savings", requireAuth, async (req, res) => {
       const allocation = Math.min(targetNeeded, remainingSavings);
       
       const newCurrentAmount = (goal.currentAmount || 0) + allocation;
-      const progress = (newCurrentAmount / goal.targetAmount) * 100;
+      const progress = goal.targetAmount > 0 ? (newCurrentAmount / goal.targetAmount) * 100 : 0;
       
       // Check for milestone achievements (25%, 50%, 75%, 100%)
-      const oldProgress = ((goal.currentAmount || 0) / goal.targetAmount) * 100;
+      const oldProgress = goal.targetAmount > 0
+        ? ((goal.currentAmount || 0) / goal.targetAmount) * 100
+        : 0;
       const milestones = [25, 50, 75, 100];
       
       for (const milestone of milestones) {
@@ -1294,7 +1405,7 @@ router.post("/allocate-savings", requireAuth, async (req, res) => {
       // Determine new status
       let newStatus = goal.status;
       if (progress >= 100) {
-        newStatus = 'achieved';
+        newStatus = 'completed';
       } else if (progress > 0 && goal.status === 'planned') {
         newStatus = 'in_progress';
       }
@@ -1307,7 +1418,6 @@ router.post("/allocate-savings", requireAuth, async (req, res) => {
       
       remainingSavings -= allocation;
       allocatedCount++;
-      
       allocations.push({
         goalId: goal._id,
         title: goal.title,
@@ -1317,25 +1427,13 @@ router.post("/allocate-savings", requireAuth, async (req, res) => {
         progress: progress.toFixed(1),
         status: newStatus
       });
-      allocatedCount++;
-      allocations.push({
-        goalId: goal._id,
-        title: goal.title,
-        allocated: allocation,
-        newCurrentAmount,
-        progress: progress.toFixed(1),
-        status: newStatus,
-        timeProgress: (timeProgress * 100).toFixed(1),
-        daysElapsed: elapsedDays,
-        totalDays: totalDays
-      });
       
       console.log(`  ✅ ${goal.title}: Allocated ₹${allocation.toFixed(2)}, Progress: ${progress.toFixed(1)}%, Status: ${newStatus}`);
     }
     
     res.json({
       success: true,
-      message: `Successfully allocated ₹${totalSavings.toFixed(2)} to ${allocatedCount} goals`,
+      message: `Successfully allocated ₹${newSavingsToAllocate.toFixed(2)} to ${allocatedCount} goals`,
       totalSavings,
       allocatedCount,
       allocations

@@ -64,13 +64,6 @@ export default function ResellItems() {
     return `badge bg-${badgeMap[status] || 'secondary'}`;
   };
 
-  const getAIScoreColor = (score) => {
-    if (score >= 90) return 'text-success';
-    if (score >= 75) return 'text-info';
-    if (score >= 60) return 'text-warning';
-    return 'text-danger';
-  };
-
   const handleStartSelling = () => {
     navigate("/marketplace");
   };
@@ -81,7 +74,7 @@ export default function ResellItems() {
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 className="mb-1">Resell Unused Items</h2>
-          <p className="text-muted mb-0">Turn your unused items into cash with AI-powered pricing</p>
+          <p className="text-muted mb-0">Turn your unused items into cash by listing them for resale</p>
         </div>
         <button 
           className="btn btn-primary d-flex align-items-center gap-2"
@@ -95,11 +88,10 @@ export default function ResellItems() {
         </button>
       </div>
 
-      {/* AI-Powered Product Analysis Section */}
-      <div className="card mb-4" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: 'none' }}>
-        <div className="card-body text-white p-4">
+      <div className="card mb-4 border-0 bg-light">
+        <div className="card-body p-4">
           <div className="d-flex align-items-start gap-3">
-            <div className="p-3 bg-white bg-opacity-25 rounded-3">
+            <div className="p-3 bg-white rounded-3 shadow-sm">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                 <circle cx="8.5" cy="8.5" r="1.5"/>
@@ -107,12 +99,9 @@ export default function ResellItems() {
               </svg>
             </div>
             <div className="flex-grow-1">
-              <h4 className="mb-2">AI-Powered Product Analysis</h4>
-              <p className="mb-3 opacity-90">Upload photos of your unused items and our AI will analyze the condition, suggest optimal pricing, and help you list them for sale.</p>
-              <button 
-                className="btn btn-light fw-semibold"
-                onClick={handleStartSelling}
-              >
+              <h4 className="mb-2">List Your Items for Resale</h4>
+              <p className="mb-3 text-muted">Upload photos, add details, and publish your listings to reach local buyers.</p>
+              <button className="btn btn-primary fw-semibold" onClick={handleStartSelling}>
                 Start Selling
               </button>
             </div>
@@ -142,7 +131,7 @@ export default function ResellItems() {
               </svg>
             </div>
             <h4 className="mb-2">No Items Listed Yet</h4>
-            <p className="text-muted mb-4">Start selling your unused items with AI-powered pricing assistance</p>
+            <p className="text-muted mb-4">Start selling your unused items by creating your first listing</p>
             <button className="btn btn-primary" onClick={handleStartSelling}>
               List Your First Item
             </button>
@@ -185,12 +174,6 @@ export default function ResellItems() {
                         <div>
                           <h5 className="mb-1">{item.title}</h5>
                           <div className="d-flex align-items-center gap-2 flex-wrap">
-                            {/* AI Score */}
-                            {item.aiScore && (
-                              <span className={`fw-bold ${getAIScoreColor(item.aiScore)}`}>
-                                AI Score: {item.aiScore}/100
-                              </span>
-                            )}
                             {/* Condition Badge */}
                             <span className={getConditionBadgeClass(item.condition)}>
                               {item.condition?.replace('-', ' ').toUpperCase() || 'GOOD'}
@@ -199,17 +182,6 @@ export default function ResellItems() {
                             <span className={getStatusBadgeClass(item.status)}>
                               {item.status?.toUpperCase() || 'LISTED'}
                             </span>
-                            {/* Auto-priced indicator */}
-                            {item.autoPriced && (
-                              <span className="badge bg-info">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
-                                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                                  <path d="M2 17l10 5 10-5"/>
-                                  <path d="M2 12l10 5 10-5"/>
-                                </svg>
-                                AI Priced
-                              </span>
-                            )}
                           </div>
                         </div>
                         {/* Description */}
@@ -223,10 +195,10 @@ export default function ResellItems() {
                       </div>
                     </div>
 
-                    {/* Estimated Price */}
+                    {/* Price */}
                     <div className="col-auto text-end">
                       <div className="mb-2">
-                        <small className="text-muted d-block">Estimated Price</small>
+                        <small className="text-muted d-block">Price</small>
                         <h3 className="mb-0 text-success">₹{item.price?.toLocaleString()}</h3>
                       </div>
                       {item.originalPrice && item.originalPrice !== item.price && (
@@ -236,42 +208,6 @@ export default function ResellItems() {
                       )}
                     </div>
                   </div>
-
-                  {/* Condition Analysis Details (if available) */}
-                  {item.conditionAnalysis && (
-                    <div className="mt-3 pt-3 border-top">
-                      <div className="row g-2 small">
-                        <div className="col-auto">
-                          <span className="text-muted">Confidence:</span>
-                          <span className="fw-semibold ms-1">{item.conditionAnalysis.confidence?.toFixed(1)}%</span>
-                        </div>
-                        {item.conditionAnalysis.features?.sharpness && (
-                          <div className="col-auto">
-                            <span className="text-muted">Sharpness:</span>
-                            <span className="fw-semibold ms-1">{item.conditionAnalysis.features.sharpness.toFixed(0)}</span>
-                          </div>
-                        )}
-                        {item.conditionAnalysis.features?.contrast && (
-                          <div className="col-auto">
-                            <span className="text-muted">Contrast:</span>
-                            <span className="fw-semibold ms-1">{item.conditionAnalysis.features.contrast.toFixed(0)}</span>
-                          </div>
-                        )}
-                        {item.conditionAnalysis.tampered && (
-                          <div className="col-auto">
-                            <span className="badge bg-warning">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
-                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                                <line x1="12" y1="9" x2="12" y2="13"/>
-                                <line x1="12" y1="17" x2="12.01" y2="17"/>
-                              </svg>
-                              Tampered Detection
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

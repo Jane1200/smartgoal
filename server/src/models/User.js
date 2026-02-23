@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import validator from 'validator';
 
-const allowedRoles = ["goal_setter", "buyer", "admin", "evaluator"];
+const allowedRoles = ["goal_setter", "buyer", "admin"];
 
 const userSchema = new mongoose.Schema(
   {
@@ -163,6 +163,48 @@ const userSchema = new mongoose.Schema(
         type: Date
       }
     },
+
+    // Category-level budgets
+    categoryBudgets: [
+      {
+        category: {
+          type: String,
+          enum: {
+            values: [
+              "food",
+              "transport",
+              "housing",
+              "healthcare",
+              "entertainment",
+              "shopping",
+              "education",
+              "travel",
+              "other"
+            ],
+            message: "{VALUE} is not a valid expense category"
+          },
+          required: true
+        },
+        enabled: {
+          type: Boolean,
+          default: false
+        },
+        monthlyLimit: {
+          type: Number,
+          min: [0, "Monthly limit cannot be negative"],
+          default: 0
+        },
+        alertThreshold: {
+          type: Number,
+          min: [50, "Alert threshold must be at least 50%"],
+          max: [100, "Alert threshold cannot exceed 100%"],
+          default: 80
+        },
+        lastAlertDate: {
+          type: Date
+        }
+      }
+    ],
 
     // Location for geo-matching
     location: {

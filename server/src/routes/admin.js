@@ -1593,7 +1593,7 @@ router.post("/users", requireAdmin, async (req, res) => {
       : (role ? [role] : ['goal_setter']);
 
     // Validate roles
-    const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
+    const allowedRoles = ['goal_setter', 'buyer', 'admin'];
     const invalidRoles = userRoles.filter(r => !allowedRoles.includes(r));
     if (invalidRoles.length > 0) {
       return res.status(400).json({ 
@@ -1756,7 +1756,7 @@ router.put("/users/:userId", requireAdmin, async (req, res) => {
 
     // Update roles if provided
     if (roles && Array.isArray(roles) && roles.length > 0) {
-      const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
+      const allowedRoles = ['goal_setter', 'buyer', 'admin'];
       const invalidRoles = roles.filter(r => !allowedRoles.includes(r));
       
       if (invalidRoles.length > 0) {
@@ -1769,7 +1769,7 @@ router.put("/users/:userId", requireAdmin, async (req, res) => {
       user.role = user.roles[0]; // Set primary role
     } else if (role) {
       // Handle single role update for backward compatibility
-      const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
+      const allowedRoles = ['goal_setter', 'buyer', 'admin'];
       if (!allowedRoles.includes(role)) {
         return res.status(400).json({ message: 'Invalid role' });
       }
@@ -1885,7 +1885,7 @@ router.patch("/users/:userId/roles", requireAdmin, async (req, res) => {
     const { roles } = req.body;
 
     // Validate roles
-    const allowedRoles = ['goal_setter', 'buyer', 'admin', 'evaluator'];
+    const allowedRoles = ['goal_setter', 'buyer', 'admin'];
     if (!Array.isArray(roles) || roles.length === 0) {
       return res.status(400).json({ message: 'Roles must be a non-empty array' });
     }

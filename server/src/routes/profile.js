@@ -8,7 +8,7 @@ import fs from "fs";
 import { requireAuth } from "../middleware/auth.js";
 import User from "../models/User.js";
 import { buildAuthPayload, buildUserResponse, ensureUserRoleArray } from "../utils/roles.js";
-import { checkExpenseLimit } from "../utils/expenseChecker.js";
+import { checkAllCategoryBudgets, checkExpenseLimit } from "../utils/expenseChecker.js";
 import { sendPasswordChangedEmail } from "../utils/emailService.js";
 
 const router = Router();
@@ -904,5 +904,110 @@ router.put("/expense-limit", requireAuth, async (req, res) => {
     }
     
     res.status(500).json({ message: "Failed to update expense limit" });
+  }
+});
+
+// Get category budgets
+router.get("/category-budgets", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findById(userId).select("categoryBudgets");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const statuses = await checkAllCategoryBudgets(userId);
+
+    res.json({
+      budgets: user.categoryBudgets || [],
+      statuses
+    });
+  } catch (error) {
+    console.error("Get category budgets error:", error);
+    res.status(500).json({ message: "Failed to fetch category budgets" });
+  }
+});
+
+// Update category budgets
+router.put("/category-budgets", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { budgets } = req.body;
+
+    if (!Array.isArray(budgets)) {
+      return res.status(400).json({ message: "Budgets must be an array" });
+    }
+
+    const allowedCategories = [
+      "food",
+      "transport",
+      "housing",
+      "healthcare",
+      "entertainment",
+      "shopping",
+      "education",
+      "travel",
+      "other"
+    ];
+
+    const normalizedBudgets = budgets
+      .filter((budget) => allowedCategories.includes(budget.category))
+      .map((budget) => ({
+        category: budget.category,
+        enabled: Boolean(budget.enabled),
+        monthlyLimit: budget.enabled ? parseFloat(budget.monthlyLimit || 0) : 0,
+        alertThreshold: budget.alertThreshold ? parseInt(budget.alertThreshold) : 80,
+        lastAlertDate: budget.lastAlertDate || null
+      }));
+
+    const invalidLimit = normalizedBudgets.find(
+      (budget) => budget.enabled && (!budget.monthlyLimit || budget.monthlyLimit <= 0)
+    );
+    if (invalidLimit) {
+      return res.status(400).json({
+        message: "Monthly limit must be greater than 0 for enabled budgets"
+      });
+    }
+
+    const invalidThreshold = normalizedBudgets.find(
+      (budget) => budget.alertThreshold < 50 || budget.alertThreshold > 100
+    );
+    if (invalidThreshold) {
+      return res.status(400).json({
+        message: "Alert threshold must be between 50% and 100%"
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        categoryBudgets: normalizedBudgets,
+        updatedAt: new Date()
+      },
+      { new: true, runValidators: true, select: "-passwordHash -firebaseUid" }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const statuses = await checkAllCategoryBudgets(userId);
+
+    res.json({
+      message: "Category budgets updated successfully",
+      budgets: updatedUser.categoryBudgets,
+      statuses
+    });
+  } catch (error) {
+    console.error("Update category budgets error:", error);
+
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({ message: messages.join(", ") });
+    }
+
+    res.status(500).json({ message: "Failed to update category budgets" });
   }
 });

@@ -1,0 +1,98 @@
+2026-02-20 15:23:42,839 INFO ============================================================
+2026-02-20 15:23:42,839 INFO SmartGoal Resale Price Estimation API
+2026-02-20 15:23:42,840 INFO ============================================================
+2026-02-20 15:23:42,926 WARNING     Run: python src/training/train_condition_model.py
+2026-02-20 15:23:47,229 INFO Price model loaded from C:\Users\anton\OneDrive\Desktop\ppr\smartgoal\smartgoal\resale_price_estimation\models\price_model\price_model.pkl
+2026-02-20 15:23:47,239 INFO 
+API endpoints:
+2026-02-20 15:23:47,372 INFO [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5002
+ * Running on http://172.16.110.251:5002
+2026-02-20 15:23:47,373 INFO [33mPress CTRL+C to quit[0m
+2026-02-20 15:32:51,325 WARNING Image processing failed, using default score: [Errno 2] No such file or directory: 'C:\\Users\\anton\\OneDrive\\Desktop\\ppr\\smartgoal\\smartgoal\\resale_price_estimation\\models\\condition_model\\condition_model.pth'
+2026-02-20 15:32:51,608 INFO 127.0.0.1 - - [20/Feb/2026 15:32:51] "POST /estimate HTTP/1.1" 200 -
+2026-02-20 15:32:56,846 WARNING Image processing failed, using default score: [Errno 2] No such file or directory: 'C:\\Users\\anton\\OneDrive\\Desktop\\ppr\\smartgoal\\smartgoal\\resale_price_estimation\\models\\condition_model\\condition_model.pth'
+2026-02-20 15:32:56,894 INFO 127.0.0.1 - - [20/Feb/2026 15:32:56] "POST /estimate HTTP/1.1" 200 -
+2026-02-20 15:33:09,879 WARNING Image processing failed, using default score: [Errno 2] No such file or directory: 'C:\\Users\\anton\\OneDrive\\Desktop\\ppr\\smartgoal\\smartgoal\\resale_price_estimation\\models\\condition_model\\condition_model.pth'
+2026-02-20 15:33:09,891 INFO 127.0.0.1 - - [20/Feb/2026 15:33:09] "POST /estimate HTTP/1.1" 200 -
+2026-02-23 09:22:22,976 INFO ============================================================
+2026-02-23 09:22:22,977 INFO SmartGoal Resale Price Estimation API
+2026-02-23 09:22:22,977 INFO ============================================================
+2026-02-23 09:22:23,824 INFO 
+Endpoints:
+2026-02-23 09:22:23,881 INFO [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5002
+ * Running on http://192.168.60.36:5002
+2026-02-23 09:22:23,882 INFO [33mPress CTRL+C to quit[0m
+2026-02-23 09:24:27,501 INFO 127.0.0.1 - - [23/Feb/2026 09:24:27] "POST /estimate HTTP/1.1" 200 -
+2026-02-23 09:41:13,247 INFO 127.0.0.1 - - [23/Feb/2026 09:41:13] "[33mPOST /scan-defects HTTP/1.1[0m" 404 -
+2026-02-23 09:41:49,036 INFO 127.0.0.1 - - [23/Feb/2026 09:41:49] "POST /estimate HTTP/1.1" 200 -
+2026-02-23 09:49:36,470 INFO 127.0.0.1 - - [23/Feb/2026 09:49:36] "[33mPOST /scan-defects HTTP/1.1[0m" 404 -
+2026-02-23 09:50:15,512 INFO 127.0.0.1 - - [23/Feb/2026 09:50:15] "POST /estimate HTTP/1.1" 200 -
+2026-02-23 09:50:32,462 INFO 127.0.0.1 - - [23/Feb/2026 09:50:32] "POST /estimate HTTP/1.1" 200 -
+2026-02-23 09:52:36,851 INFO 127.0.0.1 - - [23/Feb/2026 09:52:36] "[33mPOST /scan-defects HTTP/1.1[0m" 404 -
+2026-02-23 09:52:50,966 INFO 127.0.0.1 - - [23/Feb/2026 09:52:50] "POST /estimate HTTP/1.1" 200 -
+2026-02-23 10:05:41,368 INFO ============================================================
+2026-02-23 10:05:41,368 INFO SmartGoal Resale Price Estimation API
+2026-02-23 10:05:41,368 INFO ============================================================
+2026-02-23 10:05:42,573 INFO Price model loaded OK.
+2026-02-23 10:05:42,574 INFO Condition model (OneClassSVM + CV) ready.
+2026-02-23 10:05:42,574 INFO Endpoints:
+2026-02-23 10:05:42,574 INFO   GET  /health       -- status check
+2026-02-23 10:05:42,574 INFO   POST /scan-defects -- image -> defects + price (main)
+2026-02-23 10:05:42,574 INFO   POST /condition    -- image -> condition score + defects
+2026-02-23 10:05:42,575 INFO   POST /estimate     -- metadata + image -> price estimate
+2026-02-23 10:05:42,612 INFO [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5002
+ * Running on http://192.168.60.36:5002
+2026-02-23 10:05:42,612 INFO [33mPress CTRL+C to quit[0m
+2026-02-23 10:44:31,672 INFO Loaded good reference profile from dataset images.
+2026-02-23 10:44:31,783 INFO Loaded OneClassSVM condition model.
+2026-02-23 10:44:32,147 INFO Condition: poor (score=0) | defects=['Screen Cracks', 'Surface Scratches', 'Dark Spots / Dead Pixels'] | anomaly=False | lap_var=978.0 edges=0.1052
+2026-02-23 10:44:32,230 INFO Market price table built: 10 (category, condition) entries
+2026-02-23 10:44:32,231 INFO scan-defects | Other phone | condition=poor (0) | defects=3 | price=INR 20,778
+2026-02-23 10:44:32,233 ERROR Exception on /scan-defects [POST]
+Traceback (most recent call last):
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 1455, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 869, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask_cors\extension.py", line 176, in wrapped_function
+    return cors_after_request(app.make_response(f(*args, **kwargs)))
+                                                ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 867, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 852, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\OneDrive\Desktop\ppr\smartgoal\smartgoal\resale_price_estimation\api.py", line 185, in scan_defects
+    return jsonify({
+           ^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\json\__init__.py", line 170, in jsonify
+    return current_app.json.response(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\json\provider.py", line 215, in response
+    f"{self.dumps(obj, **dump_args)}\n", mimetype=self.mimetype
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\json\provider.py", line 180, in dumps
+    return json.dumps(obj, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\json\__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\json\encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\json\encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\anton\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\json\provider.py", line 120, in _default
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+TypeError: Object of type bool_ is not JSON serializable
+2026-02-23 10:44:32,445 INFO 127.0.0.1 - - [23/Feb/2026 10:44:32] "[35m[1mPOST /scan-defects HTTP/1.1[0m" 500 -

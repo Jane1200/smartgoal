@@ -19,7 +19,7 @@ export default function GoalsPage() {
   const authContext = useAuth();
   const user = authContext?.user;
 
-  const [activeTab, setActiveTab] = useState("recommendations");
+  const [activeTab, setActiveTab] = useState("all");
   const [financeData, setFinanceData] = useState({
     monthlyIncome: 0,
     monthlyExpense: 0,

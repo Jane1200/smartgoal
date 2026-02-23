@@ -85,7 +85,7 @@ export function startMonthlyReportJob() {
           // Get goal progress for last month
           const goals = await Goal.find({
             userId: user._id,
-            status: { $in: ["in_progress", "achieved", "completed"] },
+            status: { $in: ["in_progress", "completed"] },
           });
 
           const goalProgress = goals.map((goal) => {
@@ -194,7 +194,7 @@ export async function triggerMonthlyReportManually(userId = null) {
 
       const goals = await Goal.find({
         userId: user._id,
-        status: { $in: ["in_progress", "achieved", "completed"] },
+        status: { $in: ["in_progress", "completed"] },
       });
 
       const goalProgress = goals.map((goal) => {

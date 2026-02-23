@@ -8,7 +8,6 @@ import AuthLayout from "@/layouts/AuthLayout.jsx";
 import AdminLayout from "@/layouts/AdminLayout.jsx";
 import UserLayout from "@/layouts/UserLayout.jsx";
 import BuyerLayout from "@/layouts/BuyerLayout.jsx";
-import EvaluatorLayout from "@/layouts/EvaluatorLayout.jsx";
 
 import Login from "@/pages/auth/Login.jsx";
 import LoginOTP from "@/pages/auth/LoginOTP.jsx";
@@ -19,10 +18,8 @@ import VerifyEmail from "@/pages/auth/VerifyEmail.jsx";
 import AdminDashboard from "@/pages/dashboard/AdminDashboard.jsx";
 import UserDashboard from "@/pages/dashboard/UserDashboard.jsx";
 import BuyerDashboard from "@/pages/dashboard/BuyerDashboardOverview.jsx";
-import EvaluatorDashboard from "@/pages/dashboard/EvaluatorDashboard.jsx";
 import UserManagement from "@/pages/admin/UserManagement.jsx";
 import AllGoals from "@/pages/admin/AllGoals.jsx";
-import EvaluatorUserView from "@/pages/evaluator/EvaluatorUserView.jsx";
 import MarketplaceControl from "@/pages/admin/MarketplaceControl.jsx";
 import AdminReports from "@/pages/admin/Reports.jsx";
 import ContentModeration from "@/pages/admin/ContentModeration.jsx";
@@ -34,6 +31,7 @@ import Cart from "@/pages/dashboard/Cart.jsx";
 import Checkout from "@/pages/dashboard/Checkout.jsx";
 import Orders from "@/pages/dashboard/Orders.jsx";
 import GoalsPage from "@/pages/dashboard/Goals.jsx";
+import WishlistPage from "@/pages/dashboard/Wishlist.jsx";
 import MarketplacePage from "@/pages/dashboard/Marketplace.jsx";
 import ResellItems from "@/pages/dashboard/ResellItems.jsx";
 import FinancesPage from "@/pages/dashboard/Finances.jsx";
@@ -49,7 +47,6 @@ import RequireAuth from "@/routes/RequireAuth.jsx";
 import RequireAdmin from "@/routes/RequireAdmin.jsx";
 import RequireUser from "@/routes/RequireUser.jsx";
 import RequireBuyer from "@/routes/RequireBuyer.jsx";
-import RequireEvaluator from "@/routes/RequireEvaluator.jsx";
 
 import { ToastContainer } from "react-toastify";
 import PublicLayout from "@/layouts/PublicLayout.jsx";
@@ -156,6 +153,7 @@ export default function App() {
         >
           <Route path="/dashboard" element={<UserDashboard />} />
           <Route path="/goals" element={<GoalsPage />} />
+          <Route path="/wishlist" element={<WishlistPage />} />
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/resell-items" element={<ResellItems />} />
           <Route path="/finances" element={<FinancesPage />} />
@@ -182,22 +180,7 @@ export default function App() {
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/orders" element={<Orders />} />
-          <Route path="/profile" element={<ProfileSimple />} />
-        </Route>
-
-        {/* Evaluator Routes */}
-        <Route
-          element={
-            <RequireAuth>
-              <RequireEvaluator>
-                <EvaluatorLayout />
-              </RequireEvaluator>
-            </RequireAuth>
-          }
-        >
-          <Route path="/evaluator-dashboard" element={<EvaluatorDashboard />} />
-          <Route path="/evaluator/users" element={<EvaluatorUserView />} />
-          <Route path="/evaluator/goals" element={<AllGoals />} />
+          <Route path="/buyer-profile" element={<ProfilePage />} />
         </Route>
 
         {/* Role-based redirect */}

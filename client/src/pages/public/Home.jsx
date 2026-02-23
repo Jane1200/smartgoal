@@ -3,6 +3,7 @@ import { useAuth } from "@/context/AuthContext.jsx";
 import GoalPlannerCalc from "../../sections/GoalPlannerCalc.jsx";
 import MarketplacePreview from "../../sections/MarketplacePreview.jsx";
 import InspirationShowcase from "../../sections/InspirationShowcase.jsx";
+import HomeChatbot from "../../components/HomeChatbot.jsx";
 
 // Animated number that counts up when `start` becomes true
 function AnimatedNumber({ end, duration = 1500, decimals = 0, prefix = "", suffix = "", start = false, formatter }) {
@@ -308,6 +309,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      <HomeChatbot />
     </div>
   );
 }

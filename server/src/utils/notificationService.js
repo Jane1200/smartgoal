@@ -2,6 +2,7 @@ import Notification from "../models/Notification.js";
 import Finance from "../models/Finance.js";
 import Goal from "../models/Goal.js";
 import User from "../models/User.js";
+import { checkAllCategoryBudgets } from "./expenseChecker.js";
 
 /**
  * Smart Notification Service
@@ -161,6 +162,31 @@ export async function checkBudgetBreaches(userId) {
         totalAmount
       );
       notifications.push(notification);
+    }
+
+    // 5. Check category budget alerts
+    const categoryStatuses = await checkAllCategoryBudgets(userId);
+    for (const status of categoryStatuses) {
+      if (status.hasBudget && status.shouldAlert) {
+        const notification = await Notification.createCategoryBudgetAlert(
+          userId,
+          status.category,
+          status.alertLevel,
+          status.alertMessage,
+          {
+            limit: status.limit,
+            totalExpenses: status.totalExpenses,
+            percentageUsed: status.percentageUsed,
+            remaining: status.remaining
+          }
+        );
+        notifications.push(notification);
+
+        await User.updateOne(
+          { _id: userId, "categoryBudgets.category": status.category },
+          { $set: { "categoryBudgets.$.lastAlertDate": new Date() } }
+        );
+      }
     }
 
     return notifications;

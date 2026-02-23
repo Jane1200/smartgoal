@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { toast } from "react-toastify";
 import { useAuth } from "@/context/AuthContext.jsx";
 
 export default function NotificationCenter() {
@@ -157,7 +158,7 @@ export default function NotificationCenter() {
       const data = await response.json();
 
       if (response.ok) {
-        alert(data.message);
+        toast.success(data.message || "Goal due date extended.");
         // Remove notification from list
         await deleteNotification(notification._id);
         // Refresh notifications
@@ -165,11 +166,11 @@ export default function NotificationCenter() {
         // Reload page to show updated goal
         window.location.href = '/goals';
       } else {
-        alert(data.message || 'Failed to extend goal due date');
+        toast.error(data.message || "Failed to extend goal due date");
       }
     } catch (error) {
       console.error('Error extending goal:', error);
-      alert('Failed to extend goal due date');
+      toast.error("Failed to extend goal due date");
     }
   };
 
@@ -196,7 +197,7 @@ export default function NotificationCenter() {
       const data = await response.json();
 
       if (response.ok) {
-        alert(data.message);
+        toast.success(data.message || "Goal deleted.");
         // Remove notification from list
         await deleteNotification(notification._id);
         // Refresh notifications
@@ -204,11 +205,11 @@ export default function NotificationCenter() {
         // Reload page to show updated goals
         window.location.href = '/goals';
       } else {
-        alert(data.message || 'Failed to delete goal');
+        toast.error(data.message || "Failed to delete goal");
       }
     } catch (error) {
       console.error('Error deleting goal:', error);
-      alert('Failed to delete goal');
+      toast.error("Failed to delete goal");
     }
   };
 

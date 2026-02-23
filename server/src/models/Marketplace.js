@@ -228,67 +228,10 @@ const marketplaceSchema = new mongoose.Schema(
     contributedToGoal: { type: Boolean, default: false },
     goalContributionAmount: { type: Number, min: 0, default: 0 },
     
-    // AI-powered condition analysis
-    aiScore: { 
-      type: Number, 
-      min: [0, 'AI score cannot be negative'],
-      max: [100, 'AI score cannot exceed 100'],
-      default: null 
-    },
-    conditionAnalysis: {
-      condition: String,
-      confidence: { 
-        type: Number,
-        min: [0, 'Confidence cannot be negative'],
-        max: [100, 'Confidence cannot exceed 100']
-      },
-      tampered: Boolean,
-      features: {
-        sharpness: { 
-          type: Number,
-          min: [0, 'Sharpness cannot be negative'],
-          max: [100, 'Sharpness cannot exceed 100']
-        },
-        color_variance: { 
-          type: Number,
-          min: [0, 'Color variance cannot be negative'],
-          max: [100, 'Color variance cannot exceed 100']
-        },
-        edge_density: { 
-          type: Number,
-          min: [0, 'Edge density cannot be negative'],
-          max: [100, 'Edge density cannot exceed 100']
-        },
-        brightness: { 
-          type: Number,
-          min: [0, 'Brightness cannot be negative'],
-          max: [100, 'Brightness cannot exceed 100']
-        },
-        contrast: { 
-          type: Number,
-          min: [0, 'Contrast cannot be negative'],
-          max: [100, 'Contrast cannot exceed 100']
-        }
-      }
-    },
-    
-    autoPriced: { type: Boolean, default: false },
     originalPrice: { 
       type: Number, 
       min: [0, 'Original price cannot be negative'],
       max: [10000000, 'Original price cannot exceed 1 crore']
-    },
-    priceBreakdown: {
-      basePrice: { 
-        type: Number,
-        min: [0, 'Base price cannot be negative']
-      },
-      conditionAdjustment: Number,
-      locationFactor: Number,
-      finalPrice: { 
-        type: Number,
-        min: [0, 'Final price cannot be negative']
-      }
     }
   },
   { 

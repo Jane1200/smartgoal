@@ -29,7 +29,7 @@ export default function TransactionFilters({ onFilterChange, onSearch }) {
     { value: "income", label: "Money Received" },
     { value: "expense", label: "Money Sent" },
     { value: "self-transfer", label: "Self Transfer" },
-    { value: "cashback", label: "Cashback" }
+    { value: "cashnote", label: "Cash Note" }
   ];
 
   const handleSearchChange = (value) => {

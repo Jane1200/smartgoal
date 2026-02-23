@@ -1,4 +1,5 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import Notification from "../models/Notification.js";
 import { runNotificationChecks } from "../utils/notificationService.js";
@@ -8,7 +9,13 @@ const router = Router();
 // Get user notifications
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
     const { limit = 20, includeRead = "true" } = req.query;
 
     const notifications = await Notification.getRecentNotifications(
@@ -37,7 +44,13 @@ router.get("/", requireAuth, async (req, res) => {
 // Get unread notifications count
 router.get("/unread-count", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
     const count = await Notification.getUnreadCount(userId);
 
     res.json({
@@ -56,7 +69,13 @@ router.get("/unread-count", requireAuth, async (req, res) => {
 // Mark notification as read
 router.put("/:id/read", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
     const { id } = req.params;
 
     const notification = await Notification.findOne({ _id: id, userId });
@@ -87,7 +106,13 @@ router.put("/:id/read", requireAuth, async (req, res) => {
 // Mark all notifications as read
 router.put("/mark-all-read", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
 
     await Notification.updateMany(
       { userId, isRead: false },
@@ -110,7 +135,13 @@ router.put("/mark-all-read", requireAuth, async (req, res) => {
 // Delete notification
 router.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
     const { id } = req.params;
 
     const result = await Notification.findOneAndDelete({ _id: id, userId });
@@ -138,7 +169,13 @@ router.delete("/:id", requireAuth, async (req, res) => {
 // Clear all read notifications
 router.delete("/clear-read", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
 
     const result = await Notification.deleteMany({ userId, isRead: true });
 
@@ -159,7 +196,13 @@ router.delete("/clear-read", requireAuth, async (req, res) => {
 // Trigger notification checks manually (for testing or on-demand)
 router.post("/check", requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id || req.user._id;
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
 
     const notifications = await runNotificationChecks(userId);
 

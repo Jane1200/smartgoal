@@ -1,0 +1,1 @@
+"""Condition detection module."""

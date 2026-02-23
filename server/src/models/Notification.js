@@ -283,6 +283,31 @@ notificationSchema.statics.createRecentHighExpensesAlert = async function(userId
   });
 };
 
+// Create category budget alert
+notificationSchema.statics.createCategoryBudgetAlert = async function(
+  userId,
+  category,
+  alertLevel,
+  message,
+  details = {}
+) {
+  const type = alertLevel === "danger" ? "error" : "warning";
+
+  return this.create({
+    userId,
+    type,
+    category: "finance",
+    title: `${category} Budget Alert`,
+    message,
+    details: {
+      category,
+      ...details
+    },
+    actionUrl: "/finances",
+    actionLabel: "Review Budgets"
+  });
+};
+
 // Create overspending alert
 notificationSchema.statics.createOverspendingAlert = async function(userId, overspendAmount, income, expenses) {
   return this.create({

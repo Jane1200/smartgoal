@@ -5,7 +5,6 @@
 This is a Python Flask microservice that provides ML-powered features for SmartGoal:
 
 - **Buyer-Seller Matching**: Location-based matching using distance calculations
-- **Condition Detection**: Computer vision-based product condition analysis
 
 ---
 
@@ -57,7 +56,7 @@ GET http://localhost:5001/
   "service": "SmartGoal ML Service",
   "status": "running",
   "version": "1.0.0",
-  "features": ["buyer_seller_matching", "condition_detection"]
+  "features": ["buyer_seller_matching"]
 }
 ```
 
@@ -113,43 +112,6 @@ Content-Type: application/json
   ],
   "totalMatches": 1,
   "recommendedMatches": 1
-}
-```
-
----
-
-## 👁️ Condition Detection (Computer Vision)
-
-Analyzes product images to detect condition and quality.
-
-### **Endpoints**
-
-```bash
-POST /condition/detect   # Detect condition from image
-POST /condition/train    # Train condition model
-```
-
-### **Detect Condition**
-```json
-{
-  "imagePath": "/path/to/uploaded/image.jpg"
-}
-```
-
-### **Response**
-```json
-{
-  "success": true,
-  "condition": "good",
-  "confidence": 85.5,
-  "tampered": false,
-  "features": {
-    "sharpness": 850.2,
-    "color_variance": 120.5,
-    "edge_density": 0.15,
-    "brightness": 128.0,
-    "contrast": 65.3
-  }
 }
 ```
 
@@ -243,7 +205,6 @@ CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "app:app"]
 - **Flask**: Web framework
 - **scikit-learn**: ML algorithms
 - **numpy**: Numerical operations
-- **opencv-python**: Image processing
 
 ---
 

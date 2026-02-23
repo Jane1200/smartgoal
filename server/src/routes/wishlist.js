@@ -5,6 +5,7 @@ import Goal from "../models/Goal.js";
 import { requireAuth } from "../middleware/auth.js";
 import axios from "axios";
 import * as cheerio from "cheerio"; // <-- fixed import for modern cheerio
+import { comparePrices } from "../utils/priceComparison.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -1269,6 +1270,24 @@ router.delete("/remove/:marketplaceItemId", async (req, res) => {
   } catch (error) {
     console.error("Remove from wishlist error:", error);
     res.status(500).json({ message: "Failed to remove from wishlist" });
+  }
+});
+
+// ── Price Comparison ──────────────────────────────────────────────────────────
+// POST /wishlist/compare-prices
+// Body: { title, savedPrice? }
+router.post("/compare-prices", async (req, res) => {
+  const { title, savedPrice } = req.body;
+  if (!title || title.trim().length < 2) {
+    return res.status(400).json({ success: false, message: "Product title is required" });
+  }
+
+  try {
+    const result = await comparePrices(title.trim(), savedPrice ? parseFloat(savedPrice) : null);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error("Price comparison error:", err.message);
+    return res.status(500).json({ success: false, message: "Price comparison failed" });
   }
 });
 

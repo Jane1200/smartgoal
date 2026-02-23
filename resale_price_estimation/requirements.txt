@@ -1,0 +1,13 @@
+opencv-python
+scikit-learn
+pandas
+numpy
+pillow
+pyyaml
+torch
+torchvision
+ultralytics
+matplotlib
+xgboost
+flask
+flask-cors

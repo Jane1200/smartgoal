@@ -1,6 +1,7 @@
 import { useState } from "react";
 import api from "@/utils/api.js";
 import { toast } from "react-toastify";
+import PriceComparison from "@/components/PriceComparison.jsx";
 
 export default function WishlistScraper({ onItemAdded }) {
   const [url, setUrl] = useState("");
@@ -121,6 +122,10 @@ export default function WishlistScraper({ onItemAdded }) {
       toast.error("Price cannot be negative");
       return;
     }
+    if (!editingData.dueDate || String(editingData.dueDate).trim().length === 0) {
+      toast.error("Please select a target purchase date");
+      return;
+    }
 
     setSaving(true);
 
@@ -147,7 +152,11 @@ export default function WishlistScraper({ onItemAdded }) {
         typeof editingData.price === "number"
           ? editingData.price
           : Number(String(editingData.price ?? "").replace(/[^\d.]/g, ""));
-      const price = Number.isFinite(priceValue) && priceValue >= 0 ? priceValue : 0;
+      if (!Number.isFinite(priceValue) || priceValue <= 0) {
+        toast.error("Please enter a valid price");
+        return;
+      }
+      const price = priceValue;
 
       const rawUrl = editingData.url?.trim();
       const normalizedUrl = rawUrl
@@ -202,7 +211,7 @@ export default function WishlistScraper({ onItemAdded }) {
         currency,
         notes,
         priority: editingData.priority || "medium",
-        dueDate: editingData.dueDate || undefined,
+        dueDate: editingData.dueDate,
       };
 
       const payload = Object.fromEntries(
@@ -217,7 +226,7 @@ export default function WishlistScraper({ onItemAdded }) {
         setEditingData(null);
         setUrl("");
         if (onItemAdded) {
-          onItemAdded(data);
+          onItemAdded({ ...data, price });
         }
       } else {
         toast.error("Failed to add to wishlist");
@@ -452,14 +461,15 @@ export default function WishlistScraper({ onItemAdded }) {
                         return `${yyyy}-${mm}-${dd}`;
                       })()}
                       onChange={(e) => handleFieldChange('dueDate', e.target.value)}
+                      required
                     />
-                    <small className="text-muted">Optional: When do you want to purchase?</small>
+                    <small className="text-muted">Required: When do you want to purchase?</small>
                   </div>
                 </div>
               </div>
             </div>
             <div className="col-12">
-              <div className="product-actions">
+              <div className="product-actions d-flex flex-wrap gap-2 align-items-center">
                 <button
                   type="button"
                   className="btn btn-success"
@@ -468,11 +478,11 @@ export default function WishlistScraper({ onItemAdded }) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-2">
                     <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z"/>
                   </svg>
-                  Add to Wishlist & Create Savings Goal
+                  Add to Wishlist &amp; Create Savings Goal
                 </button>
                 <button
                   type="button"
-                  className="btn btn-outline-secondary ms-2"
+                  className="btn btn-outline-secondary"
                   onClick={() => {
                     setScrapedData(null);
                     setEditingData(null);
@@ -482,6 +492,32 @@ export default function WishlistScraper({ onItemAdded }) {
                 </button>
               </div>
             </div>
+
+            {/* ── Price Comparison — auto-loads with the scraped product ── */}
+            {editingData?.title && (
+              <div className="col-12 mt-3">
+                <div className="rounded-3 border" style={{ background: "#f8faff", overflow: "hidden" }}>
+                  <div className="px-3 pt-3 pb-1 border-bottom" style={{ background: "#eef2ff" }}>
+                    <span className="fw-semibold small" style={{ color: "#4338ca" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="me-1">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                        <polyline points="16 7 22 7 22 13"/>
+                      </svg>
+                      Best prices across the web for this product
+                    </span>
+                  </div>
+                  <div className="p-3">
+                    <PriceComparison
+                      key={editingData.title}
+                      productTitle={editingData.title}
+                      savedPrice={editingData.price}
+                      autoFetch
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}

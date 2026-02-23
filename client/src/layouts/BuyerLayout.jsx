@@ -165,7 +165,7 @@ export default function BuyerLayout() {
               My Finances
             </NavLink>
             <NavLink
-              to="/profile"
+              to="/buyer-profile"
               className={({ isActive }) =>
                 `btn ${isActive ? "btn-dark" : "btn-outline-secondary"} text-start d-flex align-items-center gap-2`
               }
