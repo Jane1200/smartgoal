@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext.jsx";
 import { useNavigate } from "react-router-dom";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
 export default function Notifications() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -17,7 +19,7 @@ export default function Notifications() {
     try {
       setLoading(true);
       const includeRead = filter !== 'unread';
-      const response = await fetch(`http://localhost:5000/api/notifications?limit=100&includeRead=${includeRead}`, {
+      const response = await fetch(`${API_URL}/notifications?limit=100&includeRead=${includeRead}`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json'
@@ -58,7 +60,7 @@ export default function Notifications() {
     if (!user?.token) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/notifications/${notificationId}/read`, {
+      const response = await fetch(`${API_URL}/notifications/${notificationId}/read`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -85,7 +87,7 @@ export default function Notifications() {
     if (!user?.token) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/notifications/mark-all-read', {
+      const response = await fetch(`${API_URL}/notifications/mark-all-read`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -108,7 +110,7 @@ export default function Notifications() {
     if (!confirm('Delete this notification?')) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/notifications/${notificationId}`, {
+      const response = await fetch(`${API_URL}/notifications/${notificationId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -131,7 +133,7 @@ export default function Notifications() {
     if (!confirm('Clear all read notifications?')) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/notifications/clear-read', {
+      const response = await fetch(`${API_URL}/notifications/clear-read`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${user.token}`,

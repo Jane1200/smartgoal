@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import api from "@/utils/api.js";
+import api, { getFileUrl } from "@/utils/api.js";
 import { toast } from "react-toastify";
 
 export default function ContentModeration() {
@@ -57,7 +57,7 @@ export default function ContentModeration() {
                   <div className="card h-100">
                     {item.images && item.images[0] && (
                       <img 
-                        src={`http://localhost:5000${item.images[0]}`}
+                        src={getFileUrl(item.images[0])}
                         className="card-img-top"
                         alt={item.title}
                         style={{ height: "200px", objectFit: "cover" }}

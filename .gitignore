@@ -14,8 +14,7 @@ __pycache__/
 dist/
 build/
 
-# Environment variables
-.env
+# Environment variables (keep .env tracked for deployment)
 .env.local
 .env.development.local
 .env.test.local
@@ -113,3 +112,6 @@ uploads/
 
 # Service account keys
 *-service-account.json
+
+# SSH private keys
+*.pem

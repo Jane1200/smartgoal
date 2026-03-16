@@ -15,7 +15,7 @@ import {
   AlertCircle,
   User
 } from 'lucide-react';
-import axios from 'axios';
+import api from '@/utils/api.js';
 import { toast } from 'react-toastify';
 import TrustBadge from './TrustBadge';
 import SellerInfoCard from './SellerInfoCard';
@@ -55,7 +55,7 @@ const MatchedSellers = ({
     setError(null);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/ml-pricing/match-sellers', {
+      const response = await api.post('/ml-pricing/match-sellers', {
         sellers: sellers.map(seller => {
           // Get image URL properly
           let imageUrl = '';

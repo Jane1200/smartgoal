@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
 import { useAuth } from "@/context/AuthContext.jsx";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
 export default function NotificationCenter() {
   const { user } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -16,7 +18,7 @@ export default function NotificationCenter() {
 
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/notifications?limit=10', {
+      const response = await fetch(`${API_URL}/notifications?limit=10`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json'
@@ -40,7 +42,7 @@ export default function NotificationCenter() {
     if (!user?.token) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/notifications/unread-count', {
+      const response = await fetch(`${API_URL}/notifications/unread-count`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json'
@@ -61,7 +63,7 @@ export default function NotificationCenter() {
     if (!user?.token) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/notifications/${notificationId}/read`, {
+      const response = await fetch(`${API_URL}/notifications/${notificationId}/read`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -90,7 +92,7 @@ export default function NotificationCenter() {
     if (!user?.token) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/notifications/mark-all-read', {
+      const response = await fetch(`${API_URL}/notifications/mark-all-read`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -112,7 +114,7 @@ export default function NotificationCenter() {
     if (!user?.token) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/notifications/${notificationId}`, {
+      const response = await fetch(`${API_URL}/notifications/${notificationId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -146,7 +148,7 @@ export default function NotificationCenter() {
     if (!newDateStr) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/goals/${goalId}/extend-due-date`, {
+      const response = await fetch(`${API_URL}/goals/${goalId}/extend-due-date`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.token}`,
@@ -186,7 +188,7 @@ export default function NotificationCenter() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/goals/${goalId}/expired`, {
+      const response = await fetch(`${API_URL}/goals/${goalId}/expired`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${user.token}`,
